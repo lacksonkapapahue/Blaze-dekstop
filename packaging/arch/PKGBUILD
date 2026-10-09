@@ -7,6 +7,7 @@ arch=('x86_64')
 url="https://github.com/lacksonkapapahue/Blaze-dekstop"
 license=('custom')
 depends=('gtk3' 'webkit2gtk-4.1')
+options=('!debug' '!strip')
 source=()
 package() {
   install -Dm755 "$startdir/blaze-desktop" "$pkgdir/usr/bin/blaze-desktop"
