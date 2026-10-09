@@ -382,6 +382,7 @@ const COMMANDS = [
   { name: "attach", desc: "Attach a project file (or type @)", run: () => { const i = $("#input"); i.value += (i.value && !i.value.endsWith(" ") ? " " : "") + "@"; i.focus(); onType(); } },
   { name: "retry", desc: "Ask the last message again", run: () => retry() },
   { name: "stop", desc: "Stop the current task", run: () => API().Stop() },
+  { name: "clear", desc: "Clear this chat and start fresh", run: () => newChat() },
   { name: "skills", desc: "Use one of your skills", sub: async () => { const s = (await API().State()).skills || []; return s.length ? s.map(x => ({ name: x.split(":")[0], desc: x.split(":").slice(1).join(":").trim(), run: () => { const i = $("#input"); i.value = `Use the ${x.split(":")[0]} skill: `; i.focus(); } })) : [{ name: "No skills yet", desc: "Ask Blaze to save one after a task", run: () => {} }]; } },
   { name: "auto-approve", desc: "Toggle auto-approve for risky actions", run: () => { const y = $("#yolo", pane); y.checked = !y.checked; y.onchange(); } },
   { name: "theme", desc: "System, light or dark", sub: async () => ["system", "light", "dark"].map(t => ({ name: t, desc: t === S.prefs.theme ? "current" : "", run: async () => { await API().SetTheme(t); S.prefs.theme = t; applyTheme(); } })) },
