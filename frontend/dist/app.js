@@ -363,7 +363,7 @@ function settingsView(el) {
     const g1 = h("div", "group"); g1.append(h("span", "label", "01 · Model order"));
     const chain = h("div", "rows");
     (S.chain || []).forEach((e, i) => {
-      const r = h("div", "r", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${esc(e.provider)}</div><div class="s">${esc(e.model)}</div></div>`);
+      const r = h("div", "r", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${esc((S.providers.find(p => p.id === e.provider) || {}).name || e.provider)}</div><div class="s">${esc(e.model)}</div></div>`);
       const btns = h("div"); btns.style.display = "flex";
       const up = h("button", "btn ghost", "↑"); up.disabled = i === 0;
       up.onclick = async () => { const c = [...S.chain]; [c[i - 1], c[i]] = [c[i], c[i - 1]]; await API().SetChain(c); draw(); };
