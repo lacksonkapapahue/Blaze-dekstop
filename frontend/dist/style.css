@@ -253,3 +253,6 @@ textarea.field { min-height: 90px; font-family: var(--sans); resize: vertical; }
 .sbtweak label { display: flex; align-items: center; gap: 6px; }
 .sbtweak input[type=color] { width: 26px; height: 22px; border: 1px solid var(--hair); padding: 0; background: none; }
 .sbtweak input[type=range] { width: 80px; accent-color: var(--accent); }
+.sbform .btn, .btn.sm { white-space: nowrap; }
+.chatpane.narrow #hint { display: none; }
+.chatpane.narrow .toggle .label { letter-spacing: .08em; }

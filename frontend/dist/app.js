@@ -148,7 +148,7 @@ function buildPane() {
     <div id="attach" class="attach"></div>
     <div class="inbox">
       <button id="plus" class="plusbtn" title="Commands and files">+</button>
-      <textarea id="input" rows="1" placeholder="Ask Blaze, or type / for commands and @ for files"></textarea>
+      <textarea id="input" rows="1" placeholder="Ask Blaze · / commands · @ files"></textarea>
     </div>
     <div class="row">
       <span class="label weak" id="hint">/ commands · @ files · Shift+Enter new line</span>
