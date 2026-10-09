@@ -54,7 +54,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           { echo "### ${{ github.job }} failed on ${GITHUB_SHA::7}"; echo '```'; tail -n 70 build.log; echo '```'; } > tail.md
-          gh issue comment 1 -R ${{ github.repository }} --body-file tail.md
+          gh issue create -R ${{ github.repository }} --title "CI ${{ github.job }} failed ${GITHUB_SHA::7}" --body-file tail.md
       - uses: actions/upload-artifact@v4
         with: { name: windows, path: dist/ }
 
@@ -74,7 +74,8 @@ jobs:
           mkdir -p dist dmg
           cp -R build/bin/Blaze.app dmg/
           ln -s /Applications dmg/Applications
-          hdiutil create -volname Blaze -srcfolder dmg -ov -format UDZO dist/Blaze-v$V-macos-universal.dmg
+          for i in 1 2 3 4 5; do hdiutil create -volname Blaze -srcfolder dmg -ov -format UDZO dist/Blaze-v$V-macos-universal.dmg && break; sleep 5; done
+          test -f dist/Blaze-v$V-macos-universal.dmg
           ls -l dist
       - name: Report the error
         if: failure()
@@ -83,7 +84,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           { echo "### ${{ github.job }} failed on ${GITHUB_SHA::7}"; echo '```'; tail -n 70 build.log; echo '```'; } > tail.md
-          gh issue comment 1 -R ${{ github.repository }} --body-file tail.md
+          gh issue create -R ${{ github.repository }} --title "CI ${{ github.job }} failed ${GITHUB_SHA::7}" --body-file tail.md
       - uses: actions/upload-artifact@v4
         with: { name: macos, path: dist/ }
 
@@ -118,7 +119,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           { echo "### ${{ github.job }} failed on ${GITHUB_SHA::7}"; echo '```'; tail -n 70 build.log; echo '```'; } > tail.md
-          gh issue comment 1 -R ${{ github.repository }} --body-file tail.md
+          gh issue create -R ${{ github.repository }} --title "CI ${{ github.job }} failed ${GITHUB_SHA::7}" --body-file tail.md
       - uses: actions/upload-artifact@v4
         with: { name: linux, path: dist/ }
       - uses: actions/upload-artifact@v4
