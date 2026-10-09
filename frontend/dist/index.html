@@ -13,7 +13,9 @@
       <img class="logo" src="logo.svg" alt=""><span class="label ink">BLAZE</span>
     </div>
     <button id="newChat" class="btn line full"><span class="plus">+</span> New chat</button>
-    <div class="label sect">Chats</div>
+    <div class="sect sectrow"><span class="label">Projects</span><button id="newProject" class="mini" title="New project">+</button></div>
+    <nav id="projects"></nav>
+    <div class="sect"><span class="label" id="chatsLabel">Chats</span></div>
     <nav id="chats"></nav>
     <div class="sidefoot">
       <button class="nav" data-view="jobs"><span class="label">Jobs</span><span id="jobCount" class="count"></span></button>
@@ -24,24 +26,16 @@
   </aside>
   <main id="main">
     <header id="top" style="--wails-draggable:drag">
-      <button id="folder" class="chip" title="Change project folder"><span class="dot"></span><span id="folderName"></span></button>
+      <div id="tabs" class="tabs">
+        <button data-tab="work" class="on">Work</button><button data-tab="design">Design<span id="designDot"></span></button>
+      </div>
+      <button id="folder" class="chip" title="Change folder"><span class="dot"></span><span id="folderName"></span></button>
       <span class="grow"></span>
-      <span id="route" class="label weak"></span>
+      <button id="route" class="chip ghostchip" title="Switch model"></button>
     </header>
     <section id="view"></section>
   </main>
 </div>
-<template id="composerTpl">
-  <div id="composer">
-    <textarea id="input" rows="1" placeholder="Ask Blaze or give it a task…"></textarea>
-    <div class="row">
-      <span class="label weak" id="hint">Enter to send · Shift+Enter for a new line</span>
-      <span class="grow"></span>
-      <label class="toggle" title="Auto-approve risky actions (deletes still ask)"><input type="checkbox" id="yolo"><span class="label">Auto-approve</span></label>
-      <button id="send" class="btn accent">Send</button>
-    </div>
-  </div>
-</template>
 <script src="md.js"></script>
 <script src="app.js"></script>
 </body>

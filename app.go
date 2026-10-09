@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -31,6 +32,8 @@ type Prefs struct {
 	Folder  string   `json:"folder"` // current project folder
 	Recent  []string `json:"recent"`
 	Welcome bool     `json:"welcome_done"`
+	Project string   `json:"project"`     // current project id ("" = General)
+	Design  string   `json:"design_mode"` // ask, always, never
 }
 
 type App struct {
@@ -40,12 +43,13 @@ type App struct {
 	prefs Prefs
 	env   *tools.Env
 
-	mu       sync.Mutex
-	cancel   context.CancelFunc
-	busy     bool
-	pending  map[string]chan bool
-	convID   string
-	history  []llm.Message
+	mu      sync.Mutex
+	cancel  context.CancelFunc
+	busy    bool
+	pending map[string]chan bool
+	convID  string
+	history []llm.Message
+	pv      *preview
 }
 
 func NewApp() *App { return &App{pending: map[string]chan bool{}} }
@@ -61,9 +65,15 @@ func (a *App) startup(ctx context.Context) {
 	if a.prefs.Theme == "" {
 		a.prefs.Theme = "system"
 	}
+	if a.prefs.Design == "" {
+		a.prefs.Design = "ask"
+	}
 	if st, err := os.Stat(a.prefs.Folder); err != nil || !st.IsDir() {
 		a.prefs.Folder = a.info.Home
 	}
+	a.pv = &preview{}
+	a.pv.start()
+	a.pv.load(a.prefs.Folder)
 	a.newEnv()
 }
 
@@ -143,25 +153,27 @@ type ProviderView struct {
 }
 
 type State struct {
-	Version   string          `json:"version"`
-	SetupDone bool            `json:"setup_done"`
-	Info      sysinfo.Info    `json:"info"`
-	Missing   []string        `json:"missing"`
+	Version   string            `json:"version"`
+	SetupDone bool              `json:"setup_done"`
+	Info      sysinfo.Info      `json:"info"`
+	Missing   []string          `json:"missing"`
 	Installs  map[string]string `json:"installs"`
-	Providers []ProviderView  `json:"providers"`
-	Chain     []config.Entry  `json:"chain"`
-	Prefs     Prefs           `json:"prefs"`
-	Yolo      bool            `json:"yolo"`
-	Persona   string          `json:"persona"`
-	Keyless   bool            `json:"keyless"`
-	Skills    []string        `json:"skills"`
-	Memory    string          `json:"memory"`
+	Providers []ProviderView    `json:"providers"`
+	Chain     []config.Entry    `json:"chain"`
+	Prefs     Prefs             `json:"prefs"`
+	Yolo      bool              `json:"yolo"`
+	Persona   string            `json:"persona"`
+	Keyless   bool              `json:"keyless"`
+	Skills    []string          `json:"skills"`
+	Memory    string            `json:"memory"`
+	Project   *Project          `json:"project"`
+	Model     string            `json:"model"`
 }
 
 func (a *App) State() State {
 	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.Chain, Prefs: a.prefs,
 		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: !a.cfg.NoKeyless, Missing: a.info.Missing(),
-		Installs: map[string]string{}, Memory: tools.Memory()}
+		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName()}
 	for _, m := range s.Missing {
 		s.Installs[m] = a.info.InstallCommand(m)
 	}
@@ -257,10 +269,66 @@ func (a *App) FinishSetup() {
 	a.savePrefs()
 }
 
-func (a *App) SetPersona(p string) { a.cfg.Persona = strings.TrimSpace(p); _ = a.cfg.Save() }
-func (a *App) SetYolo(v bool)      { a.cfg.AutoApprove = v; a.env.Yolo = v; _ = a.cfg.Save() }
-func (a *App) SetKeyless(v bool)   { a.cfg.NoKeyless = !v; _ = a.cfg.Save() }
-func (a *App) SetTheme(t string)   { a.prefs.Theme = t; a.savePrefs() }
+func (a *App) SetPersona(p string)    { a.cfg.Persona = strings.TrimSpace(p); _ = a.cfg.Save() }
+func (a *App) SetYolo(v bool)         { a.cfg.AutoApprove = v; a.env.Yolo = v; _ = a.cfg.Save() }
+func (a *App) SetKeyless(v bool)      { a.cfg.NoKeyless = !v; _ = a.cfg.Save() }
+func (a *App) SetTheme(t string)      { a.prefs.Theme = t; a.savePrefs() }
+func (a *App) SetDesignMode(m string) { a.prefs.Design = m; a.savePrefs() }
+
+// modelName is the provider and model first in line.
+func (a *App) modelName() string {
+	for _, e := range a.cfg.RouteChain() {
+		if p, ok := config.ProviderByID(e.Provider); ok {
+			m := e.Model
+			if m == "" {
+				m = p.DefaultModel
+			}
+			return p.Name + " · " + m
+		}
+	}
+	return ""
+}
+
+type ModelItem struct {
+	Provider string `json:"provider"`
+	Name     string `json:"name"`
+	Model    string `json:"model"`
+}
+
+// Models lists the route chain in order, keyless fallback included.
+func (a *App) Models() []ModelItem {
+	var out []ModelItem
+	for _, e := range a.cfg.RouteChain() {
+		if p, ok := config.ProviderByID(e.Provider); ok {
+			m := e.Model
+			if m == "" {
+				m = p.DefaultModel
+			}
+			out = append(out, ModelItem{p.ID, p.Name, m})
+		}
+	}
+	return out
+}
+
+// UseModel moves a provider to the front of the chain.
+func (a *App) UseModel(provider string) string {
+	var first *config.Entry
+	var rest []config.Entry
+	for _, e := range a.cfg.Chain {
+		e := e
+		if e.Provider == provider && first == nil {
+			first = &e
+		} else {
+			rest = append(rest, e)
+		}
+	}
+	if first == nil {
+		return "Add " + provider + " in Settings first."
+	}
+	a.cfg.Chain = append([]config.Entry{*first}, rest...)
+	_ = a.cfg.Save()
+	return a.modelName()
+}
 
 func (a *App) SetMemory(text string) {
 	_ = os.WriteFile(filepath.Join(config.Dir(), "memory.md"), []byte(strings.TrimSpace(text)+"\n"), 0o600)
@@ -308,12 +376,14 @@ func (a *App) SetFolder(d string) {
 	a.prefs.Recent = rec
 	a.savePrefs()
 	a.newEnv()
+	a.pv.load(d)
 }
 
 // ---------------- conversations ----------------
 
 type Conv struct {
 	ID       string        `json:"id"`
+	Project  string        `json:"project"`
 	Title    string        `json:"title"`
 	Folder   string        `json:"folder"`
 	Updated  time.Time     `json:"updated"`
@@ -332,9 +402,19 @@ func convDir() string {
 	return d
 }
 
-func (a *App) Conversations() []ConvItem {
-	ents, _ := os.ReadDir(convDir())
+// Conversations lists the chats of one project ("" = General).
+func (a *App) Conversations(project string) []ConvItem {
 	var out []ConvItem
+	for _, c := range a.allConvs() {
+		if c.Project == project {
+			out = append(out, ConvItem{c.ID, c.Title, c.Updated.Format("Jan 2")})
+		}
+	}
+	return out
+}
+
+func (a *App) allConvs() []Conv {
+	ents, _ := os.ReadDir(convDir())
 	var convs []Conv
 	for _, e := range ents {
 		b, err := os.ReadFile(filepath.Join(convDir(), e.Name()))
@@ -347,10 +427,7 @@ func (a *App) Conversations() []ConvItem {
 		}
 	}
 	sort.Slice(convs, func(i, j int) bool { return convs[i].Updated.After(convs[j].Updated) })
-	for _, c := range convs {
-		out = append(out, ConvItem{c.ID, c.Title, c.Updated.Format("Jan 2")})
-	}
-	return out
+	return convs
 }
 
 func (a *App) OpenConversation(id string) Conv {
@@ -363,6 +440,10 @@ func (a *App) OpenConversation(id string) Conv {
 	a.convID = c.ID
 	a.history = c.Messages
 	a.mu.Unlock()
+	if c.Project != a.prefs.Project {
+		a.prefs.Project = c.Project
+		a.savePrefs()
+	}
 	if c.Folder != "" && c.Folder != a.prefs.Folder {
 		a.SetFolder(c.Folder)
 	}
@@ -394,14 +475,15 @@ func (a *App) saveConv() {
 	title := "New chat"
 	for _, m := range a.history {
 		if m.Role == "user" {
-			title = strings.TrimSpace(strings.SplitN(m.Content, "\n", 2)[0])
+			title = strings.TrimSpace(strings.SplitN(stripAttached(m.Content), "\n", 2)[0])
+			title = strings.TrimPrefix(title, "[Design edit] ")
 			if len(title) > 60 {
 				title = title[:60] + "…"
 			}
 			break
 		}
 	}
-	c := Conv{ID: a.convID, Title: title, Folder: a.prefs.Folder, Updated: time.Now(), Messages: a.history}
+	c := Conv{ID: a.convID, Project: a.prefs.Project, Title: title, Folder: a.prefs.Folder, Updated: time.Now(), Messages: a.history}
 	b, _ := json.Marshal(c)
 	_ = os.WriteFile(filepath.Join(convDir(), a.convID+".json"), b, 0o600)
 }
@@ -409,20 +491,66 @@ func (a *App) saveConv() {
 // ---------------- chat ----------------
 
 // Send starts a turn. Progress arrives as events: delta, tool, tool_done, status, confirm, done, error.
-func (a *App) Send(text string) string {
+// files are project-relative paths the user attached with @.
+func (a *App) Send(text string, files []string) string {
+	var b strings.Builder
+	b.WriteString(text)
+	for _, f := range files {
+		full := filepath.Join(a.prefs.Folder, filepath.FromSlash(f))
+		data, err := os.ReadFile(full)
+		if err != nil {
+			continue
+		}
+		if len(data) > 120_000 {
+			data = append(data[:120_000], []byte("\n…(cut)")...)
+		}
+		fmt.Fprintf(&b, "\n\n<attached path=\"%s\">\n%s\n</attached>", f, data)
+	}
 	a.mu.Lock()
 	if a.busy {
 		a.mu.Unlock()
 		return "busy"
 	}
+	a.history = append(a.history, llm.Message{Role: "user", Content: b.String()})
+	a.mu.Unlock()
+	return a.start()
+}
+
+func (a *App) start() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.cancel = cancel
 	a.busy = true
-	a.history = append(a.history, llm.Message{Role: "user", Content: text})
-	a.mu.Unlock()
 	go a.run(ctx)
 	return "ok"
 }
+
+// Retry drops the last answer and asks again.
+func (a *App) Retry() string {
+	a.mu.Lock()
+	if a.busy {
+		a.mu.Unlock()
+		return "busy"
+	}
+	last := -1
+	for i, m := range a.history {
+		if m.Role == "user" {
+			last = i
+		}
+	}
+	if last < 0 {
+		a.mu.Unlock()
+		return "nothing"
+	}
+	a.history = a.history[:last+1]
+	a.mu.Unlock()
+	return a.start()
+}
+
+var attachedRe = regexp.MustCompile(`(?s)\n*<attached path="[^"]*">.*?</attached>`)
+
+func stripAttached(s string) string { return attachedRe.ReplaceAllString(s, "") }
 
 func (a *App) Stop() {
 	a.mu.Lock()
@@ -441,6 +569,20 @@ func (a *App) Stop() {
 
 func (a *App) run(ctx context.Context) {
 	started := time.Now()
+	var changed, urls []string
+	prompt := ""
+	a.mu.Lock()
+	for _, m := range a.history {
+		if m.Role == "user" {
+			prompt = strings.TrimPrefix(firstLine(stripAttached(m.Content)), "[Design edit] ")
+		}
+	}
+	a.mu.Unlock()
+	defer func() {
+		if ok, st := a.pv.noteTurn(changed, urls, prompt); ok {
+			wr.EventsEmit(a.ctx, "design", map[string]any{"target": st.Target, "versions": len(st.Versions)})
+		}
+	}()
 	defer func() {
 		if r := recover(); r != nil {
 			wr.EventsEmit(a.ctx, "error", fmt.Sprint("Blaze hit an internal error: ", r))
@@ -484,6 +626,7 @@ func (a *App) run(ctx context.Context) {
 			}
 			wr.EventsEmit(a.ctx, "tool", map[string]string{"id": tc.ID, "name": tc.Function.Name, "args": tc.Function.Arguments})
 			res := tools.Run(a.env, tc.Function.Name, tc.Function.Arguments)
+			changed, urls = a.designTouch(tc.Function.Name, tc.Function.Arguments, res, changed, urls)
 			wr.EventsEmit(a.ctx, "tool_done", map[string]string{"id": tc.ID, "result": res})
 			a.mu.Lock()
 			a.history = append(a.history, llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: res})
@@ -521,6 +664,22 @@ RULES
 	if a.cfg.Persona != "" {
 		b.WriteString("\nSTYLE\n" + a.cfg.Persona + "\n")
 	}
+	if m := a.modelName(); m != "" {
+		b.WriteString("\nYOU RUN ON free models through Blaze's router, first in line: " + m + " (the router may fall back to another). If asked what model you are, say that. Never claim to be GPT-4 or any model you are not.\n")
+	}
+	b.WriteString(`
+DESIGN TAB
+- Build anything visual (pages, screens, components, logos) as real files in the project: plain HTML/CSS/SVG, or the project's own framework. The app previews them live in its Design tab and saves a version after each turn.
+- For a framework app, start its dev server with run_shell background=true; the app finds the localhost URL. Don't open_url it.
+- A message starting with [Design edit] names one element (CSS selector + its HTML). Change ONLY that element in the source file, keep everything else identical, then say in one line what changed.
+- When asked for directions, make 2-3 clearly different options as separate files (e.g. design/option-a.html, option-b.html, option-c.html), each self-contained.
+`)
+	if p := a.project(); p != nil {
+		b.WriteString("\nPROJECT: " + p.Name + "\n")
+		if p.Instructions != "" {
+			b.WriteString("Project instructions (always follow):\n" + p.Instructions + "\n")
+		}
+	}
 	b.WriteString("\nPC PROFILE\n" + a.info.Summary() + "\n")
 	b.WriteString("\nProject folder: " + a.env.Root + "\nCurrent folder: " + a.env.Shell.Cwd() + "\n")
 	if _, err := os.Stat(filepath.Join(a.env.Root, ".git")); err == nil {
@@ -548,10 +707,14 @@ type JobView struct {
 	Log   string `json:"log"`
 }
 
-func (a *App) Jobs() string             { return tools.Run(a.env, "job_log", "{}") }
-func (a *App) JobLog(id int) string     { return tools.Run(a.env, "job_log", fmt.Sprintf(`{"id":%d,"lines":300}`, id)) }
-func (a *App) JobStop(id int) string    { return tools.Run(a.env, "job_stop", fmt.Sprintf(`{"id":%d}`, id)) }
-func (a *App) Schedules() []sched.Job   { return sched.Load() }
+func (a *App) Jobs() string { return tools.Run(a.env, "job_log", "{}") }
+func (a *App) JobLog(id int) string {
+	return tools.Run(a.env, "job_log", fmt.Sprintf(`{"id":%d,"lines":300}`, id))
+}
+func (a *App) JobStop(id int) string {
+	return tools.Run(a.env, "job_stop", fmt.Sprintf(`{"id":%d}`, id))
+}
+func (a *App) Schedules() []sched.Job         { return sched.Load() }
 func (a *App) RemoveSchedule(n string) string { return sched.Remove(n) }
 
 func (a *App) ScheduleLog(name string) string {
@@ -642,4 +805,43 @@ func contains(s []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// designTouch notes design files written and local servers seen during a turn.
+func (a *App) designTouch(name, rawArgs, res string, changed, urls []string) ([]string, []string) {
+	var args map[string]any
+	_ = json.Unmarshal([]byte(rawArgs), &args)
+	if name == "file_write" || name == "file_edit" {
+		if p, _ := args["path"].(string); p != "" && designExt.MatchString(p) && !strings.HasPrefix(res, "Error") {
+			full := p
+			if !filepath.IsAbs(full) {
+				full = filepath.Join(a.env.Shell.Cwd(), p)
+			}
+			if rel, err := filepath.Rel(a.prefs.Folder, full); err == nil && !strings.HasPrefix(rel, "..") {
+				rel = filepath.ToSlash(rel)
+				if !containsStr(changed, rel) {
+					changed = append(changed, rel)
+				}
+			}
+		}
+	}
+	if name == "run_shell" || name == "job_log" || name == "open_url" {
+		src := res
+		if name == "run_shell" && !strings.Contains(res, "[server on") {
+			src = ""
+		}
+		if name == "open_url" {
+			src, _ = args["target"].(string)
+			if src == "" {
+				src, _ = args["url"].(string)
+			}
+		}
+		for _, m := range localURL.FindAllString(src, -1) {
+			m = strings.Replace(m, "0.0.0.0", "localhost", 1)
+			if m != a.pv.base() && !containsStr(urls, m) {
+				urls = append(urls, m)
+			}
+		}
+	}
+	return changed, urls
 }

@@ -1,0 +1,353 @@
+package main
+
+import (
+	"bytes"
+	"crypto/sha1"
+	_ "embed"
+	"encoding/hex"
+	"encoding/json"
+	"io"
+	"mime"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/lacksonkapapahue/blaze-desktop/internal/config"
+)
+
+//go:embed picker.js
+var pickerJS []byte
+
+// Design state for the current project folder: what to preview and the saved versions.
+type DesignTarget struct {
+	Kind string `json:"kind"` // "file" or "url"
+	Path string `json:"path"` // file: path relative to the folder
+	URL  string `json:"url"`  // url: a local dev server
+}
+
+type Version struct {
+	N       int               `json:"n"`
+	Summary string            `json:"summary"`
+	When    string            `json:"when"`
+	Target  DesignTarget      `json:"target"`
+	Files   map[string]string `json:"files,omitempty"` // rel path -> content, every tracked design file at that moment
+}
+
+type DesignState struct {
+	Target   DesignTarget `json:"target"`
+	Versions []Version    `json:"versions"`
+	Tracked  []string     `json:"tracked"`
+}
+
+type preview struct {
+	mu     sync.Mutex
+	port   int
+	folder string
+	state  DesignState
+}
+
+var designExt = regexp.MustCompile(`(?i)\.(html?|css|scss|svg|jsx|tsx|vue|svelte)$`)
+var localURL = regexp.MustCompile(`https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})[^\s"'\]]*`)
+
+func designDir(folder string) string {
+	h := sha1.Sum([]byte(folder))
+	d := filepath.Join(config.Dir(), "desktop", "design", hex.EncodeToString(h[:6]))
+	_ = os.MkdirAll(d, 0o700)
+	return d
+}
+
+func (p *preview) load(folder string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.folder = folder
+	p.state = DesignState{}
+	b, _ := os.ReadFile(filepath.Join(designDir(folder), "state.json"))
+	_ = json.Unmarshal(b, &p.state)
+}
+
+func (p *preview) saveLocked() {
+	b, _ := json.Marshal(p.state)
+	_ = os.WriteFile(filepath.Join(designDir(p.folder), "state.json"), b, 0o600)
+}
+
+// start runs the preview server on a free local port.
+func (p *preview) start() {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return
+	}
+	p.port = ln.Addr().(*net.TCPAddr).Port
+	go http.Serve(ln, http.HandlerFunc(p.serve))
+}
+
+func (p *preview) base() string { return "http://localhost:" + strconv.Itoa(p.port) }
+
+// versionFor reads ?__v=N from the page itself or, for its assets, from the Referer.
+func versionFor(r *http.Request) int {
+	if v := r.URL.Query().Get("__v"); v != "" {
+		n, _ := strconv.Atoi(v)
+		return n
+	}
+	if ref, err := url.Parse(r.Referer()); err == nil {
+		n, _ := strconv.Atoi(ref.Query().Get("__v"))
+		return n
+	}
+	return 0
+}
+
+func (p *preview) serve(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.URL.Path == "/__blaze/picker.js" {
+		w.Header().Set("Content-Type", "text/javascript")
+		w.Write(pickerJS)
+		return
+	}
+	p.mu.Lock()
+	st := p.state
+	folder := p.folder
+	p.mu.Unlock()
+
+	if st.Target.Kind == "url" && st.Target.URL != "" {
+		p.proxy(w, r, st.Target.URL)
+		return
+	}
+	rel := strings.TrimPrefix(filepath.Clean("/"+r.URL.Path), "/")
+	if rel == "" || rel == "." {
+		rel = st.Target.Path
+	}
+	var data []byte
+	if n := versionFor(r); n > 0 {
+		for _, v := range st.Versions {
+			if v.N == n {
+				if c, ok := v.Files[filepath.ToSlash(rel)]; ok {
+					data = []byte(c)
+				}
+			}
+		}
+	}
+	if data == nil {
+		full := filepath.Join(folder, filepath.FromSlash(rel))
+		if !strings.HasPrefix(full, folder) {
+			http.Error(w, "outside the project", 403)
+			return
+		}
+		if st, err := os.Stat(full); err == nil && st.IsDir() {
+			full = filepath.Join(full, "index.html")
+		}
+		b, err := os.ReadFile(full)
+		if err != nil {
+			http.Error(w, "not found", 404)
+			return
+		}
+		data = b
+		rel = full
+	}
+	ct := mime.TypeByExtension(filepath.Ext(rel))
+	if ct == "" {
+		ct = http.DetectContentType(data)
+	}
+	w.Header().Set("Content-Type", ct)
+	if strings.HasPrefix(ct, "text/html") {
+		data = inject(data)
+	} else if strings.HasPrefix(ct, "image/svg") && r.URL.Query().Get("wrap") == "1" {
+		// An SVG opened as the page: wrap it so it can be selected and edited too.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		data = inject([]byte("<!doctype html><html><body style=\"margin:0;display:grid;place-items:center;min-height:100vh\">" + string(data) + "</body></html>"))
+	}
+	w.Write(data)
+}
+
+func inject(html []byte) []byte {
+	tag := []byte(`<script src="/__blaze/picker.js"></script>`)
+	if i := bytes.LastIndex(bytes.ToLower(html), []byte("</body>")); i >= 0 {
+		return append(append(append([]byte{}, html[:i]...), tag...), html[i:]...)
+	}
+	return append(html, tag...)
+}
+
+func (p *preview) proxy(w http.ResponseWriter, r *http.Request, target string) {
+	u, err := url.Parse(target)
+	if err != nil {
+		http.Error(w, "bad url", 500)
+		return
+	}
+	rp := httputil.NewSingleHostReverseProxy(&url.URL{Scheme: u.Scheme, Host: u.Host})
+	orig := rp.Director
+	rp.Director = func(req *http.Request) {
+		orig(req)
+		req.Host = u.Host
+		req.Header.Del("Accept-Encoding")
+		if req.URL.Path == "/" && u.Path != "" && u.Path != "/" {
+			req.URL.Path = u.Path
+		}
+	}
+	rp.ModifyResponse = func(resp *http.Response) error {
+		if !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") {
+			return nil
+		}
+		b, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return err
+		}
+		b = inject(b)
+		resp.Body = io.NopCloser(bytes.NewReader(b))
+		resp.ContentLength = int64(len(b))
+		resp.Header.Set("Content-Length", strconv.Itoa(len(b)))
+		resp.Header.Del("Content-Security-Policy")
+		return nil
+	}
+	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(502)
+		w.Write([]byte(`<body style="font:14px system-ui;padding:40px;color:#555">The dev server at ` + target + ` isn't answering yet. It may still be starting.</body>`))
+	}
+	rp.ServeHTTP(w, r)
+}
+
+// noteTurn records a version when the turn changed design files or found a dev server.
+func (p *preview) noteTurn(changed []string, urls []string, summary string) (bool, DesignState) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(changed) == 0 && len(urls) == 0 {
+		return false, p.state
+	}
+	if len(urls) > 0 {
+		p.state.Target = DesignTarget{Kind: "url", URL: urls[len(urls)-1]}
+	}
+	for _, c := range changed {
+		if !containsStr(p.state.Tracked, c) {
+			p.state.Tracked = append(p.state.Tracked, c)
+		}
+		low := strings.ToLower(c)
+		if p.state.Target.Kind != "url" && (strings.HasSuffix(low, ".html") || strings.HasSuffix(low, ".htm") || (strings.HasSuffix(low, ".svg") && !strings.HasSuffix(strings.ToLower(p.state.Target.Path), ".html"))) {
+			p.state.Target = DesignTarget{Kind: "file", Path: c}
+		}
+	}
+	if p.state.Target.Kind == "" {
+		// Only CSS changed with no page yet: preview the folder's index.html if there is one.
+		if _, err := os.Stat(filepath.Join(p.folder, "index.html")); err == nil {
+			p.state.Target = DesignTarget{Kind: "file", Path: "index.html"}
+		}
+	}
+	files := map[string]string{}
+	for _, t := range p.state.Tracked {
+		if b, err := os.ReadFile(filepath.Join(p.folder, filepath.FromSlash(t))); err == nil && len(b) < 2<<20 {
+			files[t] = string(b)
+		}
+	}
+	n := 1
+	if len(p.state.Versions) > 0 {
+		n = p.state.Versions[len(p.state.Versions)-1].N + 1
+	}
+	summary = strings.TrimSpace(summary)
+	if len(summary) > 90 {
+		summary = summary[:90] + "…"
+	}
+	p.state.Versions = append(p.state.Versions, Version{N: n, Summary: summary, When: time.Now().Format("15:04"), Target: p.state.Target, Files: files})
+	if len(p.state.Versions) > 60 {
+		p.state.Versions = p.state.Versions[len(p.state.Versions)-60:]
+	}
+	p.saveLocked()
+	return true, p.state
+}
+
+func containsStr(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// ---------- bound API ----------
+
+type DesignView struct {
+	Base     string       `json:"base"`
+	Target   DesignTarget `json:"target"`
+	Versions []Version    `json:"versions"` // without file bodies
+	Files    []string     `json:"files"`    // previewable files in the project
+}
+
+func (a *App) Design() DesignView {
+	a.pv.mu.Lock()
+	st := a.pv.state
+	a.pv.mu.Unlock()
+	v := DesignView{Base: a.pv.base(), Target: st.Target}
+	for _, x := range st.Versions {
+		x.Files = nil
+		v.Versions = append(v.Versions, x)
+	}
+	for _, f := range walkFiles(a.prefs.Folder, 5000) {
+		l := strings.ToLower(f.rel)
+		if strings.HasSuffix(l, ".html") || strings.HasSuffix(l, ".htm") || strings.HasSuffix(l, ".svg") {
+			v.Files = append(v.Files, f.rel)
+		}
+	}
+	return v
+}
+
+// SetDesignTarget picks what to preview: a project file or a local URL.
+func (a *App) SetDesignTarget(kind, value string) DesignView {
+	a.pv.mu.Lock()
+	if kind == "url" {
+		if !strings.HasPrefix(value, "http") {
+			value = "http://" + value
+		}
+		a.pv.state.Target = DesignTarget{Kind: "url", URL: value}
+	} else {
+		a.pv.state.Target = DesignTarget{Kind: "file", Path: value}
+	}
+	a.pv.saveLocked()
+	a.pv.mu.Unlock()
+	return a.Design()
+}
+
+// RestoreVersion writes a version's files back into the project.
+func (a *App) RestoreVersion(n int) string {
+	a.pv.mu.Lock()
+	defer a.pv.mu.Unlock()
+	for _, v := range a.pv.state.Versions {
+		if v.N == n {
+			for rel, c := range v.Files {
+				full := filepath.Join(a.pv.folder, filepath.FromSlash(rel))
+				_ = os.MkdirAll(filepath.Dir(full), 0o755)
+				if err := os.WriteFile(full, []byte(c), 0o644); err != nil {
+					return "Couldn't restore " + rel + ": " + err.Error()
+				}
+			}
+			a.pv.state.Target = v.Target
+			a.pv.saveLocked()
+			return "ok"
+		}
+	}
+	return "That version is gone."
+}
+
+func (a *App) ClearVersions() {
+	a.pv.mu.Lock()
+	a.pv.state.Versions = nil
+	a.pv.saveLocked()
+	a.pv.mu.Unlock()
+}
+
+// OpenPreview pops the preview out to the system browser.
+func (a *App) OpenPreview(version int) {
+	u := a.pv.base() + "/"
+	if a.pv.state.Target.Kind == "file" {
+		u += a.pv.state.Target.Path
+	}
+	if version > 0 {
+		u += "?__v=" + strconv.Itoa(version)
+	}
+	a.OpenURL(u)
+}
