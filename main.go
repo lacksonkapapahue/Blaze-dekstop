@@ -1,0 +1,110 @@
+// Blaze Desktop: Blaze, the Android assistant, as an app for Windows, macOS and Linux.
+package main
+
+import (
+	"context"
+	"embed"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
+
+	"github.com/lacksonkapapahue/blaze-desktop/internal/config"
+	"github.com/lacksonkapapahue/blaze-desktop/internal/llm"
+	"github.com/lacksonkapapahue/blaze-desktop/internal/sched"
+	"github.com/lacksonkapapahue/blaze-desktop/internal/sysinfo"
+	"github.com/lacksonkapapahue/blaze-desktop/internal/tools"
+)
+
+//go:embed all:frontend/dist
+var assets embed.FS
+
+//go:embed build/appicon.png
+var icon []byte
+
+var version = "dev"
+
+func main() {
+	if len(os.Args) > 2 && os.Args[1] == "run-job" {
+		os.Exit(runJob(os.Args[2]))
+	}
+	app := NewApp()
+	err := wails.Run(&options.App{
+		Title:            "Blaze",
+		Width:            1180,
+		Height:           780,
+		MinWidth:         760,
+		MinHeight:        520,
+		BackgroundColour: &options.RGBA{R: 252, G: 252, B: 252, A: 255},
+		AssetServer:      &assetserver.Options{Assets: assets},
+		OnStartup:        app.startup,
+		OnShutdown:       app.shutdown,
+		Bind:             []interface{}{app},
+		Windows:          &windows.Options{Theme: windows.SystemDefault},
+		Mac: &mac.Options{
+			TitleBar: mac.TitleBarHiddenInset(),
+			About:    &mac.AboutInfo{Title: "Blaze", Message: "Blaze " + version, Icon: icon},
+		},
+		Linux: &linux.Options{Icon: icon, ProgramName: "blaze"},
+	})
+	if err != nil {
+		fmt.Println("Error:", err)
+	}
+}
+
+// runJob is what the OS scheduler calls for jobs made in the app.
+func runJob(name string) int {
+	j, ok := sched.Get(name)
+	if !ok {
+		return 2
+	}
+	log, err := sched.LogWriter(name)
+	if err != nil {
+		return 1
+	}
+	defer log.Close()
+	fmt.Fprintf(log, "\n=== %s ===\n", time.Now().Format("2006-01-02 15:04:05"))
+	info := sysinfo.Detect()
+	dir := j.Dir
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		dir = info.Home
+	}
+	if j.Command != "" {
+		r := tools.NewShell(info.Shell, info.ShellPath, dir).Run(j.Command, 2*time.Hour)
+		fmt.Fprintln(log, r)
+		if strings.HasPrefix(r, "exit 0") {
+			return 0
+		}
+		return 1
+	}
+	cfg := config.Load()
+	env := &tools.Env{Info: &info, Root: dir, Shell: tools.NewShell(info.Shell, info.ShellPath, dir), Jobs: &tools.Jobs{}}
+	env.Confirm = func(t, d string) bool { fmt.Fprintf(log, "[declined, nobody to ask] %s %s\n", t, d); return false }
+	defer env.Jobs.StopAll()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	hist := []llm.Message{{Role: "system", Content: "You are Blaze running a scheduled job unattended on the user's PC. Do the task with your tools, then report the result briefly.\n\nPC PROFILE\n" + info.Summary()}, {Role: "user", Content: j.Prompt}}
+	for step := 0; step < 30; step++ {
+		r, err := llm.Complete(ctx, cfg, hist, tools.All(), nil)
+		if err != nil {
+			fmt.Fprintln(log, "Error:", err)
+			return 1
+		}
+		hist = append(hist, llm.Message{Role: "assistant", Content: r.Text, ToolCalls: r.ToolCalls})
+		if len(r.ToolCalls) == 0 {
+			fmt.Fprintln(log, r.Text)
+			return 0
+		}
+		for _, tc := range r.ToolCalls {
+			hist = append(hist, llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: tools.Run(env, tc.Function.Name, tc.Function.Arguments)})
+		}
+	}
+	return 1
+}

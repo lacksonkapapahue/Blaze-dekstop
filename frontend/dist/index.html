@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blaze</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <div class="brand" style="--wails-draggable:drag">
+      <img class="logo" src="logo.svg" alt=""><span class="label ink">BLAZE</span>
+    </div>
+    <button id="newChat" class="btn line full"><span class="plus">+</span> New chat</button>
+    <div class="label sect">Chats</div>
+    <nav id="chats"></nav>
+    <div class="sidefoot">
+      <button class="nav" data-view="jobs"><span class="label">Jobs</span><span id="jobCount" class="count"></span></button>
+      <button class="nav" data-view="schedule"><span class="label">Schedule</span></button>
+      <button class="nav" data-view="doctor"><span class="label">Doctor</span></button>
+      <button class="nav" data-view="settings"><span class="label">Settings</span></button>
+    </div>
+  </aside>
+  <main id="main">
+    <header id="top" style="--wails-draggable:drag">
+      <button id="folder" class="chip" title="Change project folder"><span class="dot"></span><span id="folderName"></span></button>
+      <span class="grow"></span>
+      <span id="route" class="label weak"></span>
+    </header>
+    <section id="view"></section>
+  </main>
+</div>
+<template id="composerTpl">
+  <div id="composer">
+    <textarea id="input" rows="1" placeholder="Ask Blaze or give it a task…"></textarea>
+    <div class="row">
+      <span class="label weak" id="hint">Enter to send · Shift+Enter for a new line</span>
+      <span class="grow"></span>
+      <label class="toggle" title="Auto-approve risky actions (deletes still ask)"><input type="checkbox" id="yolo"><span class="label">Auto-approve</span></label>
+      <button id="send" class="btn accent">Send</button>
+    </div>
+  </div>
+</template>
+<script src="md.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
