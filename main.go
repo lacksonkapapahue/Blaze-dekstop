@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -36,6 +37,11 @@ func main() {
 		os.Exit(runJob(os.Args[2]))
 	}
 	app := NewApp()
+	app.flags = parseFlags(os.Args[1:])
+	if app.flags.relaunch {
+		// An update restarted us: give the old copy time to quit and free the single-instance lock.
+		time.Sleep(2500 * time.Millisecond)
+	}
 	err := wails.Run(&options.App{
 		Title:            "Blaze",
 		Width:            1180,
@@ -46,8 +52,15 @@ func main() {
 		AssetServer:      &assetserver.Options{Assets: assets},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
-		Bind:             []interface{}{app},
-		Windows:          &windows.Options{Theme: windows.SystemDefault},
+		OnBeforeClose:    func(ctx context.Context) bool { return app.beforeClose(ctx) },
+		StartHidden:      app.flags.background,
+		Frameless:        runtime.GOOS == "windows", // custom title-bar buttons in #top
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId:               "com.blaze.desktop",
+			OnSecondInstanceLaunch: func(d options.SecondInstanceData) { go app.secondInstance(d.Args) },
+		},
+		Bind:    []interface{}{app},
+		Windows: &windows.Options{Theme: windows.SystemDefault},
 		Mac: &mac.Options{
 			TitleBar: mac.TitleBarHiddenInset(),
 			About:    &mac.AboutInfo{Title: "Blaze", Message: "Blaze " + version, Icon: icon},

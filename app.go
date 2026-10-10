@@ -38,6 +38,11 @@ type Prefs struct {
 
 	NoUpdateCheck bool   `json:"no_update_check"` // don't look for updates on launch
 	SkipUpdate    string `json:"skip_update"`     // a release the user chose to skip, e.g. v0.3.0
+
+	Background *bool  `json:"background,omitempty"` // closing the window keeps Blaze in the tray (default on)
+	Autostart  bool   `json:"autostart"`            // start Blaze (hidden) when the user signs in
+	Hotkey     string `json:"hotkey"`               // global shortcut preset; "" = default, "off"
+	ShowSteps  bool   `json:"show_steps"`           // show every tool step instead of one status line
 }
 
 type App struct {
@@ -56,6 +61,10 @@ type App struct {
 	pv      *preview
 	ready   chan struct{} // closed when startup has finished
 	tab     string        // work or design
+
+	sh       shellState // window, orb and tray state (shell.go)
+	quitting bool       // a real quit is under way; don't hide on close
+	flags    startFlags // command-line flags (--background, --orb, --relaunch)
 }
 
 func NewApp() *App { return &App{pending: map[string]chan bool{}, ready: make(chan struct{})} }
@@ -92,12 +101,14 @@ func (a *App) startup(ctx context.Context) {
 	a.pv.start()
 	a.pv.load(a.prefs.Folder)
 	a.newEnv()
+	a.startShell()
 }
 
 func (a *App) shutdown(ctx context.Context) {
 	if a.env != nil {
 		a.env.Jobs.StopAll()
 	}
+	stopTray()
 }
 
 func (a *App) savePrefs() {
@@ -177,6 +188,7 @@ type State struct {
 	Model     string            `json:"model"`
 	Selection Selection         `json:"selection"`
 	Routing   RoutingView       `json:"routing"`
+	Desktop   DesktopView       `json:"desktop"`
 }
 
 func (a *App) State() State {
@@ -184,7 +196,7 @@ func (a *App) State() State {
 	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.RouteChain(), Prefs: a.prefs,
 		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: a.cfg.AllowKeyless(), Missing: a.info.Missing(),
 		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName(),
-		Selection: a.selection(), Routing: a.routing(), Providers: a.providerViews()}
+		Selection: a.selection(), Routing: a.routing(), Providers: a.providerViews(), Desktop: a.desktopView()}
 	for _, m := range s.Missing {
 		s.Installs[m] = a.info.InstallCommand(m)
 	}
@@ -447,6 +459,8 @@ func (a *App) Stop() {
 
 func (a *App) run(ctx context.Context) {
 	started := time.Now()
+	setTrayStatus("Working…")
+	defer setTrayStatus("Idle")
 	var changed, urls []string
 	prompt := ""
 	a.mu.Lock()
@@ -541,6 +555,7 @@ func (a *App) run(ctx context.Context) {
 				return
 			}
 			wr.EventsEmit(a.ctx, "tool", map[string]string{"id": tc.ID, "name": tc.Function.Name, "args": tc.Function.Arguments})
+			setTrayStatus("Working · " + friendlyTool(tc.Function.Name, tc.Function.Arguments))
 			res := tools.Run(a.env, tc.Function.Name, tc.Function.Arguments)
 			changed, urls = a.designTouch(tc.Function.Name, tc.Function.Arguments, res, changed, urls)
 			wr.EventsEmit(a.ctx, "tool_done", map[string]string{"id": tc.ID, "result": res})
@@ -719,7 +734,29 @@ func (a *App) Doctor() []Check {
 	} else {
 		add("Scheduler", true, "Task Scheduler")
 	}
+	d := a.desktopView()
+	add("Tray", d.Tray, map[bool]string{true: d.TrayNote, false: "Not running: " + orStr(d.TrayNote, "the tray didn't start") + ". Closing the window quits Blaze."}[d.Tray])
+	if d.Hotkey == "off" {
+		add("Shortcut", true, "Off (Settings › Behaviour)")
+	} else {
+		add("Shortcut", d.HotkeyOK, orStr(d.HotkeyNote, d.HotkeyLabel))
+	}
+	switch {
+	case !d.Autostart:
+		add("Start at login", true, "Off (Settings › Behaviour)")
+	case d.AutostartOK:
+		add("Start at login", true, "On · starts hidden in the background")
+	default:
+		add("Start at login", false, "On, but the login entry is missing. Turn it off and on again.")
+	}
 	return out
+}
+
+func orStr(s, alt string) string {
+	if strings.TrimSpace(s) == "" {
+		return alt
+	}
+	return s
 }
 
 func contains(s []string, v string) bool {
