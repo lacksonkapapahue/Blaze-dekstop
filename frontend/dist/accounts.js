@@ -57,7 +57,7 @@ function keyRow(p, redraw) {
   const wrap = h("div", "aitem");
   const r = h("div", "arow");
   const cap = p.ready ? `${p.model ? `<span class="mono">${esc(p.model)}</span>` : "No model chosen"}${p.free && !p.keyless ? " · Free tier" : ""}`
-    : p.keyless ? "Runs on this computer, no key" : p.id === "custom" ? "Any OpenAI-compatible service" : `${p.free ? "Free tier · " : ""}Key starts <span class="mono">${esc(p.key_hint || "…")}</span>`;
+    : p.keyless ? "Runs on this computer, no key" : p.id === "custom" ? "Any OpenAI-compatible service" : `${p.free ? "Free tier" : "Paid"}${p.key_hint && p.key_hint !== "…" ? ` · Key starts <span class="mono">${esc(p.key_hint)}</span>` : " · Bring your own key"}`;
   const stat = p.ready ? acctStatus(p.keyless ? "Local" : p.keys > 1 ? p.keys + " keys" : "Connected", "") : "";
   r.innerHTML = `${logo(p.id)}<div class="am"><div class="an">${esc(p.short)}</div><div class="ac">${cap}</div></div><div class="ar">${stat}</div>`;
   const b = h("button", p.ready ? "btn ghost sm" : "btn line sm", p.ready ? `Manage${icon("down", "i sm")}` : p.keyless ? "Connect" : "Add key");

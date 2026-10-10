@@ -170,11 +170,14 @@ with sync_playwright() as p:
           fire('connector_suggest', {id: 'slack', name: 'Slack', action: 'connect', reason: 'Blaze needs Slack to read #general for this.'});
           fire('toast', {text: 'Google is now connected', kind: 'ok'});"""); pg.wait_for_timeout(400)
         pg.screenshot(path=str(out / f"connector-cards-{theme}.png"))
-        # v0.4.x: first-run onboarding, every step.
+        # v0.4.x: first-run onboarding, every step (plus macOS permissions).
+        pg.evaluate("document.querySelector('#toasts') && document.querySelector('#toasts').remove()")
         for i, name in enumerate(["welcome", "model", "apps", "perms", "tour", "done"]):
             pg.evaluate(f"show('setup', {i})"); pg.wait_for_timeout(900)
             pg.screenshot(path=str(out / f"onboard-{i + 1:02d}-{name}-{theme}.png"))
-        pg.evaluate("Onboard.close(); show('work')"); pg.wait_for_timeout(200)
+        pg.evaluate("""window.go.main.App.State().then(s => { s.__d = s.desktop; s.desktop = { ...s.desktop, os: 'darwin', needs_access: true, hotkey: 'alt+space', hotkey_label: 'Option+Space', hotkey_ok: false, hotkey_note: 'macOS needs Accessibility permission for the shortcut.' }; return show('setup', 3); })"""); pg.wait_for_timeout(900)
+        pg.screenshot(path=str(out / f"onboard-04-perms-mac-{theme}.png"))
+        pg.evaluate("window.go.main.App.State().then(s => { s.desktop = s.__d; Onboard.close(); show('work'); })"); pg.wait_for_timeout(300)
         if errs:
             print("JS errors:", errs); sys.exit(1)
     # Windows runs frameless with its own title-bar buttons.

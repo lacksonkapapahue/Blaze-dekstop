@@ -4,6 +4,7 @@
 // Settings › Behaviour › "Run setup again". Replaces the old three-step wizard.
 
 const Onboard = (() => {
+  IC.bell = IC.bell || '<path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1 1H3zM6.5 14h3"/>';
   const STEPS = [["welcome", "Welcome"], ["model", "Model"], ["apps", "Apps"], ["perms", "Permissions"], ["tour", "Quick tour"], ["done", "Done"]];
   const FREE = ["gemini", "groq", "cerebras", "openrouter", "mistral", "nvidia"];
   const reduce = matchMedia("(prefers-reduced-motion: reduce)");
@@ -59,7 +60,6 @@ const Onboard = (() => {
     main.append(top, body, nav);
     root.append(rail, main);
     ({ welcome, model, apps, perms, tour, done })[id](body, nav);
-    const first = $(".obnav .btn.accent", root); if (first) first.focus({ preventScroll: true });
   }
 
   function navBtns(nav, next, opts = {}) {
@@ -104,7 +104,7 @@ const Onboard = (() => {
 
   function keyPanel(p) {
     const box = h("div", "obkey");
-    const head = h("div", "obkh", `${logo(p.id)}<div><div class="tn">${esc(p.short)}</div><div class="sub small">${p.ready ? `Connected · using <span class="mono">${esc(p.model || "its default model")}</span>` : p.keyless ? "Runs on this computer. Install it, then Blaze checks it's running." : p.id === "custom" ? "Any OpenAI-compatible service. Set its address in Accounts › API Keys." : `Paste your ${esc(p.short)} key. It starts <span class="mono">${esc(p.key_hint || "…")}</span>.`}</div></div>`);
+    const head = h("div", "obkh", `${logo(p.id)}<div><div class="tn">${esc(p.short)}</div><div class="sub small">${p.ready ? `Connected · using <span class="mono">${esc(p.model || "its default model")}</span>` : p.keyless ? "Runs on this computer. Install it, then Blaze checks it's running." : p.id === "custom" ? "Any OpenAI-compatible service. Set its address in Accounts › API Keys." : `Paste your ${esc(p.short)} key.${p.key_hint && p.key_hint !== "…" ? ` It starts <span class="mono">${esc(p.key_hint)}</span>.` : ""}`}</div></div>`);
     box.append(head);
     const out = h("div", "obout small");
     const result = r => { if (r && r.ok) { out.innerHTML = `<span class="ok">${icon("check", "i sm")} Works. Saved in ${esc(r.where || "your keychain")}; using <span class="mono">${esc(r.model || "")}</span>.</span>`; setTimeout(async () => { S = await API().State(); setModel(S.model, S.selection); draw(); }, 900); } else out.innerHTML = `<span class="bad">${esc((r && r.error) || "That didn't work.")}</span>`; };
@@ -164,7 +164,7 @@ const Onboard = (() => {
     row("clock", "Start Blaze when you sign in", "It starts hidden, ready for the shortcut.", tgl(d.autostart, async (v, el) => { const err = await API().SetAutostart(v); if (err) { el.checked = !v; toast(err, "error"); } else d.autostart = v; }));
     // Notifications
     const nb = h("button", "btn line sm", "Send a test");
-    const nr = row("sparks", "Notifications", "Blaze only notifies you about things that matter, like a finished job or something that needs your OK.", nb);
+    const nr = row("bell", "Notifications", "Blaze only notifies you about things that matter, like a finished job or something that needs your OK.", nb);
     nb.onclick = async () => { nb.disabled = true; nb.textContent = "Sending…"; const err = await API().OnboardNotifyTest(); nb.disabled = false; nb.textContent = err ? "Try again" : "Sent"; $(".ac", nr).innerHTML = err ? `<span class="bad">${esc(err)}</span>` : `Sent. ${mac ? "If macOS asks, choose Allow." : "Didn't see it? Check your system's notification settings."}`; };
     // macOS Accessibility
     if (mac) {
@@ -235,4 +235,11 @@ setBehaviour = async function (col, redraw) {
   const b = h("button", "btn line sm", `${icon("retry", "i sm")}Run setup again`);
   b.onclick = () => show("setup", 0);
   g.append(b); col.append(g);
+};
+
+// Going anywhere else closes the flow (its step is saved, so show("setup") resumes).
+const _showBase = show;
+show = function (v, arg) {
+  if (v !== "setup" && document.body.classList.contains("onboarding")) Onboard.close();
+  return _showBase(v, arg);
 };

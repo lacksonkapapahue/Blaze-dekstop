@@ -121,7 +121,7 @@ body.onboarding #app { visibility: hidden; }
 .obbody .lead { color: var(--sub); font-size: 14.5px; max-width: 600px; margin-bottom: 22px; }
 .obnav { display: flex; align-items: center; gap: 10px; padding: 14px 28px; border-top: 1px solid var(--hair); flex: none; width: 100%; max-width: 760px; margin: 0 auto; }
 .obnote { color: var(--sub); font-size: 12.5px; }
-.oborb { display: block; }
+.oborb { display: block; flex: none; }
 .oborb.hero { margin: 4px 0 18px -14px; }
 .obbody.welcome, .obbody.done { display: flex; flex-direction: column; justify-content: center; }
 .obfacts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--hair2); background: var(--raised); }
