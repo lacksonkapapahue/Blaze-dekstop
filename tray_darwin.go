@@ -9,13 +9,16 @@ import "C"
 
 import "fyne.io/systray"
 
-var trayStart func()
+var (
+	trayStart func()
+	trayApp   *App
+)
 
 // startTray: Wails owns NSApp and its run loop, so the menu-bar item uses systray's
 // external loop, started on the main thread through a tiny dispatch helper.
 func (a *App) startTray() {
 	start, _ := systray.RunWithExternalLoop(a.trayReady, nil)
-	trayStart = start
+	trayStart, trayApp = start, a
 	C.blazeOnMain()
 }
 
@@ -23,6 +26,13 @@ func (a *App) startTray() {
 func blazeTrayStart() {
 	if trayStart != nil {
 		trayStart()
+	}
+}
+
+//export blazeReopen
+func blazeReopen() {
+	if trayApp != nil {
+		go trayApp.ShowMain()
 	}
 }
 
