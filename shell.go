@@ -102,6 +102,14 @@ func (a *App) beforeClose(ctx interface{}) bool {
 // secondInstance runs when Blaze is launched again while it's already running.
 func (a *App) secondInstance(args []string) {
 	a.waitReady()
+	// A blaze:// sign-in link (Windows and Linux hand it over as an argument).
+	for _, arg := range args {
+		if strings.HasPrefix(strings.ToLower(arg), "blaze://") {
+			a.routeURL(arg)
+			a.ShowMain()
+			return
+		}
+	}
 	if parseFlags(args).orb {
 		a.ShowOrb()
 	} else {
