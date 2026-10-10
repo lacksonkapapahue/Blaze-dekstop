@@ -1,5 +1,5 @@
 // Package llm talks to any OpenAI-compatible chat endpoint with streaming and
-// tool calls, and routes each turn across the user's free providers.
+// tool calls, and routes each turn across the user's models (see router.go).
 package llm
 
 import (
@@ -10,11 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
-	"regexp"
-	"sort"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/lacksonkapapahue/blaze-desktop/internal/config"
@@ -27,6 +26,8 @@ type ToolCall struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
+	// Provider extras that must be sent back unchanged (Gemini 3 thought signatures live here).
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 type Message struct {
@@ -46,55 +47,315 @@ type Tool struct {
 	} `json:"function"`
 }
 
+type Usage struct {
+	Prompt     int `json:"prompt_tokens"`
+	Completion int `json:"completion_tokens"`
+}
+
 type Result struct {
 	Text      string
 	ToolCalls []ToolCall
 	Route     string // "Groq · model"
+	Provider  string
+	Model     string
+	Note      string // e.g. "Gemini was rate limited, Groq answered"
+	Keyless   bool   // answered by the keyless model, without tools
+	Usage     *Usage
+	Headers   map[string]string // x-ratelimit-* of the reply
+	Repairs   []string          // what the tool-call gatekeeper fixed
 }
 
 type HTTPError struct {
-	Code int
-	Body string
+	Code       int
+	Body       string
+	RetryAfter int // seconds, from the Retry-After header
 }
 
 func (e *HTTPError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.Code, e.Body) }
 
-var client = &http.Client{Timeout: 0}
+var client = &http.Client{Transport: &http.Transport{
+	Proxy:                 http.ProxyFromEnvironment,
+	DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+	TLSHandshakeTimeout:   15 * time.Second,
+	ResponseHeaderTimeout: 120 * time.Second,
+	IdleConnTimeout:       90 * time.Second,
+	MaxIdleConnsPerHost:   4,
+}}
+
+// stallTimeout is the longest wait for the next streamed chunk before giving up.
+var stallTimeout = 120 * time.Second
+
+// AuthHeaders for a provider's key.
+func AuthHeaders(pid, key string) map[string]string {
+	h := map[string]string{}
+	if key == "" {
+		return h
+	}
+	h["Authorization"] = "Bearer " + key
+	if pid == "anthropic" {
+		h["x-api-key"] = key
+		h["anthropic-version"] = "2023-06-01"
+	}
+	return h
+}
 
 // Chat does one streamed completion against one provider/model.
 func Chat(ctx context.Context, p config.Provider, key, model string, msgs []Message, tools []Tool, onText func(string)) (*Result, error) {
+	if strings.TrimSpace(p.BaseURL) == "" {
+		return nil, &HTTPError{Code: 0, Body: "no service address set for " + p.Name}
+	}
+	if model == "" {
+		return nil, &HTTPError{Code: 404, Body: "no model chosen for " + p.Name}
+	}
+	if owner := KeyOwner(key); owner != "" && owner != p.ID && p.ID != config.Custom && !config.Keyless(p.ID) {
+		return nil, &HTTPError{Code: 401, Body: fmt.Sprintf("the key saved under %s is a %s key", p.Name, config.Name(owner))}
+	}
 	body := map[string]any{"model": model, "messages": msgs, "stream": true}
 	if len(tools) > 0 {
-		body["tools"] = tools
+		body["tools"] = AdaptTools(tools, p.ID)
+		body["tool_choice"] = "auto"
 	}
 	b, _ := json.Marshal(body)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(p.BaseURL, "/")+"/chat/completions", bytes.NewReader(b))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Accept", "text/event-stream")
+	for k, v := range AuthHeaders(p.ID, key) {
+		req.Header.Set(k, v)
 	}
 	if p.ID == "openrouter" {
-		req.Header.Set("HTTP-Referer", "https://github.com/lacksonkapapahue/Blaze-cli")
-		req.Header.Set("X-Title", "Blaze CLI")
+		req.Header.Set("HTTP-Referer", "https://github.com/lacksonkapapahue/Blaze-dekstop")
+		req.Header.Set("X-Title", "Blaze Desktop")
 	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	hdr := rateHeaders(resp.Header)
 	if resp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4000))
-		return nil, &HTTPError{resp.StatusCode, cleanErr(string(raw))}
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8000))
+		ra, _ := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After")))
+		return &Result{Headers: hdr}, &HTTPError{resp.StatusCode, cleanErr(string(raw)), ra}
 	}
+	// Watchdog: a stream that goes quiet for too long is cancelled.
+	alive := make(chan struct{}, 1)
+	go func() {
+		t := time.NewTimer(stallTimeout)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-alive:
+				if !t.Stop() {
+					select {
+					case <-t.C:
+					default:
+					}
+				}
+				t.Reset(stallTimeout)
+			case <-t.C:
+				cancel()
+				return
+			}
+		}
+	}()
+	tick := func() {
+		select {
+		case alive <- struct{}{}:
+		default:
+		}
+	}
+	var res *Result
+	if strings.Contains(resp.Header.Get("Content-Type"), "event-stream") || !strings.Contains(resp.Header.Get("Content-Type"), "json") {
+		res, err = ParseStream(resp.Body, onText, tick)
+	} else {
+		res, err = parseWhole(resp.Body, onText)
+	}
+	if res != nil {
+		res.Headers = hdr
+	}
+	if err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
+		return res, &HTTPError{Code: 0, Body: "stopped sending (no data for " + stallTimeout.String() + ")"}
+	}
+	return res, err
+}
+
+func rateHeaders(h http.Header) map[string]string {
+	out := map[string]string{}
+	for k, v := range h {
+		lk := strings.ToLower(k)
+		if strings.Contains(lk, "ratelimit") && len(v) > 0 {
+			out[lk] = v[0]
+		}
+	}
+	return out
+}
+
+// ---------------- stream parsing ----------------
+
+type rawCall struct {
+	Index    *int            `json:"index"`
+	ID       string          `json:"id"`
+	Type     string          `json:"type"`
+	Function json.RawMessage `json:"function"`
+	Name     string          `json:"name"`      // a few servers put these at the top level
+	Args     json.RawMessage `json:"arguments"` // ditto
+	Extra    json.RawMessage `json:"extra_content"`
+}
+
+type rawFn struct {
+	Name *string         `json:"name"`
+	Args json.RawMessage `json:"arguments"`
+}
+
+// argText turns an arguments field (a JSON string, an object, or null) into text.
+func argText(r json.RawMessage) string {
+	t := bytes.TrimSpace(r)
+	if len(t) == 0 || string(t) == "null" {
+		return ""
+	}
+	if t[0] == '"' {
+		var s string
+		if json.Unmarshal(t, &s) == nil {
+			return s
+		}
+		return ""
+	}
+	return string(t) // an object sent as-is (some Gemini/Ollama replies)
+}
+
+type accCall struct {
+	id, name string
+	args     strings.Builder
+	extra    json.RawMessage
+}
+
+// streamAcc stitches streamed tool-call fragments back together.
+//
+// Providers disagree on how they stream calls. OpenAI sends the id + name once,
+// then argument fragments under the same index. Gemini's OpenAI layer sends each
+// call whole in its own chunk, often every one with index 0 or no index at all,
+// sometimes with arguments as an object. So a fragment that brings a new id, or
+// a name for a slot whose call already has a name and complete arguments, starts
+// a new call instead of being glued onto the previous one.
+type streamAcc struct {
+	calls  []*accCall
+	slotOf map[int]int
+}
+
+func (s *streamAcc) add(pos int, rc rawCall) {
+	if s.slotOf == nil {
+		s.slotOf = map[int]int{}
+	}
+	idx := pos
+	if rc.Index != nil {
+		idx = *rc.Index
+	}
+	var fn rawFn
+	if len(rc.Function) > 0 {
+		_ = json.Unmarshal(rc.Function, &fn)
+	}
+	name := ""
+	if fn.Name != nil {
+		name = *fn.Name
+	} else if rc.Name != "" {
+		name = rc.Name
+	}
+	argsRaw := fn.Args
+	if len(argsRaw) == 0 {
+		argsRaw = rc.Args
+	}
+	args := argText(argsRaw)
+
+	slot, ok := s.slotOf[idx]
+	if ok {
+		cur := s.calls[slot]
+		idChanged := rc.ID != "" && cur.id != "" && rc.ID != cur.id
+		nameRestart := name != "" && cur.name != "" && completeJSON(cur.args.String())
+		if idChanged || nameRestart {
+			ok = false
+		}
+	} else if rc.Index == nil && rc.ID == "" && name == "" && len(s.calls) > 0 {
+		// An index-less continuation fragment: it belongs to the last call.
+		slot, ok = len(s.calls)-1, true
+	}
+	if !ok {
+		slot = len(s.calls)
+		s.calls = append(s.calls, &accCall{})
+		s.slotOf[idx] = slot
+	}
+	c := s.calls[slot]
+	if rc.ID != "" {
+		c.id = rc.ID
+	}
+	// Some servers repeat the full name on every fragment; don't double it.
+	if name != "" && name != c.name {
+		c.name += name
+	}
+	c.args.WriteString(args)
+	if len(rc.Extra) > 0 && string(rc.Extra) != "null" {
+		c.extra = append(json.RawMessage(nil), rc.Extra...)
+	}
+}
+
+// calls returns the stitched calls. Calls without a name are dropped here; argument
+// repair and name resolution happen in NormalizeCalls.
+func (s *streamAcc) result() []ToolCall {
+	var out []ToolCall
+	seen := map[string]bool{}
+	for i, c := range s.calls {
+		if strings.TrimSpace(c.name) == "" {
+			continue
+		}
+		var tc ToolCall
+		tc.Type = "function"
+		tc.ID = c.id
+		if tc.ID == "" {
+			tc.ID = fmt.Sprintf("call_%d", i)
+		}
+		if seen[tc.ID] {
+			tc.ID = fmt.Sprintf("%s_%d", tc.ID, i)
+		}
+		seen[tc.ID] = true
+		tc.Function.Name = strings.TrimSpace(c.name)
+		tc.Function.Arguments = c.args.String()
+		tc.ExtraContent = c.extra
+		out = append(out, tc)
+	}
+	return out
+}
+
+type chunk struct {
+	Choices []struct {
+		Delta   *delta `json:"delta"`
+		Message *delta `json:"message"`
+	} `json:"choices"`
+	Usage *Usage          `json:"usage"`
+	Error json.RawMessage `json:"error"`
+}
+
+type delta struct {
+	Content   *string         `json:"content"`
+	ToolCalls json.RawMessage `json:"tool_calls"`
+}
+
+// ParseStream reads an SSE chat stream. tick (optional) is called on every line.
+func ParseStream(r io.Reader, onText func(string), tick func()) (*Result, error) {
 	res := &Result{}
-	calls := map[int]*ToolCall{}
+	acc := &streamAcc{}
 	var text strings.Builder
-	sc := bufio.NewScanner(resp.Body)
-	sc.Buffer(make([]byte, 1024*1024), 8*1024*1024)
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
 	for sc.Scan() {
+		if tick != nil {
+			tick()
+		}
 		line := strings.TrimSpace(sc.Text())
 		if !strings.HasPrefix(line, "data:") {
 			continue
@@ -103,76 +364,90 @@ func Chat(ctx context.Context, p config.Provider, key, model string, msgs []Mess
 		if data == "[DONE]" {
 			break
 		}
-		var chunk struct {
-			Choices []struct {
-				Delta struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
-						Index    int    `json:"index"`
-						ID       string `json:"id"`
-						Type     string `json:"type"`
-						Function struct {
-							Name      string `json:"name"`
-							Arguments string `json:"arguments"`
-						} `json:"function"`
-					} `json:"tool_calls"`
-				} `json:"delta"`
-			} `json:"choices"`
-			Error *struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		if json.Unmarshal([]byte(data), &chunk) != nil {
+		var ch chunk
+		if json.Unmarshal([]byte(data), &ch) != nil {
 			continue
 		}
-		if chunk.Error != nil {
-			return nil, &HTTPError{500, chunk.Error.Message}
-		}
-		for _, ch := range chunk.Choices {
-			if ch.Delta.Content != "" {
-				text.WriteString(ch.Delta.Content)
-				if onText != nil {
-					onText(ch.Delta.Content)
+		if len(ch.Error) > 0 && string(ch.Error) != "null" {
+			msg := cleanErr(`{"error":` + string(ch.Error) + `}`)
+			code := 500
+			var e struct {
+				Code any `json:"code"`
+			}
+			if json.Unmarshal(ch.Error, &e) == nil {
+				switch v := e.Code.(type) {
+				case float64:
+					code = int(v)
+				case string:
+					if n, err := strconv.Atoi(v); err == nil {
+						code = n
+					}
 				}
 			}
-			for _, tc := range ch.Delta.ToolCalls {
-				c := calls[tc.Index]
-				if c == nil {
-					c = &ToolCall{Type: "function"}
-					calls[tc.Index] = c
+			if code < 400 {
+				code = 500
+			}
+			return res, &HTTPError{Code: code, Body: msg}
+		}
+		if ch.Usage != nil {
+			res.Usage = ch.Usage
+		}
+		for _, c := range ch.Choices {
+			d := c.Delta
+			if d == nil {
+				d = c.Message
+			}
+			if d == nil {
+				continue
+			}
+			if d.Content != nil && *d.Content != "" {
+				text.WriteString(*d.Content)
+				if onText != nil {
+					onText(*d.Content)
 				}
-				if tc.ID != "" {
-					c.ID = tc.ID
+			}
+			if len(d.ToolCalls) > 0 && string(d.ToolCalls) != "null" {
+				// Decode element by element so one odd fragment never drops the whole chunk.
+				var arr []json.RawMessage
+				if json.Unmarshal(d.ToolCalls, &arr) != nil {
+					continue
 				}
-				if tc.Function.Name != "" {
-					c.Function.Name += tc.Function.Name
+				for i, el := range arr {
+					var rc rawCall
+					if json.Unmarshal(el, &rc) != nil {
+						continue
+					}
+					acc.add(i, rc)
 				}
-				c.Function.Arguments += tc.Function.Arguments
 			}
 		}
 	}
-	if err := sc.Err(); err != nil && !errors.Is(err, context.Canceled) {
-		if text.Len() == 0 && len(calls) == 0 {
+	err := sc.Err()
+	res.Text = text.String()
+	res.ToolCalls = acc.result()
+	if err != nil && !errors.Is(err, io.EOF) {
+		if res.Text == "" && len(res.ToolCalls) == 0 {
 			return nil, err
 		}
-	}
-	idx := make([]int, 0, len(calls))
-	for i := range calls {
-		idx = append(idx, i)
-	}
-	sort.Ints(idx)
-	for n, i := range idx {
-		c := calls[i]
-		if c.ID == "" {
-			c.ID = fmt.Sprintf("call_%d", n)
+		// Cut off mid-stream: keep what arrived, but a half-written call is not safe to run.
+		var keep []ToolCall
+		for _, c := range res.ToolCalls {
+			if completeJSON(c.Function.Arguments) || strings.TrimSpace(c.Function.Arguments) == "" {
+				keep = append(keep, c)
+			}
 		}
-		if strings.TrimSpace(c.Function.Arguments) == "" {
-			c.Function.Arguments = "{}"
-		}
-		res.ToolCalls = append(res.ToolCalls, *c)
+		res.ToolCalls = keep
 	}
-	res.Text = text.String()
 	return res, nil
+}
+
+func parseWhole(r io.Reader, onText func(string)) (*Result, error) {
+	raw, err := io.ReadAll(io.LimitReader(r, 32<<20))
+	if err != nil {
+		return nil, err
+	}
+	// Re-use the stream parser by wrapping the single object as one SSE event.
+	return ParseStream(strings.NewReader("data: "+string(bytes.ReplaceAll(raw, []byte("\n"), nil))+"\n"), onText, nil)
 }
 
 func cleanErr(s string) string {
@@ -192,177 +467,36 @@ func cleanErr(s string) string {
 	if json.Unmarshal([]byte(s), &arr) == nil && len(arr) > 0 && arr[0].Error.Message != "" {
 		return arr[0].Error.Message
 	}
+	var e2 struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal([]byte(s), &e2) == nil && e2.Error != "" {
+		return e2.Error
+	}
 	if len(s) > 300 {
 		s = s[:300]
 	}
 	return strings.TrimSpace(s)
 }
 
-// ---------------- model discovery ----------------
-
-var weak = regexp.MustCompile(`(?i)(embed|guard|vision|-vl|ocr|reward|whisper|tts|audio|image|moderation|rerank|\b[0-9]b\b|\b(0\.5|1|1\.5|2|3|4|7|8)b\b|mini|nano|tiny|lite)`)
-var strong = []string{"gpt-oss-120b", "kimi", "qwen3", "deepseek", "llama-4", "llama-3.3-70b", "glm", "gemini", "mistral-large", "mistral-medium", "nemotron", "grok", "claude", "gpt-5", "gpt-4.1"}
-
-// Models lists the provider's model ids.
-func Models(ctx context.Context, p config.Provider, key string) ([]string, error) {
-	req, _ := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(p.BaseURL, "/")+"/models", nil)
-	if key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
+// KeyOwner names the provider a key belongs to when its prefix is unmistakable.
+func KeyOwner(key string) string {
+	k := strings.TrimSpace(key)
+	switch {
+	case strings.HasPrefix(k, "nvapi-"):
+		return "nvidia"
+	case strings.HasPrefix(k, "gsk_"):
+		return "groq"
+	case strings.HasPrefix(k, "sk-or-"):
+		return "openrouter"
+	case strings.HasPrefix(k, "AIza"):
+		return "gemini"
+	case strings.HasPrefix(k, "sk-ant-"):
+		return "anthropic"
+	case strings.HasPrefix(k, "xai-"):
+		return "xai"
+	case strings.HasPrefix(k, "csk-"):
+		return "cerebras"
 	}
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	if resp.StatusCode >= 300 {
-		return nil, &HTTPError{resp.StatusCode, cleanErr(string(raw))}
-	}
-	var r struct {
-		Data []struct {
-			ID                  string   `json:"id"`
-			SupportedParameters []string `json:"supported_parameters"`
-		} `json:"data"`
-		Models []struct {
-			Name string `json:"name"`
-		} `json:"models"`
-	}
-	_ = json.Unmarshal(raw, &r)
-	var ids []string
-	for _, d := range r.Data {
-		if p.ID == "openrouter" {
-			if !strings.HasSuffix(d.ID, ":free") {
-				continue
-			}
-			ok := false
-			for _, s := range d.SupportedParameters {
-				if s == "tools" {
-					ok = true
-				}
-			}
-			if !ok {
-				continue
-			}
-		}
-		ids = append(ids, strings.TrimPrefix(d.ID, "models/"))
-	}
-	return ids, nil
-}
-
-// PickModel chooses the strongest tool-capable model from a list.
-func PickModel(ids []string) string {
-	best, bestScore := "", -1
-	for _, id := range ids {
-		if weak.MatchString(id) {
-			continue
-		}
-		score := 0
-		for i, s := range strong {
-			if strings.Contains(strings.ToLower(id), s) {
-				score = len(strong) - i
-				break
-			}
-		}
-		if score > bestScore {
-			best, bestScore = id, score
-		}
-	}
-	if best == "" && len(ids) > 0 {
-		best = ids[0]
-	}
-	return best
-}
-
-// ---------------- router ----------------
-
-type health struct {
-	coolUntil time.Time
-	lastErr   string
-}
-
-var (
-	hmu    sync.Mutex
-	health_ = map[string]*health{}
-)
-
-// Complete tries each chain entry in order, skipping ones cooling down after errors.
-func Complete(ctx context.Context, cfg *config.Config, msgs []Message, tools []Tool, onText func(string)) (*Result, error) {
-	var failures []string
-	tried := 0
-	chain := cfg.RouteChain()
-	for _, e := range chain {
-		p, ok := config.ProviderByID(e.Provider)
-		if !ok {
-			continue
-		}
-		key := cfg.Key(p.ID)
-		if key == "" && !config.Keyless(p.ID) {
-			continue
-		}
-		k := p.ID + "|" + e.Model
-		hmu.Lock()
-		h := health_[k]
-		if h == nil {
-			h = &health{}
-			health_[k] = h
-		}
-		cooling := time.Now().Before(h.coolUntil)
-		hmu.Unlock()
-		if cooling && tried < len(chain)-1 {
-			continue
-		}
-		tried++
-		model := e.Model
-		if model == "" {
-			model = p.DefaultModel
-		}
-		started := false
-		wrapped := func(s string) {
-			started = true
-			if onText != nil {
-				onText(s)
-			}
-		}
-		r, err := Chat(ctx, p, key, model, msgs, tools, wrapped)
-		if err == nil {
-			r.Route = p.Name + " · " + model
-			hmu.Lock()
-			h.coolUntil = time.Time{}
-			h.lastErr = ""
-			hmu.Unlock()
-			return r, nil
-		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		if started {
-			// Half an answer already printed: don't silently restart on another model.
-			return nil, fmt.Errorf("%s stopped mid-answer: %v", p.Name, err)
-		}
-		cool := 60 * time.Second
-		var he *HTTPError
-		if errors.As(err, &he) {
-			switch {
-			case he.Code == 401 || he.Code == 403:
-				cool = 30 * time.Minute
-			case he.Code == 429:
-				cool = 90 * time.Second
-			case he.Code == 400 && strings.Contains(strings.ToLower(he.Body), "tool"):
-				cool = 10 * time.Minute
-			}
-		}
-		hmu.Lock()
-		h.coolUntil = time.Now().Add(cool)
-		h.lastErr = err.Error()
-		hmu.Unlock()
-		msg := err.Error()
-		if len(msg) > 140 {
-			msg = msg[:140]
-		}
-		failures = append(failures, p.Name+": "+msg)
-	}
-	if len(failures) == 0 {
-		return nil, errors.New("no model is set up yet: run `blaze setup` (a free Gemini or Groq key takes a minute)")
-	}
-	return nil, errors.New("no model could answer:\n  • " + strings.Join(failures, "\n  • ") + "\nRun `blaze doctor` to see which key is the problem.")
+	return ""
 }
