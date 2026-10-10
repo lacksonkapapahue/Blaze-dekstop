@@ -1184,7 +1184,7 @@ function providerRows(redraw, opts = {}) {
 function providerRow(p, redraw) {
   const r = h("div", "r");
   const status = p.ready ? `<span class="pill acc">${p.keys > 1 ? p.keys + " keys" : p.keyless ? "Local" : "Ready"}</span>` : "";
-  r.innerHTML = `<span class="dot ${p.ready ? "" : "off"}"></span><div class="main"><div class="t">${esc(p.short)} ${p.free ? '<span class="pill">Free tier</span>' : ""} ${status}</div><div class="s">${p.ready ? `<span class="mono">${esc(p.model || "no model chosen")}</span>` : p.keyless ? "Runs on this computer, no key" : p.id === "custom" ? "Any OpenAI-compatible service" : "Key starts " + esc(p.key_hint)}</div></div>`;
+  r.innerHTML = `<span class="dot ${p.ready ? "" : "off"}"></span><div class="main"><div class="t">${esc(p.short)} ${p.free && !p.keyless ? '<span class="pill">Free tier</span>' : ""} ${status}</div><div class="s">${p.ready ? `<span class="mono">${esc(p.model || "no model chosen")}</span>` : p.keyless ? "Runs on this computer, no key" : p.id === "custom" ? "Any OpenAI-compatible service" : "Key starts " + esc(p.key_hint)}</div></div>`;
   const acts = h("div", "acts");
   const tgl = h("button", p.ready ? "btn ghost sm" : "btn line sm", p.ready ? `Manage${icon("down", "i sm")}` : `${icon("plus", "i sm")}Add`);
   acts.append(tgl); r.append(acts);
