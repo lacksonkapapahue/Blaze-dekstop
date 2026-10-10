@@ -302,7 +302,7 @@ function show(v, arg) {
   if (v === "design") $("#designDot").className = "";
   const el = $("#view"); pane.remove(); el.innerHTML = ""; closeMenu(); closePop();
   // Views from other files (accounts.js, onboard.js…) register in window.VIEWS.
-  (window.VIEWS && window.VIEWS[v] || { work: workView, design: designView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, project: projectView, newproject: newProjectView })[v](el, arg);
+  ((window.VIEWS && window.VIEWS[v]) || ({ work: workView, design: designView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, project: projectView, newproject: newProjectView })[v])(el, arg);
   $$("#chats .chat").forEach(b => b.classList.remove("on"));
 }
 
@@ -1504,7 +1504,7 @@ function settingsView(el, focus) {
     const [, name] = SECTIONS.find(s => s[0] === settingsSection) || SECTIONS[0];
     const head = h("div", "phead", `<div class="ph"><div class="label acc">Settings</div><h1>${esc(name)}</h1></div>`);
     col.append(head);
-    await (window.SETTINGS_FNS && window.SETTINGS_FNS[settingsSection] || { models: setModels, providers: setProviders, usage: setUsage, behaviour: setBehaviour, appearance: setAppearance, memory: setMemory, skills: setSkills, computer: setComputer, updates: setUpdates })[settingsSection](col, drawSection);
+    await ((window.SETTINGS_FNS && window.SETTINGS_FNS[settingsSection]) || ({ models: setModels, providers: setProviders, usage: setUsage, behaviour: setBehaviour, appearance: setAppearance, memory: setMemory, skills: setSkills, computer: setComputer, updates: setUpdates })[settingsSection])(col, drawSection);
   };
   drawSection();
 }
