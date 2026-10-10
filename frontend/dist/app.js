@@ -128,7 +128,7 @@ function show(v, arg) {
   $("#tabs").classList.toggle("dim", v !== "work" && v !== "design");
   if (v === "design") $("#designDot").className = "";
   const el = $("#view"); pane.remove(); el.innerHTML = ""; closeMenu();
-  ({ work: workView, design: designView, setup: setupView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, project: projectView, newproject: newProjectView })[v](el, arg);
+  ({ work: workView, design: designView, setup: setupView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, phone: phoneView, project: projectView, newproject: newProjectView })[v](el, arg);
   document.querySelectorAll("#chats .chat").forEach(b => b.classList.remove("on"));
 }
 
@@ -282,6 +282,7 @@ function describe(name, args) {
     case "git": return "git " + v("args");
     case "web_search": return "search  " + v("query");
     case "fetch_page": return "read  " + v("url");
+    case "phone_ask": return "phone  " + v("task");
     case "run_code": return "run " + v("language");
     case "file_read": case "file_write": case "file_edit": case "file_delete": case "file_list": case "file_search":
       return name.replace("file_", "") + "  " + (v("path") || v("pattern") || ".");
@@ -961,6 +962,56 @@ function scheduleView(el) {
   };
   draw();
 }
+
+// ---------- phone pairing ----------
+let pairTimer = null;
+function phoneView(el) {
+  const page = h("div", "page"); const col = h("div", "col"); page.append(col); el.append(page);
+  let pairing = null;
+  const draw = async () => {
+    if (view !== "phone") { clearInterval(pairTimer); pairTimer = null; return; }
+    const st = await API().PairStatus();
+    col.innerHTML = "";
+    col.append(h("div", "label acc", "Phone"), h("h1", "", "Pair your phone"),
+      h("p", "lead", "Link Blaze on Android to this PC. From the phone you can ask this PC to do things, and Blaze here can text, call and check your phone. Works on the same Wi-Fi, or anywhere when both are on Tailscale."));
+    if (st.error) col.append(h("p", "s", "⚠ " + esc(st.error)));
+
+    const g1 = h("div", "group"); g1.append(h("span", "label", "01 · Paired phones"));
+    const rows = h("div", "rows");
+    (st.devices || []).forEach((d, i) => {
+      const r = h("div", "r", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${esc(d.name)} <span class="pill ${d.connected ? "acc" : ""}">${d.connected ? "Connected" : "Not connected"}</span></div><div class="s">Paired ${esc(d.paired_at)}</div></div>`);
+      const rm = h("button", "btn ghost", "Unpair");
+      rm.onclick = async () => { await API().Unpair(d.id); draw(); };
+      r.append(rm); rows.append(r);
+    });
+    if (!(st.devices || []).length) rows.append(h("div", "empty", "No phone paired yet."));
+    g1.append(rows);
+
+    const g2 = h("div", "group"); g2.append(h("span", "label", "02 · Pair a phone"));
+    if (pairing && !pairing.error && pairing.expires * 1000 > Date.now()) {
+      const left = Math.max(0, Math.round((pairing.expires * 1000 - Date.now()) / 1000));
+      g2.append(h("p", "s", "On your phone: Blaze › Settings › Blaze Desktop › Scan QR code."));
+      const img = h("img"); img.src = pairing.qr; img.alt = "Pairing QR code"; img.style.cssText = "width:240px;height:240px;margin:14px 0;background:#fff;padding:8px;border:1px solid var(--hair);image-rendering:pixelated";
+      g2.append(img, h("p", "s mono", `Code expires in ${Math.floor(left / 60)}:${pad(left % 60)} · ${esc((pairing.addresses || []).join(", "))} · port ${st.port}`));
+      const row = h("div", "keyrow"); row.style.marginTop = "10px";
+      const cp = h("button", "btn line", "Copy pairing link");
+      cp.onclick = async () => { await navigator.clipboard.writeText(pairing.link); cp.textContent = "Copied"; setTimeout(() => cp.textContent = "Copy pairing link", 1200); };
+      const cancel = h("button", "btn ghost", "Cancel");
+      cancel.onclick = async () => { await API().StopPairing(); pairing = null; draw(); };
+      row.append(cp, cancel); g2.append(row);
+    } else {
+      if (pairing && pairing.error) g2.append(h("p", "s", "⚠ " + esc(pairing.error)));
+      g2.append(h("p", "s", "Shows a QR code for 5 minutes. Your phone and this PC must be on the same Wi-Fi, or both signed in to Tailscale."));
+      const go = h("button", "btn accent", "Show pairing QR code"); go.style.marginTop = "12px";
+      go.onclick = async () => { pairing = await API().StartPairing(); draw(); };
+      g2.append(go);
+    }
+    col.append(g1, g2);
+  };
+  clearInterval(pairTimer); pairTimer = setInterval(draw, 1000 * 3);
+  draw();
+}
+on("paired", name => { const d = $("#phoneDot"); if (d) d.textContent = "✓"; if (view === "phone") show("phone"); });
 
 window.addEventListener("load", () => {
   if (window.go && window.runtime) boot();

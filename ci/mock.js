@@ -25,6 +25,7 @@
     Models: async () => [{ provider: "gemini", name: "Google Gemini", model: "gemini-3.8-flash" }, { provider: "groq", name: "Groq", model: "openai/gpt-oss-120b" }, { provider: "pollinations", name: "Pollinations (keyless)", model: "openai-fast" }],
     Files: async () => ["assets/theme.css", "design/option-a.html", "design/option-b.html", "layout/theme.liquid", "package.json", "sections/hero.liquid"],
     Design: async () => ({ base: window.__sample, target: { kind: "file", path: "index.html" }, files: ["index.html", "design/option-a.html"], versions: [{ n: 1, summary: "First pass at the landing page", when: "21:02" }, { n: 2, summary: "Warmer palette and rounded cards", when: "21:10" }, { n: 3, summary: "Bigger hero headline", when: "21:18" }] }),
+    PairStatus: async () => ({ devices: [{ id: "d1", name: "Galaxy A12", paired_at: "10 Oct 2026", connected: true }], addresses: ["192.168.1.24", "100.88.12.5"], port: 7377, error: "" }),
     Doctor: async () => [{ name: "Internet", ok: true, detail: "Online" }, { name: "Google Gemini", ok: true, detail: "gemini-3.8-flash answered in 0.9s" }, { name: "Groq", ok: false, detail: "HTTP 429: rate limited" }, { name: "Shell", ok: true, detail: "bash · /usr/bin/bash" }],
   };
   window.go = { main: { App: new Proxy(A, { get: (t, k) => t[k] || (async () => "") }) } };

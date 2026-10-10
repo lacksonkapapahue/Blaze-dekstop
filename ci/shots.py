@@ -28,7 +28,7 @@ with sync_playwright() as p:
         pg.evaluate("""selectOn=true; drawStage(); window.postMessage({blaze:'selected', items:[{selector:'section.hero > h1', tag:'h1', text:'Warm light for every corner of home.', html:'<h1>Warm light</h1>', styles:{color:'rgb(27,27,27)', background:'rgba(0,0,0,0)', fontSize:'54px', padding:'0px', borderRadius:'0px'}}]}, '*')"""); pg.wait_for_timeout(500)
         pg.evaluate("document.querySelector('.sbacts [data-a=Restyle]').click()"); pg.wait_for_timeout(200)
         pg.screenshot(path=str(out / f"design-select-{theme}.png"))
-        for v in ["settings", "doctor", "setup", "schedule"]:
+        for v in ["settings", "doctor", "setup", "schedule", "phone"]:
             pg.evaluate(f"show('{v}')"); pg.wait_for_timeout(400)
             pg.screenshot(path=str(out / f"{v}-{theme}.png"))
         if errs:

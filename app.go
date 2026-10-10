@@ -50,6 +50,7 @@ type App struct {
 	convID  string
 	history []llm.Message
 	pv      *preview
+	pair    *pairHub
 }
 
 func NewApp() *App { return &App{pending: map[string]chan bool{}} }
@@ -74,12 +75,16 @@ func (a *App) startup(ctx context.Context) {
 	a.pv = &preview{}
 	a.pv.start()
 	a.pv.load(a.prefs.Folder)
+	a.pair = newPairHub(a)
 	a.newEnv()
 }
 
 func (a *App) shutdown(ctx context.Context) {
 	if a.env != nil {
 		a.env.Jobs.StopAll()
+	}
+	if a.pair != nil {
+		a.pair.close()
 	}
 }
 
@@ -104,6 +109,9 @@ func (a *App) newEnv() {
 		Jobs:  jobs,
 	}
 	a.env.Confirm = a.confirm
+	if a.pair != nil {
+		a.env.Phone = a.pair.askPhone
+	}
 	a.env.Status = func(s string) { wr.EventsEmit(a.ctx, "status", s) }
 }
 
@@ -684,6 +692,11 @@ DESIGN TAB
 	b.WriteString("\nProject folder: " + a.env.Root + "\nCurrent folder: " + a.env.Shell.Cwd() + "\n")
 	if _, err := os.Stat(filepath.Join(a.env.Root, ".git")); err == nil {
 		b.WriteString("The project folder is a git repository.\n")
+	}
+	if a.pair != nil {
+		if names := a.pair.deviceNames(); names != "" {
+			b.WriteString("\nPAIRED PHONE: " + names + " (Blaze for Android). For anything that lives on the phone (texts, calls, contacts, notifications, alarms, its location), use phone_ask with the request in plain words.\n")
+		}
 	}
 	if m := tools.Memory(); m != "" {
 		b.WriteString("\nWHAT YOU KNOW ABOUT THE USER\n" + m + "\n")

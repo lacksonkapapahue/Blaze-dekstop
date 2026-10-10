@@ -13,6 +13,14 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Debian/Ubuntu**: `sudo apt install ./blaze-desktop_*_amd64.deb`.
 - **Other Linux**: unpack the tar.gz and run `blaze-desktop` (needs GTK 3 + WebKitGTK 4.1).
 
+## What's in v0.3.0
+1. **Phone pairing**: Phone › Show pairing QR code, then scan it in Blaze for Android › Settings › Blaze Desktop.
+   - From the phone, `ask_pc` runs a Blaze turn on this PC (same tools and memory); approvals pop up on the phone.
+   - On the PC, `phone_ask` asks the phone to text, call, check notifications, set alarms and so on.
+   - Direct and encrypted: HTTPS on port 7377 with a self-signed certificate the phone pins from the QR code; a one-time
+     code (5 minutes) is traded for a per-phone token. Same Wi-Fi, or anywhere over Tailscale. No relay server.
+   - Paired phones live in `~/.blaze/pair/` (shared with the CLI). Unpair any time from the Phone view.
+
 ## What's in v0.2.0
 1. **Command menu**: type `/` (or press `+`) for a floating list above the chat box: new, model, project, folder, design, retry, stop, skills, theme and more. `@` attaches project files.
 2. **Projects**: a folder with its own chats and standing instructions; project page with git status and recent files.

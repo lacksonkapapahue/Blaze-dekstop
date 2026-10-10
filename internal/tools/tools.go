@@ -25,6 +25,8 @@ type Env struct {
 	Status   func(line string) // one-line progress ("Running: npm test")
 	Shell    *Shell
 	Jobs     *Jobs
+	// Phone sends a request to the paired phone and returns its answer (nil when no phone is paired).
+	Phone func(task string) string
 }
 
 type handler func(e *Env, a args) string
