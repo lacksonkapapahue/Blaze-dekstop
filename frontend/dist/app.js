@@ -61,8 +61,10 @@ async function boot() {
   setModel(S.model, S.selection);
   await refreshSide();
   hero();
-  show(S.setup_done ? "work" : "setup");
+  show("work");
+  if (window.Onboard && Onboard.shouldOpen(S)) show("setup"); // first run, or still no model
   setInterval(refreshJobCount, 4000);
+  if (window.refreshConnCount) refreshConnCount(S.connected);
   if (!S.prefs.no_update_check) setTimeout(() => checkUpdate(true), 3000);
 }
 
@@ -293,12 +295,14 @@ function show(v, arg) {
   if (v === "chat") v = "work";
   view = v;
   if (v === "work" || v === "design") { tab = v; API().SetTab(v); }
-  $$(".nav").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+  const navV = v === "connector" || v === "mcp" || v === "connectors" ? "accounts" : v;
+  $$(".nav").forEach(b => b.classList.toggle("on", b.dataset.view === navV));
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === v));
   $("#tabs").classList.toggle("dim", v !== "work" && v !== "design");
   if (v === "design") $("#designDot").className = "";
   const el = $("#view"); pane.remove(); el.innerHTML = ""; closeMenu(); closePop();
-  ({ work: workView, design: designView, setup: setupView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, project: projectView, newproject: newProjectView })[v](el, arg);
+  // Views from other files (accounts.js, onboard.js…) register in window.VIEWS.
+  (window.VIEWS && window.VIEWS[v] || { work: workView, design: designView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, project: projectView, newproject: newProjectView })[v](el, arg);
   $$("#chats .chat").forEach(b => b.classList.remove("on"));
 }
 
@@ -775,11 +779,15 @@ on("route", r => { if (r && r.route) setModel(r.route); });
 on("model", m => { if (m) setModel(m.label, m.selection); });
 on("confirm", c => {
   thinking(false);
+  const btns = c.always
+    ? `<button class="btn accent sm yes">Allow once</button><button class="btn line sm al">Always allow</button><button class="btn ghost sm no">Don't allow</button>`
+    : `<button class="btn accent sm yes">Yes, do it</button><button class="btn line sm no">No</button>`;
   const card = h("div", "card confirm", `<div class="title"><span class="label acc">${esc(c.title)}</span></div><div class="detail">${esc(c.detail)}</div>
-    <div class="actions"><button class="btn accent sm yes">Yes, do it</button><button class="btn line sm no">No</button></div>`);
-  const done = yes => { API().Answer(c.id, yes); card.classList.add("done"); card.querySelector(".actions").innerHTML = `<span class="label">${yes ? "Approved" : "Declined"}</span>`; thinking(true); };
-  card.querySelector(".yes").onclick = () => done(true);
-  card.querySelector(".no").onclick = () => done(false);
+    <div class="actions">${btns}</div>`);
+  const done = choice => { API().AnswerChoice(c.id, choice); card.classList.add("done"); card.querySelector(".actions").innerHTML = `<span class="label">${choice === "always" ? "Always allowed" : choice === "once" ? "Approved" : "Declined"}</span>`; thinking(true); };
+  card.querySelector(".yes").onclick = () => done("once");
+  card.querySelector(".no").onclick = () => done("no");
+  if (c.always) card.querySelector(".al").onclick = () => done("always");
   (current ? current.el : $("#log .col", pane)).append(card);
   scrollDown(true);
 });
@@ -1340,54 +1348,8 @@ function rgbHex(c) {
   return "#" + m.slice(0, 3).map(x => (+x).toString(16).padStart(2, "0")).join("");
 }
 
-// ---------- setup wizard ----------
-let wizStep = 0;
-function setupView(el) {
-  const pg = h("div", "page"); const col = h("div", "col"); pg.append(col); el.append(pg);
-  const titles = ["Your computer", "Tools", "AI model"];
-  const draw = () => {
-    col.innerHTML = `<div class="steps-wiz">${titles.map((t, i) => `<span class="label ${i === wizStep ? "on" : i < wizStep ? "done" : ""}">${pad(i + 1)} · ${t}</span>`).join("")}</div>`;
-    [pcStep, toolsStep, modelsStep][wizStep](col);
-  };
-  function nav(col, last) {
-    const row = h("div", "keyrow"); row.style.marginTop = "24px";
-    if (wizStep > 0) { const b = h("button", "btn line", "Back"); b.onclick = () => { wizStep--; draw(); }; row.append(b); }
-    const ready = (S.providers || []).some(p => p.ready && p.id !== "pollinations");
-    const n = h("button", "btn accent", last ? (ready ? "Start using Blaze" : "Skip for now") : "Continue");
-    n.onclick = async () => { if (last) { await API().FinishSetup(); await refreshState(); hero(); show("work"); } else { wizStep++; draw(); } };
-    row.append(n);
-    if (last && !ready) row.append(h("span", "sub small", "Blaze can't act until it has a model that can use tools."));
-    col.append(row);
-  }
-  function pcStep(col) {
-    col.append(h("h1", "", "Hi. This is your computer."), h("p", "lead", "Blaze detected all of this itself, so it never has to ask what you're running."));
-    const t = pcTable(S.info); t.style.marginTop = "18px"; col.append(t); nav(col);
-  }
-  function toolsStep(col) {
-    col.append(h("h1", "", "Developer tools"), h("p", "lead", "Blaze works best with these. Install the missing ones with your system's package manager, or skip."));
-    const rows = h("div", "rows"); rows.style.marginTop = "18px";
-    ["git", "python", "node"].forEach((t, i) => {
-      const have = S.info.tools[t] || (t === "python" && S.info.tools.python3);
-      const cmd = S.installs[t];
-      const r = h("div", "r", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${t}</div><div class="s mono">${have ? esc(have) : cmd ? esc(cmd) : "Not installed · no package manager found"}</div></div>`);
-      if (have) r.append(h("span", "pill acc", "Installed"));
-      else if (cmd) {
-        const b = h("button", "btn line sm", "Install");
-        b.onclick = async () => { b.disabled = true; b.textContent = "Installing…"; const out = await API().InstallTool(t); S = await API().State(); b.textContent = /^exit 0/.test(out) ? "Installed" : "Failed"; r.querySelector(".s").textContent = out.split("\n").slice(-1)[0] || out.split("\n")[0]; };
-        r.append(b);
-      } else r.append(h("span", "pill", "Missing"));
-      rows.append(r);
-    });
-    col.append(rows); nav(col);
-  }
-  function modelsStep(col) {
-    col.append(h("h1", "", "Give Blaze a model"), h("p", "lead", "Blaze needs one AI model that can use tools. These have free tiers; add one or more and Auto switches between them when one is busy. Keys go in your system keychain."));
-    const rows = providerRows(async () => { await refreshState(); draw(); }, { setup: true });
-    rows.style.marginTop = "18px";
-    col.append(rows); nav(col, true);
-  }
-  draw();
-}
+// ---------- setup ----------
+// The first-run flow is onboard.js (window.VIEWS.setup).
 
 function pcTable(info) {
   const kv = h("div", "kv");
@@ -1542,7 +1504,7 @@ function settingsView(el, focus) {
     const [, name] = SECTIONS.find(s => s[0] === settingsSection) || SECTIONS[0];
     const head = h("div", "phead", `<div class="ph"><div class="label acc">Settings</div><h1>${esc(name)}</h1></div>`);
     col.append(head);
-    await ({ models: setModels, providers: setProviders, usage: setUsage, behaviour: setBehaviour, appearance: setAppearance, memory: setMemory, skills: setSkills, computer: setComputer, updates: setUpdates })[settingsSection](col, drawSection);
+    await (window.SETTINGS_FNS && window.SETTINGS_FNS[settingsSection] || { models: setModels, providers: setProviders, usage: setUsage, behaviour: setBehaviour, appearance: setAppearance, memory: setMemory, skills: setSkills, computer: setComputer, updates: setUpdates })[settingsSection](col, drawSection);
   };
   drawSection();
 }

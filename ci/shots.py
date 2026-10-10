@@ -135,13 +135,14 @@ with sync_playwright() as p:
         pg.wait_for_timeout(600)
         pg.screenshot(path=str(out / f"card-orb-{theme}.png"))
         pg.evaluate("fire('orb', false)"); pg.set_viewport_size({"width": 1280, "height": 820}); pg.wait_for_timeout(300)
-        for v in ["settings", "doctor", "setup", "schedule", "jobs"]:
+        for v in ["settings", "doctor", "schedule", "jobs"]:
             pg.evaluate(f"show('{v}')"); pg.wait_for_timeout(400)
             pg.screenshot(path=str(out / f"{v}-{theme}.png"))
-        for s in ["providers", "usage", "behaviour"]:
+        for s in ["providers", "usage", "behaviour", "accounts"]:
             pg.evaluate(f"show('settings','{s}')"); pg.wait_for_timeout(500)
             pg.screenshot(path=str(out / f"settings-{s}-{theme}.png"))
         # v0.4.2: Settings › Behaviour › Personality (Default, then Custom with the textarea).
+        pg.evaluate("show('settings','behaviour')"); pg.wait_for_timeout(500)
         pg.evaluate("[...document.querySelectorAll('.group')].find(g => /Personality/.test(g.textContent)).scrollIntoView({block: 'start'})"); pg.wait_for_timeout(200)
         pg.screenshot(path=str(out / f"personality-{theme}.png"))
         pg.evaluate("[...document.querySelectorAll('.seg button')].find(b => b.textContent === 'Custom').click()"); pg.wait_for_timeout(500)
@@ -149,6 +150,31 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"personality-custom-{theme}.png"))
         if not pg.evaluate("!!document.querySelector('textarea.pcustom')"):
             errs.append("custom personality textarea missing")
+        # v0.4.x: Accounts (tabs All / Connections / Logins / API Keys) with real brand logos.
+        pg.set_viewport_size({"width": 1280, "height": 1180})
+        for t in ["all", "connections", "logins", "keys"]:
+            pg.evaluate(f"show('accounts', '{t}')"); pg.wait_for_timeout(700)
+            pg.screenshot(path=str(out / f"accounts-{t}-{theme}.png"))
+        broken = pg.evaluate("[...document.querySelectorAll('.blogo img')].filter(i => !i.complete || !i.naturalWidth).map(i => i.src)")
+        if broken:
+            errs.append("brand logos failed to load: " + ", ".join(broken))
+        pg.evaluate("document.querySelector('.aitem .arow').click()"); pg.wait_for_timeout(700)
+        pg.screenshot(path=str(out / f"accounts-keys-open-{theme}.png"))
+        for v, arg in [("connector", "google"), ("connector", "spotify"), ("mcp", "linear")]:
+            pg.evaluate(f"show('{v}', '{arg}')"); pg.wait_for_timeout(500)
+            pg.screenshot(path=str(out / f"{v}-{arg}-{theme}.png"))
+        pg.set_viewport_size({"width": 1280, "height": 820})
+        pg.evaluate("""show('work'); loadConv(window.__conv);
+          fire('connector_reauth', {id: 'github', name: 'GitHub'});
+          fire('confirm', {id: 'k1', title: 'Send this email from Gmail?', detail: 'To: gloria@example.com\\nSubject: Fees plan', always: true});
+          fire('connector_suggest', {id: 'slack', name: 'Slack', action: 'connect', reason: 'Blaze needs Slack to read #general for this.'});
+          fire('toast', {text: 'Google is now connected', kind: 'ok'});"""); pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"connector-cards-{theme}.png"))
+        # v0.4.x: first-run onboarding, every step.
+        for i, name in enumerate(["welcome", "model", "apps", "perms", "tour", "done"]):
+            pg.evaluate(f"show('setup', {i})"); pg.wait_for_timeout(900)
+            pg.screenshot(path=str(out / f"onboard-{i + 1:02d}-{name}-{theme}.png"))
+        pg.evaluate("Onboard.close(); show('work')"); pg.wait_for_timeout(200)
         if errs:
             print("JS errors:", errs); sys.exit(1)
     # Windows runs frameless with its own title-bar buttons.

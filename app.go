@@ -21,6 +21,7 @@ import (
 	wr "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/lacksonkapapahue/blaze-desktop/internal/config"
+	"github.com/lacksonkapapahue/blaze-desktop/internal/connect"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/llm"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/sched"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/sysinfo"
@@ -49,6 +50,9 @@ type Prefs struct {
 
 	Personality       string `json:"personality"`        // "" / default, plain (no block), custom
 	PersonalityCustom string `json:"personality_custom"` // the user's own personality text (custom)
+
+	OnboardStep    int  `json:"onboard_step"`    // first-run onboarding: the step to resume at
+	OnboardSkipped bool `json:"onboard_skipped"` // onboarding was skipped or finished; don't open it by itself
 }
 
 type App struct {
@@ -61,7 +65,8 @@ type App struct {
 	mu      sync.Mutex
 	cancel  context.CancelFunc
 	busy    bool
-	pending map[string]chan bool
+	pending map[string]chan int // confirm cards: 0 no, 1 yes, 2 always
+	conn    *connect.Manager
 	convID  string
 	history []llm.Message
 	pv      *preview
@@ -73,7 +78,7 @@ type App struct {
 	flags    startFlags // command-line flags (--background, --orb, --relaunch)
 }
 
-func NewApp() *App { return &App{pending: map[string]chan bool{}, ready: make(chan struct{})} }
+func NewApp() *App { return &App{pending: map[string]chan int{}, ready: make(chan struct{})} }
 
 // waitReady blocks until startup is done. Wails runs OnStartup in a goroutine while
 // the page loads, so the UI's first calls can arrive before cfg/env exist.
@@ -107,12 +112,16 @@ func (a *App) startup(ctx context.Context) {
 	a.pv.start()
 	a.pv.load(a.prefs.Folder)
 	a.newEnv()
+	a.startConnectors()
 	a.startShell()
 }
 
 func (a *App) shutdown(ctx context.Context) {
 	if a.env != nil {
 		a.env.Jobs.StopAll()
+	}
+	if a.conn != nil {
+		a.conn.Close()
 	}
 	stopTray()
 }
@@ -142,29 +151,14 @@ func (a *App) newEnv() {
 }
 
 // confirm shows the in-app confirm card and blocks the agent until the user answers.
-func (a *App) confirm(title, detail string) bool {
-	id := newID()
-	ch := make(chan bool, 1)
-	a.mu.Lock()
-	a.pending[id] = ch
-	a.mu.Unlock()
-	wr.EventsEmit(a.ctx, "confirm", map[string]string{"id": id, "title": title, "detail": detail})
-	defer func() { a.mu.Lock(); delete(a.pending, id); a.mu.Unlock() }()
-	select {
-	case v := <-ch:
-		return v
-	case <-a.ctx.Done():
-		return false
-	}
-}
+func (a *App) confirm(title, detail string) bool { return a.ask(title, detail, false) > 0 }
 
 // Answer is called by a confirm card's Yes / No.
 func (a *App) Answer(id string, yes bool) {
-	a.mu.Lock()
-	ch := a.pending[id]
-	a.mu.Unlock()
-	if ch != nil {
-		ch <- yes
+	if yes {
+		a.AnswerChoice(id, "once")
+	} else {
+		a.AnswerChoice(id, "no")
 	}
 }
 
@@ -195,6 +189,7 @@ type State struct {
 	Selection Selection         `json:"selection"`
 	Routing   RoutingView       `json:"routing"`
 	Desktop   DesktopView       `json:"desktop"`
+	Connected int               `json:"connected"` // connectors + MCP servers ready
 }
 
 func (a *App) State() State {
@@ -210,7 +205,7 @@ func (a *App) State() State {
 	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.RouteChain(), Prefs: prefs,
 		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: a.cfg.AllowKeyless(), Missing: a.info.Missing(),
 		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName(),
-		Selection: a.selection(), Routing: a.routing(), Providers: a.providerViews(), Desktop: a.desktopView()}
+		Selection: a.selection(), Routing: a.routing(), Providers: a.providerViews(), Desktop: a.desktopView(), Connected: a.conn.ConnectedCount()}
 	for _, m := range s.Missing {
 		s.Installs[m] = a.info.InstallCommand(m)
 	}
@@ -349,6 +344,7 @@ func (a *App) OpenConversation(id string) Conv {
 	a.convID = c.ID
 	a.history = c.Messages
 	a.mu.Unlock()
+	a.noteHistory(c.Messages)
 	if c.Project != a.prefs.Project {
 		a.prefs.Project = c.Project
 		a.savePrefs()
@@ -364,6 +360,7 @@ func (a *App) NewConversation() {
 	a.convID = ""
 	a.history = nil
 	a.mu.Unlock()
+	a.conn.ResetLoaded()
 }
 
 func (a *App) DeleteConversation(id string) {
@@ -469,7 +466,7 @@ func (a *App) Stop() {
 	a.mu.Unlock()
 	for _, ch := range pend {
 		select {
-		case ch <- false:
+		case ch <- 0:
 		default:
 		}
 	}
@@ -506,8 +503,6 @@ func (a *App) run(ctx context.Context) {
 		a.mu.Unlock()
 		a.maybeRetitle(id, hist) // background, never blocks the turn
 	}()
-	all := tools.All()
-	known := tools.Names()
 	steps := a.cfg.MaxSteps
 	if steps <= 0 {
 		steps = 40
@@ -533,6 +528,10 @@ func (a *App) run(ctx context.Context) {
 			sys += "\nABOUT YOUR LAST REPLY\n" + note + "\n"
 		}
 		msgs := append([]llm.Message{{Role: "system", Content: sys}}, hist...)
+		// Connector tools join only when connected and enabled, and a group's tools
+		// only after the model loads it, so the list stays small.
+		all := append(tools.All(), a.conn.Tools()...)
+		known := append(tools.Names(), a.conn.Known()...)
 		wr.EventsEmit(a.ctx, "thinking", step)
 		r, err := llm.CompleteWith(ctx, a.cfg, msgs, all, llm.Opts{
 			OnText:   func(s string) { wr.EventsEmit(a.ctx, "delta", s) },
@@ -578,7 +577,12 @@ func (a *App) run(ctx context.Context) {
 			}
 			wr.EventsEmit(a.ctx, "tool", map[string]string{"id": tc.ID, "name": tc.Function.Name, "args": tc.Function.Arguments})
 			setTrayStatus("Working · " + friendlyTool(tc.Function.Name, tc.Function.Arguments))
-			res := tools.Run(a.env, tc.Function.Name, tc.Function.Arguments)
+			var res string
+			if a.conn.Handles(tc.Function.Name) {
+				res = a.conn.Run(ctx, tc.Function.Name, tc.Function.Arguments)
+			} else {
+				res = tools.Run(a.env, tc.Function.Name, tc.Function.Arguments)
+			}
 			changed, urls = a.designTouch(tc.Function.Name, tc.Function.Arguments, res, changed, urls)
 			wr.EventsEmit(a.ctx, "tool_done", map[string]string{"id": tc.ID, "result": res})
 			a.mu.Lock()
@@ -724,6 +728,7 @@ DESIGN TAB
 	if m := tools.Memory(); m != "" {
 		b.WriteString("\nWHAT YOU KNOW ABOUT THE USER\n" + m + "\n")
 	}
+	b.WriteString(a.conn.PromptBlock())
 	if sk := tools.Skills(); len(sk) > 0 {
 		b.WriteString("\nSKILLS (load with use_skill first)\n")
 		for _, s := range sk {

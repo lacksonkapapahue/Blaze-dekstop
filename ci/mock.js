@@ -8,6 +8,12 @@
     { id: "cerebras", name: "Cerebras", short: "Cerebras", key_hint: "csk-…", free: true, model: "gpt-oss-120b" },
     { id: "openrouter", name: "OpenRouter", short: "OpenRouter", key_hint: "sk-or-…", free: true },
     { id: "deepseek", name: "DeepSeek", short: "DeepSeek", key_hint: "sk-…", free: false, model: "deepseek-chat" },
+    { id: "mistral", name: "Mistral", short: "Mistral", key_hint: "…", key_page: "https://console.mistral.ai/api-keys", free: true },
+    { id: "nvidia", name: "NVIDIA NIM", short: "NVIDIA NIM", key_hint: "nvapi-…", free: true },
+    { id: "moonshot", name: "Kimi (Moonshot)", short: "Kimi", key_hint: "sk-…", free: false },
+    { id: "openai", name: "ChatGPT (OpenAI)", short: "ChatGPT", key_hint: "sk-…", free: false },
+    { id: "anthropic", name: "Claude (Anthropic)", short: "Claude", key_hint: "sk-ant-…", free: false },
+    { id: "xai", name: "Grok (xAI)", short: "Grok", key_hint: "xai-…", free: false },
     { id: "ollama", name: "Ollama (local)", short: "Ollama", free: true, keyless: true },
     { id: "custom", name: "Custom (OpenAI-compatible)", short: "Custom", key_hint: "Your key" },
     { id: "pollinations", name: "Pollinations (keyless)", short: "Pollinations", free: true, keyless: true, model: "openai-fast" }],
@@ -19,6 +25,30 @@
       hotkey_note: "Press Ctrl+Shift+Space anywhere for quick ask", needs_access: false, wayland: false, frameless: os === "windows", orb: false,
       presets: [{ id: "ctrl+shift+space", label: "Ctrl+Shift+Space" }, { id: "alt+space", label: "Alt+Space" }, { id: "ctrl+alt+space", label: "Ctrl+Alt+Space" }, { id: "ctrl+shift+b", label: "Ctrl+Shift+B" }] }, model: "Auto · Google Gemini · gemini-3.8-flash",
     project: { id: "p1", name: "HomeGlow", folder: "/home/luke/code/homeglow", instructions: "Shopify theme. Use pnpm. Keep it fast on phones." }, yolo: false, persona: "", keyless: true, skills: ["deploy-site: build and push the HomeGlow theme"], memory: "- Uses pnpm, not npm (2026-10-09)" };
+  // Accounts / connectors (PR #6 data, v0.4.x)
+  const T = (name, group, risk, desc, mode, grant) => ({ name, group, risk, desc, mode: mode || (risk === "read" ? "always" : "ask"), default: risk === "read" ? "always" : "ask", needs_grant: !!grant });
+  const gfields = (set) => [{ key: "client_id", label: "Client ID", hint: "…apps.googleusercontent.com", value: set ? "1234-abcd.apps.googleusercontent.com" : "", set }, { key: "client_secret", label: "Client secret", hint: "GOCSPX-…", secret: true, set }];
+  const connView = { loopback: "http://127.0.0.1:43117/callback", scheme: "blaze://connector/oauth_callback", connectors: [
+    { id: "google", name: "Google", blurb: "Gmail, Calendar, Drive and Contacts", auth: "oauth", status: "connected", account: "kapapaluckson75@gmail.com", enabled: true, since: "10 Oct 2026",
+      granted: ["read your email", "send email as you", "see your calendar events", "see and download your Drive files", "see your contacts"], groups: ["gmail", "calendar", "drive", "contacts"],
+      fields: gfields(true), steps: ["Open Google Cloud Console and create a project (any name).", "APIs & Services › Library: enable Gmail API, Google Calendar API, Google Drive API and People API.", "OAuth consent screen: External, then add your own Google address as a test user.", "Credentials › Create credentials › OAuth client ID › Application type: Desktop app.", "Paste the client ID and client secret here, then Connect."],
+      console: "https://console.cloud.google.com/apis/credentials", console_name: "Google Cloud Console", redirect_uri: "http://127.0.0.1:43117/callback", custom_scheme: false,
+      tools: [T("gmail_search", "gmail", "read", "Search the user's Gmail with Gmail search syntax."), T("gmail_read", "gmail", "read", "Read one Gmail message by id."), T("gmail_draft", "gmail", "action", "Save an email as a draft in Gmail (not sent).", "ask", true), T("gmail_send", "gmail", "write", "Send an email from the user's Gmail. The user approves it first."),
+        T("gcal_events", "calendar", "read", "List events on the primary Google Calendar."), T("gcal_create", "calendar", "write", "Create an event on the primary Google Calendar.", "always", true), T("drive_search", "drive", "read", "Search Google Drive by name or contents."), T("drive_read", "drive", "read", "Read a Drive file's text by id."), T("gcontacts_search", "contacts", "read", "Search Google Contacts.")] },
+    { id: "github", name: "GitHub", blurb: "Repos, issues, pull requests and notifications", auth: "device", status: "expired", account: "@lacksonkapapahue", enabled: true, since: "2 Oct 2026", groups: ["github"],
+      fields: [{ key: "client_id", label: "Client ID", hint: "Ov23li…", value: "Ov23liAbCdEf", set: true }], steps: ["github.com › Settings › Developer settings › OAuth Apps › New OAuth App.", "Tick Enable Device Flow and save.", "Paste the Client ID here, then Connect and type the code Blaze shows."], console: "https://github.com/settings/developers", console_name: "GitHub Developer settings",
+      tools: [T("github_my_repos", "github", "read", "List the user's own repositories."), T("github_issues", "github", "read", "List issues in a repository."), T("github_read", "github", "read", "Read an issue or pull request."), T("github_create_issue", "github", "write", "Open an issue. The user approves it first."), T("github_comment", "github", "write", "Comment on an issue or PR.")] },
+    { id: "spotify", name: "Spotify", blurb: "Now playing, play, pause, skip and search", auth: "oauth", status: "needs_setup", enabled: true, groups: ["spotify"], custom_scheme: true, redirect: "", redirect_uri: "http://127.0.0.1:43117/callback",
+      fields: [{ key: "client_id", label: "Client ID", hint: "32 hex characters", value: "", set: false }], steps: ["developer.spotify.com › Dashboard › Create app. Tick Web API.", "Redirect URIs: add http://127.0.0.1:43117/callback.", "Save, then paste the Client ID here and Connect."], console: "https://developer.spotify.com/dashboard", console_name: "Spotify Developer Dashboard",
+      tools: [T("spotify_now_playing", "spotify", "read", "What's playing right now."), T("spotify_play", "spotify", "action", "Play the top result or resume."), T("spotify_control", "spotify", "action", "Pause, next or previous.")] },
+    { id: "notion", name: "Notion", blurb: "Search, read and add to your pages", auth: "token", status: "connected", account: "Blaze · Luke's workspace", enabled: false, groups: ["notion"], fields: [{ key: "token", label: "Internal integration secret", hint: "ntn_…", secret: true, set: true }], steps: ["notion.so/my-integrations › New integration."], console: "https://www.notion.so/my-integrations", console_name: "Notion integrations",
+      tools: [T("notion_search", "notion", "read", "Search shared pages."), T("notion_read", "notion", "read", "Read a page."), T("notion_append", "notion", "write", "Add text to a page.")] },
+    { id: "slack", name: "Slack", blurb: "Read channels and post messages", auth: "token", status: "not_connected", enabled: true, groups: ["slack"], fields: [{ key: "token", label: "User OAuth token", hint: "xoxp-…", secret: true, set: false }], steps: ["api.slack.com/apps › Create New App › From scratch.", "Add user token scopes and install.", "Paste the User OAuth Token here."], console: "https://api.slack.com/apps", console_name: "Slack apps",
+      tools: [T("slack_channels", "slack", "read", "List channels."), T("slack_read", "slack", "read", "Read a channel."), T("slack_post", "slack", "write", "Post a message.")] }],
+    mcp: [{ id: "linear", name: "Linear", transport: "http", url: "https://mcp.linear.app/mcp", has_token: true, enabled: true, status: "ready", checked: "10 Oct 13:02",
+        tools: [T("list_issues", "mcp:linear", "read", "List issues assigned to you."), T("create_issue", "mcp:linear", "action", "Create an issue."), T("delete_comment", "mcp:linear", "write", "Delete a comment.")] },
+      { id: "files", name: "Files", transport: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "~/Documents"], enabled: true, status: "error", error: "couldn't start npx: executable file not found in $PATH", tools: [] }] };
+  state.connected = 2;
   const conv = { id: "c1", title: "Fix the failing test", folder: "/home/luke/code/homeglow", messages: [
     { role: "user", content: "Run the tests and fix whatever fails." },
     { role: "assistant", content: "", tool_calls: [{ id: "t1", function: { name: "run_shell", arguments: "{\"command\":\"pnpm test\"}" } }] },
@@ -50,6 +80,8 @@
     DefaultPersonality: async () => "PERSONALITY\nYou are Blaze. Be warm, sharp, and one step ahead: an expert who happens to be easy to talk to.\n- Answer first. Lead with the result.\n- Take a side.\n- Be specific.",
     SetPersonality: async () => "",
     RenameConversation: async (id, t) => t || "Set up a Postgres container",
+    Connectors: async () => connView, Onboarding: async () => ({ step: 0, skipped: false, done: true }), OnboardNotifyTest: async () => "",
+    AddProvider: async (id) => ({ ok: true, model: id === "groq" ? "llama-3.3-70b-versatile" : "gemini-3.8-flash", where: "your system keychain" }),
     OpenConversation: async () => conv, Jobs: async () => "Job 1 [running 4m12s] pnpm dev\n   ready on http://localhost:5173", JobLog: async () => "", Schedules: async () => [{ name: "backup-notes", when: "daily 07:00", command: "rsync -a ~/notes /mnt/backup/" }],
     Projects: async () => [{ id: "p1", name: "HomeGlow", folder: "/home/luke/code/homeglow" }, { id: "p2", name: "Blaze.ai", folder: "/home/luke/code/blaze-ai" }],
     ProjectDetails: async () => ({ project: state.project, branch: "main", status: " M sections/hero.liquid\n?? design/option-b.html", recent: [{ path: "design/option-b.html", when: "Oct 9 21:20" }, { path: "sections/hero.liquid", when: "Oct 9 21:02" }, { path: "assets/theme.css", when: "Oct 9 20:40" }], chats: [{ id: "c1", title: "Fix the failing test", updated: "Oct 9" }, { id: "c4", title: "New hero section", updated: "Oct 9" }] }),
@@ -66,7 +98,6 @@
       days: Array.from({ length: 14 }, (_, i) => ({ day: "2026-10-" + String(i + 1).padStart(2, "0"), tokens: [0, 12e3, 40e3, 8e3, 0, 90e3, 120e3, 60e3, 30e3, 0, 150e3, 80e3, 140e3, 191e3][i], calls: i * 3, cost: 0 })) }),
     Quota: async () => ({ rows: [{ label: "Status", value: "Working · gemini-3.8-flash" }], note: "Google shows exact per-model limits only in AI Studio.", page: "https://aistudio.google.com/" }),
     TestModel: async p => ({ name: p, ok: true, detail: "answered in 0.9s" }),
-    AddProvider: async () => ({ ok: true, model: "llama-3.3-70b-versatile", where: "your system keychain" }),
     ConnectOpenRouter: async () => ({ ok: false, error: "Sign-in didn't finish." }),
     UseFreeStack: async () => state.chain, CheckUpdate: async () => ({ current: "v0.4.1", latest: "v0.4.1", available: false }),
     Files: async () => ["assets/theme.css", "design/option-a.html", "design/option-b.html", "layout/theme.liquid", "package.json", "sections/hero.liquid"],

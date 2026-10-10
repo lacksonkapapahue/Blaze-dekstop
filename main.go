@@ -64,6 +64,9 @@ func main() {
 		Mac: &mac.Options{
 			TitleBar: mac.TitleBarHiddenInset(),
 			About:    &mac.AboutInfo{Title: "Blaze", Message: "Blaze " + version, Icon: icon},
+			OnUrlOpen: func(u string) {
+				go func() { app.waitReady(); app.routeURL(u) }()
+			},
 		},
 		Linux: &linux.Options{Icon: icon, ProgramName: "blaze"},
 	})
