@@ -43,6 +43,7 @@ type Prefs struct {
 	Autostart  bool   `json:"autostart"`            // start Blaze (hidden) when the user signs in
 	Hotkey     string `json:"hotkey"`               // global shortcut preset; "" = default, "off"
 	ShowSteps  bool   `json:"show_steps"`           // show every tool step instead of one status line
+	FoldCards  *bool  `json:"fold_cards,omitempty"` // fold long answers into expandable cards (default on)
 }
 
 type App struct {
@@ -193,7 +194,10 @@ type State struct {
 
 func (a *App) State() State {
 	a.waitReady()
-	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.RouteChain(), Prefs: a.prefs,
+	prefs := a.prefs
+	fold := a.foldCards()
+	prefs.FoldCards = &fold // always explicit for the UI
+	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.RouteChain(), Prefs: prefs,
 		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: a.cfg.AllowKeyless(), Missing: a.info.Missing(),
 		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName(),
 		Selection: a.selection(), Routing: a.routing(), Providers: a.providerViews(), Desktop: a.desktopView()}
@@ -601,6 +605,25 @@ func trim(h []llm.Message) []llm.Message {
 	return append([]llm.Message(nil), h[cut:]...)
 }
 
+func (a *App) foldCards() bool { return a.prefs.FoldCards == nil || *a.prefs.FoldCards }
+
+// answerShape tells the model how to shape a reply. With cards on, long material goes
+// into :::card blocks that the app folds away under a short answer.
+func answerShape(cards bool) string {
+	if !cards {
+		return ""
+	}
+	return `
+ANSWER SHAPE
+- First the short answer: 1-4 plain sentences the user can read at a glance. Never put it inside a card.
+- Long material (tables, step lists, long explanations, code over ~15 lines, reports, comparisons) goes in a card the app folds away:
+:::card Short title
+...Markdown...
+:::
+- Several cards are fine. Short replies need no card.
+`
+}
+
 func (a *App) system() string {
 	var b strings.Builder
 	b.WriteString(`You are Blaze, a capable assistant in a desktop app on the user's own computer. You act, not just advise: use your tools to run commands, read and edit files, write and run code, use git, search the web and install what's missing.
@@ -614,6 +637,7 @@ RULES
 - Be honest about failures. Never claim something worked without checking.
 - Answers: short, direct, Markdown. Lead with the result.
 `)
+	b.WriteString(answerShape(a.foldCards()))
 	if a.cfg.Persona != "" {
 		b.WriteString("\nSTYLE\n" + a.cfg.Persona + "\n")
 	}

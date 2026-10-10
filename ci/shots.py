@@ -59,6 +59,35 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"worked-{theme}.png"))
         pg.evaluate("document.querySelector('.work.done').click()"); pg.wait_for_timeout(300)
         pg.screenshot(path=str(out / f"worked-open-{theme}.png"))
+        # v0.4.1: answer cards. A saved chat whose long table sits in a collapsed card above the short answer.
+        pg.evaluate("loadConv(window.__cardConv); show('work')"); pg.wait_for_timeout(500)
+        pg.evaluate("document.querySelector('#log').scrollTop = 0"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"card-collapsed-{theme}.png"))
+        pg.evaluate("document.querySelector('.acard .atog').click()"); pg.wait_for_timeout(700)
+        pg.evaluate("document.querySelector('.acard').scrollIntoView({block: 'start'})"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"card-expanded-{theme}.png"))
+        pg.evaluate("document.querySelector('#log').scrollTop = 1e6"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"card-expanded-end-{theme}.png"))
+        # Streaming: an open :::card block fills its card live.
+        pg.evaluate("newChat()"); pg.wait_for_timeout(300)
+        pg.evaluate("""sendText('Compare the roadmap phases', []);
+          fire('route', {route: 'Google Gemini · gemini-3.8-flash'});
+          fire('delta', 'Blaze Desktop is roughly **a third of the way to 1.0**.\\n\\n:::card Roadmap\\n' + window.__roadmap.split('\\n').slice(0, 5).join('\\n'));""")
+        pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"card-streaming-{theme}.png"))
+        pg.evaluate("""fire('delta', '\\n' + window.__roadmap.split('\\n').slice(5).join('\\n') + '\\n:::\\n');
+          fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 4.1});""")
+        pg.wait_for_timeout(300)
+        # Fallback: a long reply without card markers folds on "done".
+        pg.evaluate("newChat()"); pg.wait_for_timeout(300)
+        pg.evaluate("""sendText('Set up a Postgres container for HomeGlow', []);
+          fire('route', {route: 'Google Gemini · gemini-3.8-flash'});
+          fire('delta', window.__autoReply); fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 6.3});""")
+        pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"card-auto-{theme}.png"))
+        n = pg.evaluate("document.querySelectorAll('.acard.tall').length + document.querySelectorAll('.acard.fits').length")
+        if n < 1:
+            errs.append("fallback reply did not fold into a card")
         # v0.4: the orb (quick ask), at its real 400x560 size.
         pg.set_viewport_size({"width": 400, "height": 560})
         pg.evaluate("newChat().then(() => fire('orb', true))"); pg.wait_for_timeout(900)
@@ -72,6 +101,10 @@ with sync_playwright() as p:
           fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 3.4});""")
         pg.wait_for_timeout(400)
         pg.screenshot(path=str(out / f"orb-chat-{theme}.png"))
+        pg.evaluate("""newChat().then(() => { sendText('How far is Blaze from 1.0?', []);
+          fire('delta', window.__cardReply); fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 2.9}); })""")
+        pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"card-orb-{theme}.png"))
         pg.evaluate("fire('orb', false)"); pg.set_viewport_size({"width": 1280, "height": 820}); pg.wait_for_timeout(300)
         for v in ["settings", "doctor", "setup", "schedule", "jobs"]:
             pg.evaluate(f"show('{v}')"); pg.wait_for_timeout(400)

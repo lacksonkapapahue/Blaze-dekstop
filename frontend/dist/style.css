@@ -486,3 +486,40 @@ body.orb #log { padding-top: 16px; }
 .winctl button { width: 46px; display: grid; place-items: center; color: var(--sub); }
 .winctl button:hover { background: var(--faint2); color: var(--ink); }
 .winctl button.close:hover { background: #C42B1C; color: #fff; }
+
+/* ---------------- v0.4.1: answer cards ----------------
+   Long detail folds into a square card above the short answer. Collapsed: clipped at
+   --amax with a fade; expand from the title, the corner icon or the chevron on the bottom edge. */
+.tbl { overflow-x: auto; max-width: 100%; }
+.tbl table { min-width: 100%; }
+.md.hascards > .acard + .acard { margin-top: 14px; }
+.md.hascards > .short { margin-top: 18px; }
+.md.hascards > .acard.tall:not(.open) + .short, .md.hascards > .acard.tall + .acard { margin-top: 24px; }
+.acard { position: relative; border: 1px solid var(--hair2); background: var(--raised); }
+.acard .ahead { display: flex; align-items: center; gap: 2px; min-height: 42px; padding: 0 6px 0 0; border-bottom: 1px solid var(--hair); }
+.acard .atitle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; align-self: stretch; padding: 0 8px 0 14px; text-align: left; cursor: default; }
+.acard.tall .atitle { cursor: pointer; }
+.acard .amk { width: 6px; height: 6px; background: var(--accent); flex: none; }
+.acard .att { font: 600 14px/1.3 var(--display); color: var(--ink); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acard .aico { width: 30px; height: 30px; display: grid; place-items: center; color: var(--weak); flex: none; }
+.acard .aico:hover { color: var(--ink); }
+.acard .aico:hover { background: var(--faint2); }
+.acard .acopy { opacity: 0; transition: opacity .15s; }
+.acard:hover .acopy, .acard .acopy:focus-visible { opacity: 1; }
+.acard .atog { display: none; }
+.acard.tall .atog { display: grid; }
+.acard .awrap { position: relative; overflow: hidden; max-height: var(--amax, 260px); transition: max-height .32s cubic-bezier(.2, .7, .2, 1); }
+.acard.fits .awrap, .acard.open .awrap { max-height: none; }
+.acard .abody { padding: 12px 16px 16px; font-size: 13.5px; }
+.acard .abody > *:first-child { margin-top: 0; }
+.acard .afade { display: none; position: absolute; left: 0; right: 0; bottom: 0; height: 84px; pointer-events: none; background: linear-gradient(to bottom, transparent, var(--raised) 88%); }
+.acard.tall:not(.open) .afade { display: block; }
+.acard .amore { display: none; position: absolute; left: 50%; bottom: -13px; width: 26px; height: 26px; margin-left: -13px; place-items: center; background: var(--raised); border: 1px solid var(--hair2); color: var(--sub); box-shadow: var(--shadow); z-index: 1; }
+.acard.tall .amore { display: grid; }
+.acard.open .amore svg { transform: rotate(180deg); }
+.acard .amore:hover { color: var(--accent); border-color: var(--accent); }
+.acard.live .amk { animation: pulse .9s infinite; }
+.acard .abody .code { background: var(--paper); }
+body.orb .acard .abody { padding: 10px 12px 14px; font-size: 13px; }
+body.orb .acard .ahead { min-height: 38px; }
+body.orb .acard .atitle { padding-left: 12px; }
