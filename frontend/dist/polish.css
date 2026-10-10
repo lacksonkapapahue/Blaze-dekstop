@@ -21,3 +21,8 @@
 .step.bad .st .morb { display: none; }
 .step.ok .st .morb { opacity: .9; }
 @media (prefers-reduced-motion: reduce) { .chat .t.typing::after { animation: none; } }
+
+/* ---- personality (Settings › Behaviour) ---- */
+.pbox { margin-top: 10px; }
+.pbox .pnote { color: var(--sub); font-size: 12.5px; }
+.pcustom { min-height: 180px; font: 12.5px/1.55 var(--mono); }

@@ -187,5 +187,36 @@
   document.addEventListener("visibilitychange", kick);
   ["delta", "tool", "tool_done", "status", "thinking", "done", "error", "stopped"].forEach(ev => on(ev, kick));
 
-  window.Polish = { decorate, typeTitle, startRename, kick };
+  // ---------------- personality (Settings › Behaviour) ----------------
+  function personalityGroup(redraw) {
+    const g = group("Personality", "How Blaze sounds in chat. Scheduled jobs always run plain.");
+    const mode = (S.prefs.personality || "default");
+    const seg = h("div", "seg");
+    const box = h("div", "pbox");
+    [["default", "Default"], ["plain", "Plain"], ["custom", "Custom"]].forEach(([k, t]) => {
+      const b = h("button", mode === k ? "on" : "", t);
+      b.onclick = async () => {
+        let custom = S.prefs.personality_custom || "";
+        if (k === "custom" && !custom.trim()) custom = (await API().DefaultPersonality() || "").replace(/^PERSONALITY\n/, "");
+        await API().SetPersonality(k, custom);
+        S.prefs.personality = k; S.prefs.personality_custom = custom; redraw();
+      };
+      seg.append(b);
+    });
+    g.append(seg, box);
+    if (mode === "default") {
+      box.append(h("div", "td pnote", "Warm, sharp and one step ahead: answers first, takes a side, specific, honest about being an assistant."));
+    } else if (mode === "plain") {
+      box.append(h("div", "td pnote", "No personality block: just Blaze's rules and your style note below."));
+    } else {
+      const ta = h("textarea", "field pcustom"); ta.value = S.prefs.personality_custom || ""; ta.rows = 9;
+      ta.placeholder = "Describe how Blaze should talk and behave.";
+      const sv = h("button", "btn line sm", "Save personality"); sv.style.marginTop = "8px";
+      sv.onclick = async () => { await API().SetPersonality("custom", ta.value); S.prefs.personality_custom = ta.value.trim(); sv.textContent = "Saved"; setTimeout(() => sv.textContent = "Save personality", 1200); };
+      box.append(ta, sv);
+    }
+    return g;
+  }
+
+  window.Polish = { decorate, typeTitle, startRename, kick, personalityGroup };
 })();

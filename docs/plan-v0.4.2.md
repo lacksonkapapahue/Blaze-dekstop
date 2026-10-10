@@ -1,4 +1,4 @@
-# Desktop v0.4.2 plan: Polish (AI chat titles, mini orb marks, Hyprland orb)
+# Desktop v0.4.2 plan: Polish (AI chat titles, mini orb marks, Hyprland orb, personality)
 
 01 · Chat titles from the dominant theme (titles.go, internal/llm/quick.go)
 
@@ -22,8 +22,13 @@
 - sway (SWAYSOCK): `swaymsg [pid=N] floating enable, resize set 400 560, move absolute position …`; Expand: `floating disable`.
 - Doctor: a "Window manager" line on Hyprland/sway (or a warning on other tiling WMs like river/niri/i3 with the window-rule to add: float app id/class `blaze`, which floats the main window too).
 
-04 · CI
+04 · Personality (app.go `personality()`, next to answerShape)
 
-ci/mock.js returns auto/manual titles and RenameConversation; ci/shots.py shoots titles-typing, titles, rename, and 3x zoomed marks / marks-live in light and dark, and fails if the title event, double-click rename or the orb marks don't work. Go unit tests: titles_test.go, tiling_linux_test.go.
+- Chat turns (system()) get a PERSONALITY block before ANSWER SHAPE: Blaze's default voice (warm, sharp, one step ahead; answer first, take a side, be specific, read the room, bad news first, do the work, honest about being an assistant). Scheduled jobs keep their plain prompt.
+- Settings › Behaviour › Personality: Default / Plain (no block) / Custom (textarea; starts from the default text). desktop.json `personality` (default | plain | custom; State() always explicit) and `personality_custom`. The older Style note still adds a STYLE block on top.
+
+05 · CI
+
+ci/mock.js returns auto/manual titles and RenameConversation; ci/shots.py shoots titles-typing, titles, rename, personality and personality-custom, and 3x zoomed marks / marks-live in light and dark, and fails if the title event, double-click rename or the orb marks don't work. Go unit tests: titles_test.go, tiling_linux_test.go.
 
 Test on a real PC: chat 1 exchange → title appears with the typewriter; change topic for 4 turns → title updates; double-click rename sticks; marks animate only while Blaze works; on Omarchy press the shortcut → a 400x560 floating orb bottom-right, Expand → tiled again.

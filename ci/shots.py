@@ -141,6 +141,14 @@ with sync_playwright() as p:
         for s in ["providers", "usage", "behaviour"]:
             pg.evaluate(f"show('settings','{s}')"); pg.wait_for_timeout(500)
             pg.screenshot(path=str(out / f"settings-{s}-{theme}.png"))
+        # v0.4.2: Settings › Behaviour › Personality (Default, then Custom with the textarea).
+        pg.evaluate("[...document.querySelectorAll('.group')].find(g => /Personality/.test(g.textContent)).scrollIntoView({block: 'start'})"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"personality-{theme}.png"))
+        pg.evaluate("[...document.querySelectorAll('.seg button')].find(b => b.textContent === 'Custom').click()"); pg.wait_for_timeout(500)
+        pg.evaluate("[...document.querySelectorAll('.group')].find(g => /Personality/.test(g.textContent)).scrollIntoView({block: 'start'})"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"personality-custom-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('textarea.pcustom')"):
+            errs.append("custom personality textarea missing")
         if errs:
             print("JS errors:", errs); sys.exit(1)
     # Windows runs frameless with its own title-bar buttons.

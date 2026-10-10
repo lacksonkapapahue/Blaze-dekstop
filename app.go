@@ -46,6 +46,9 @@ type Prefs struct {
 	FoldCards  *bool  `json:"fold_cards,omitempty"` // fold long answers into expandable cards (default on)
 
 	AutoTitles *bool `json:"auto_titles,omitempty"` // AI chat titles from the chat's dominant theme (default on, titles.go)
+
+	Personality       string `json:"personality"`        // "" / default, plain (no block), custom
+	PersonalityCustom string `json:"personality_custom"` // the user's own personality text (custom)
 }
 
 type App struct {
@@ -201,6 +204,9 @@ func (a *App) State() State {
 	prefs.FoldCards = &fold // always explicit for the UI
 	autoT := a.autoTitlesOn()
 	prefs.AutoTitles = &autoT
+	if prefs.Personality == "" {
+		prefs.Personality = "default"
+	}
 	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.RouteChain(), Prefs: prefs,
 		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: a.cfg.AllowKeyless(), Missing: a.info.Missing(),
 		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName(),
@@ -636,6 +642,46 @@ ANSWER SHAPE
 `
 }
 
+// defaultPersonality is Blaze's voice in chat turns (Settings › Behaviour › Personality).
+const defaultPersonality = `PERSONALITY
+You are Blaze. Be warm, sharp, and one step ahead: an expert who happens to be easy to talk to.
+- Answer first. Lead with the result or the most useful true thing; skip preamble and filler ("Great question", "I'd be happy to").
+- Take a side. When there are options, recommend one and say why in a sentence; give one backup only if it earns it.
+- Be specific. Real names, numbers, file paths and commands beat adjectives. Never invent facts; say plainly when you're unsure.
+- Read the room. Match the user's energy: brief when they're brief, steady and kind when something's gone wrong. Light humour is fine; forced cheer isn't.
+- Talk like a person texting a friend who's good at this: contractions, short sentences, plain words.
+- Bad news first, with a small cushion, then the way forward. If you made a mistake, fix it first, then own it in a few words.
+- Do the work instead of describing it. Finish with the natural next step only when it's theirs to take.
+- Be honest about what you are: a capable assistant on their computer, not a person.
+`
+
+// personality is the PERSONALITY block for chat turns (scheduled jobs don't use system()).
+// Default: Blaze's voice. Plain: none. Custom: the user's text (empty falls back to none).
+func (a *App) personality() string {
+	switch a.prefs.Personality {
+	case "plain":
+		return ""
+	case "custom":
+		if t := strings.TrimSpace(a.prefs.PersonalityCustom); t != "" {
+			return "\nPERSONALITY\n" + t + "\n"
+		}
+		return ""
+	}
+	return "\n" + defaultPersonality
+}
+
+// SetPersonality saves the personality mode (default, plain, custom) and the custom text.
+func (a *App) SetPersonality(mode, custom string) {
+	if mode != "plain" && mode != "custom" {
+		mode = "default"
+	}
+	a.prefs.Personality, a.prefs.PersonalityCustom = mode, strings.TrimSpace(custom)
+	a.savePrefs()
+}
+
+// DefaultPersonality is shown in Settings so the user can start a custom one from it.
+func (a *App) DefaultPersonality() string { return defaultPersonality }
+
 func (a *App) system() string {
 	var b strings.Builder
 	b.WriteString(`You are Blaze, a capable assistant in a desktop app on the user's own computer. You act, not just advise: use your tools to run commands, read and edit files, write and run code, use git, search the web and install what's missing.
@@ -649,6 +695,7 @@ RULES
 - Be honest about failures. Never claim something worked without checking.
 - Answers: short, direct, Markdown. Lead with the result.
 `)
+	b.WriteString(a.personality())
 	b.WriteString(answerShape(a.foldCards()))
 	if a.cfg.Persona != "" {
 		b.WriteString("\nSTYLE\n" + a.cfg.Persona + "\n")

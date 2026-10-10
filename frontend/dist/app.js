@@ -1697,7 +1697,7 @@ async function setBehaviour(col, redraw) {
   const t4 = h("label", "toggle", `<input type="checkbox" ${S.prefs.auto_titles !== false ? "checked" : ""}><span><span class="tt">Name chats by their topic</span><span class="td">A tiny call on your cheapest model titles each chat by what it's mostly about, and updates it as the chat moves on. Double-click a chat to rename it yourself.</span></span>`);
   $("input", t4).onchange = e => { API().SetAutoTitles(e.target.checked); S.prefs.auto_titles = e.target.checked; };
   bx.append(t4);
-  col.append(g1, backgroundGroup(redraw), g2, g3);
+  col.append(g1, backgroundGroup(redraw), g2, Polish.personalityGroup(redraw), g3);
 }
 
 // Settings › Behaviour › Background & shortcut.

@@ -66,3 +66,18 @@ func TestTitlePromptIsSmall(t *testing.T) {
 		t.Fatal("tool output leaked into the title prompt")
 	}
 }
+
+func TestPersonality(t *testing.T) {
+	a := &App{}
+	if p := a.personality(); !strings.Contains(p, "PERSONALITY\nYou are Blaze. Be warm, sharp") || !strings.Contains(p, "not a person.") {
+		t.Fatalf("default personality missing: %q", p)
+	}
+	a.prefs.Personality = "plain"
+	if a.personality() != "" {
+		t.Fatal("plain should have no personality block")
+	}
+	a.prefs.Personality, a.prefs.PersonalityCustom = "custom", "Be a pirate."
+	if p := a.personality(); p != "\nPERSONALITY\nBe a pirate.\n" {
+		t.Fatalf("custom: %q", p)
+	}
+}
