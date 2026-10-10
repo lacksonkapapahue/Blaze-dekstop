@@ -174,7 +174,7 @@
        { name: "Proactive suggestions", ok: true, detail: "Every 10 min at most, 3 an hour, quiet 22:00–08:00" }]
     : [{ name: "Notifications", ok: true, detail: "D-Bus notifications · mako · cached in ~/.blaze/notify.json" },
        { name: "Screen reading", ok: true, detail: "AT-SPI · 14 apps readable" },
-       { name: "Screenshots", ok: false, detail: "grim · Install grim for screenshots (Arch: sudo pacman -S grim)", fix: "https://archlinux.org/packages/extra/x86_64/grim/" },
+       { name: "Screenshots", ok: false, detail: "grim · Install grim for screenshots (Arch: sudo pacman -S grim)" },
        { name: "Proactive suggestions", ok: true, detail: "Every 10 min at most, 3 an hour, quiet 22:00–08:00 · Checked 10:52 · nothing worth interrupting" }]);
   window.go = { main: { App: new Proxy(A, { get: (t, k) => t[k] || (async () => "") }) } };
   // Events are captured so the screenshot script can play a turn: fire("tool", {...}).

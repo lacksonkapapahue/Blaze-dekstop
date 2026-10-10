@@ -118,8 +118,10 @@ window.SETTINGS_FNS.notifications = async (col, redraw) => {
     sel("At most", "max_hour", [[1, "1 an hour"], [2, "2 an hour"], [3, "3 an hour"], [5, "5 an hour"]], 3));
   const q = n.quiet || ["22:00", "08:00"];
   const qr = h("div", "nrow", `<span class="tt">Quiet hours</span>`);
-  const qf = h("input", "field mono"); qf.type = "time"; qf.value = q[0] || "22:00";
-  const qt = h("input", "field mono"); qt.type = "time"; qt.value = q[1] || "08:00";
+  // Half-hour steps in 24-hour time (a native time input clips "10:00 PM" and follows the OS locale).
+  const times = Array.from({ length: 48 }, (_, i) => `${pad(Math.floor(i / 2))}:${i % 2 ? "30" : "00"}`);
+  const tsel = v => { const x = h("select", "field mono qsel"); x.innerHTML = times.concat(times.includes(v) ? [] : [v]).map(t => `<option ${t === v ? "selected" : ""}>${t}</option>`).join(""); return x; };
+  const qf = tsel(q[0] || "22:00"), qt = tsel(q[1] || "08:00");
   const qto = h("span", "label weak", "to");
   const qsave = () => { p.quiet_from = qf.value; p.quiet_to = qt.value; save(); };
   qf.onchange = qsave; qt.onchange = qsave;
@@ -160,7 +162,7 @@ window.SETTINGS_FNS.notifications = async (col, redraw) => {
   const hist = h("div", "rows");
   const drawHist = list => {
     hist.innerHTML = "";
-    (list || []).slice(0, 12).forEach(e => hist.append(h("div", "r", `<span class="label weak ntime">${esc(fmtWhen(e.at))}</span><div class="main"><div class="t">${esc(e.title)}${e.kind === "suggest" ? ` <span class="pill acc">Suggestion</span>` : ""}${e.error ? ` <span class="pill">Not shown</span>` : ""}</div><div class="s">${esc(e.error || e.body || "")}</div></div><span class="label weak">${esc(e.method || "")}</span>`)));
+    (list || []).slice(0, 12).forEach(e => hist.append(h("div", "r hrow", `<span class="label weak ntime">${esc(fmtWhen(e.at))}</span><div class="main"><div class="t">${esc(e.title)}${e.kind === "suggest" ? ` <span class="pill acc">Suggestion</span>` : ""}${e.error ? ` <span class="pill">Not shown</span>` : ""}</div><div class="s">${esc(e.error || e.body || "")}</div></div><span class="label weak">${esc(e.method || "")}</span>`)));
     if (!(list || []).length) hist.append(h("div", "empty", "<b>Nothing yet</b>Notifications Blaze sends show up here."));
   };
   drawHist(n.history);

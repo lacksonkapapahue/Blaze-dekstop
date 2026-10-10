@@ -35,10 +35,11 @@ body.orb #screenind { top: 50px; right: 10px; }
 .nrow { display: flex; align-items: center; gap: 10px; }
 .nrow > .tt { color: var(--ink); flex: 1; min-width: 0; }
 .nrow .field { width: auto; min-width: 150px; max-width: 200px; }
-.nrow input[type=time].field { min-width: 0; width: 112px; }
+.nrow select.qsel { min-width: 0; width: 96px; }
 .nrow .toggle.inline { margin-left: 6px; }
 .toggle.dis { opacity: .55; cursor: default; }
-.ntime { width: 104px; flex: none; white-space: nowrap; }
+.rows .r.hrow { grid-template-columns: 92px 1fr auto; }
+.ntime { white-space: nowrap; }
 
 /* A clicked suggestion, in the chat */
 .suggestcard .title .label { display: inline-flex; align-items: center; gap: 6px; }
