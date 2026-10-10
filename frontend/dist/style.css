@@ -438,3 +438,51 @@ select.field { appearance: none; padding-right: 30px; background-image: linear-g
 /* The Design toolbar collapses labels before it ever squeezes the file name. */
 @container (max-width: 760px) { .dbar .btxt { display: none; } }
 @container (max-width: 560px) { .picker .pk { display: none; } .dbar .vsep { display: none; } }
+
+/* ---------------- v0.4: one status line per turn (hidden steps) ---------------- */
+.work { display: flex; align-items: center; gap: 10px; min-height: 24px; margin: 2px 0 10px; padding: 0; text-align: left; font-size: 13px; color: var(--sub); max-width: 100%; cursor: default; }
+.work .sq { width: 8px; height: 8px; background: var(--accent); flex: none; }
+.work.live .sq { animation: pulse .9s infinite; }
+.work .wt { position: relative; display: grid; min-width: 0; flex: 0 1 auto; }
+.work .phrase { grid-area: 1 / 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity .25s ease, transform .25s ease; }
+.work .phrase.in { opacity: 0; transform: translateY(4px); }
+.work .phrase.out { opacity: 0; transform: translateY(-4px); }
+.work .chev { display: none; color: var(--weak); transition: transform .15s; }
+.work.done { cursor: pointer; color: var(--weak); font: 12px var(--mono); }
+.work.done .sq { width: 6px; height: 6px; background: var(--weak); }
+.work.done .chev { display: block; transform: rotate(-90deg); }
+.work.done.open .chev { transform: none; }
+.work.done:hover, .work.done:hover .chev { color: var(--ink); }
+.work.done:hover .sq { background: var(--accent); }
+.shim { background: linear-gradient(90deg, var(--sub) 40%, var(--ink) 50%, var(--sub) 60%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shim 1.6s linear infinite; }
+@keyframes shim { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.hkhint { margin-top: 16px; display: flex; align-items: center; gap: 8px; }
+.hkhint .kbd { letter-spacing: 0; text-transform: none; }
+
+/* ---------------- v0.4: Settings › Background & shortcut ---------------- */
+.hkrow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-top: 4px; }
+.hkrow .tt { color: var(--ink); min-width: 140px; }
+.hkstatus { display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px; font-size: 12.5px; color: var(--sub); }
+.hkstatus > span:nth-child(2) { flex: 1; min-width: 200px; }
+.hkstatus .keyrow { flex-basis: 100%; }
+.hknote { font-size: 12.5px; color: var(--ink); }
+.hknote:empty { display: none; }
+
+/* ---------------- v0.4: orb (quick ask) ---------------- */
+body.orb #app { grid-template-columns: 1fr; }
+body.orb #side, body.orb #top { display: none; }
+#orbbar { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--hair); background: var(--chrome); flex: none; }
+#orbbar canvas { width: 22px; height: 22px; display: block; }
+#orbbar .btn span { font-size: 12px; }
+body.os-darwin #orbbar { padding-left: 76px; }
+body.orb #log { padding-top: 16px; }
+.orbhero { padding: 6vh 0 12px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.orbhero .orbbig { width: 180px; height: 180px; display: block; }
+.orbhero .big { margin-top: 14px; font-size: 26px; }
+.orbhero .lead { max-width: 280px; font-size: 13px; }
+
+/* ---------------- v0.4: frameless Windows title bar ---------------- */
+.winctl { display: flex; align-self: stretch; margin: 0 -14px 0 4px; }
+.winctl button { width: 46px; display: grid; place-items: center; color: var(--sub); }
+.winctl button:hover { background: var(--faint2); color: var(--ink); }
+.winctl button.close:hover { background: #C42B1C; color: #fff; }
