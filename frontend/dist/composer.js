@@ -20,7 +20,7 @@ const fmtSize = n => !n ? "" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" :
 // ---------- markup ----------
 function composerBar() {
   return `<button id="plus" class="plusbtn" title="Attach images, files or a folder · commands">${icon("plus", "i sm")}</button>
-    <button id="mic" class="plusbtn mic" title="Voice input (local Whisper)">${cmIcon("mic")}</button>
+    <button id="mic" class="plusbtn mic" title="Voice input · Ctrl+Shift+M (local Whisper)">${cmIcon("mic")}</button>
     <span id="recline" class="recline" style="display:none"><span class="rdot"></span><span class="rtime label ink">0:00</span><button class="btn ghost xs rcancel" title="Discard">${icon("x", "i sm")}</button></span>
     <span class="grow"></span>
     <div id="modes" class="modes">
@@ -73,8 +73,9 @@ function flashMode(m) {
 
 // Ctrl+Tab cycles Plan/Build, Shift+Tab toggles Auto/Autopilot (Alt+Tab belongs to the OS).
 function modeKeys(e) {
-  if (e.key !== "Tab" || e.altKey || e.metaKey) return false;
   if (view !== "work" && view !== "design") return false;
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.key || "").toLowerCase() === "m") { e.preventDefault(); micClick(); return true; }
+  if (e.key !== "Tab" || e.altKey || e.metaKey) return false;
   if (e.ctrlKey && !e.shiftKey) { e.preventDefault(); setWorkMode(MODES.work_mode === "plan" ? "build" : "plan"); return true; }
   if (e.shiftKey && !e.ctrlKey) {
     if (document.activeElement && document.activeElement !== document.body && !document.activeElement.closest("#composer")) return false;
@@ -296,7 +297,7 @@ let recTimer = 0;
 function recUI(onOff) {
   const m = $("#mic", pane), line = $("#recline", pane); if (!m) return;
   m.classList.toggle("rec", onOff);
-  m.title = onOff ? "Stop and transcribe" : "Voice input (local Whisper)";
+  m.title = onOff ? "Stop and transcribe" : "Voice input · Ctrl+Shift+M (local Whisper)";
   line.style.display = onOff ? "" : "none";
   clearInterval(recTimer);
   if (onOff) {
