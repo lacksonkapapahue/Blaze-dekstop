@@ -659,7 +659,8 @@ function finishStep(turn, s, result) {
   s.dataset.err = bad ? sum : "";
   // A failed step says so in plain words; what went wrong is inside the expanded row.
   s.querySelector(".sum").textContent = bad ? (declined ? "Declined" : "Failed") : "";
-  if (s._t0) { const d = (Date.now() - s._t0) / 1000; s.querySelector(".dur").textContent = d < 1 ? "<1s" : d < 60 ? d.toFixed(d < 10 ? 1 : 0) + "s" : Math.floor(d / 60) + "m " + Math.round(d % 60) + "s"; }
+  // Only steps that took a noticeable time show it.
+  if (s._t0) { const d = (Date.now() - s._t0) / 1000; s.querySelector(".dur").textContent = d < 1 ? "" : d < 60 ? d.toFixed(d < 10 ? 1 : 0) + "s" : Math.floor(d / 60) + "m " + Math.round(d % 60) + "s"; }
   s.querySelector(".res").textContent = String(result || "").trim() || "(no output)";
   // The same error again collapses into the previous row with a ×N count.
   if (bad && turn) {

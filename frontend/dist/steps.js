@@ -370,7 +370,8 @@
   // "Worked · 6 steps · 14s"
   function workedLine(n, secs) {
     const parts = ["Worked", `${n} step${n === 1 ? "" : "s"}`];
-    if (secs != null && isFinite(secs) && secs > 0) parts.push(secs >= 60 ? `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s` : secs < 1 ? "<1s" : `${Math.round(secs)}s`);
+    // Under a second says nothing worth reading ("<1s"), so it is left off.
+    if (secs != null && isFinite(secs) && secs >= 1) parts.push(secs >= 60 ? `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s` : `${Math.round(secs)}s`);
     return parts.join(" · ");
   }
 

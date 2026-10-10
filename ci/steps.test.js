@@ -94,6 +94,7 @@ check("detail shell", S.detail("run_shell", '{"command":"ls -la ~"}'), "ls -la ~
 check("detail tool", S.detail("file_read", '{"path":"a.txt"}'), 'file_read {\n  "path": "a.txt"\n}');
 check("worked", S.workedLine(6, 14.2), "Worked · 6 steps · 14s");
 check("worked saved", S.workedLine(1, null), "Worked · 1 step");
+check("worked fast", S.workedLine(8, 0.3), "Worked · 8 steps");
 check("worked long", S.workedLine(3, 125), "Worked · 3 steps · 2m 5s");
 console.log(`${n - fail}/${n} passed (${cases.length} shell commands)`);
 process.exit(fail ? 1 : 0);

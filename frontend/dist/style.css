@@ -233,7 +233,8 @@ select.field { appearance: none; padding-right: 30px; background-image: linear-g
 .step.run .ph { color: var(--sub); }
 .step .sum { flex: none; font: 500 10px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink); }
 .step .sum:empty { display: none; }
-.step .dur { flex: none; font: 11px var(--mono); color: var(--weak); min-width: 34px; text-align: right; }
+.step .dur { flex: none; font: 11px var(--mono); color: var(--weak); text-align: right; }
+.step .dur:empty { display: none; }
 .step .chev { flex: none; color: var(--weak); transform: rotate(-90deg); transition: transform .15s; }
 .step.open .chev { transform: none; color: var(--ink); }
 .step .rep { font: 500 10px var(--mono); color: var(--paper); background: var(--sub); padding: 1px 5px; flex: none; }
