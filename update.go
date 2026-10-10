@@ -369,7 +369,10 @@ func installFile(file string) (func() error, error) {
 			_ = os.Rename(old, exe)
 			return nil, errors.New("Couldn't write the new Blaze.exe: " + err.Error())
 		}
-		return func() error { return detached(exe).Start() }, nil
+		// Start the new copy after this one has quit (Blaze runs as a single instance).
+		return func() error {
+			return detached("cmd", "/C", fmt.Sprintf(`ping -n 4 127.0.0.1 >nul & start "" "%s"`, exe)).Start()
+		}, nil
 
 	case "dmg":
 		return installDMG(file, exe)
@@ -434,7 +437,7 @@ func installDMG(dmg, exe string) (func() error, error) {
 		return nil, errors.New("Couldn't replace Blaze.app: " + err.Error())
 	}
 	_ = os.RemoveAll(old)
-	return func() error { return detached("sh", "-c", `sleep 1; open -n "$0"`, app).Start() }, nil
+	return func() error { return detached("sh", "-c", `sleep 3; open -n "$0"`, app).Start() }, nil
 }
 
 func replaceFromTarball(tgz, exe string) error {
@@ -481,7 +484,7 @@ func replaceFromTarball(tgz, exe string) error {
 }
 
 func relaunchUnix(exe string) func() error {
-	return func() error { return detached("sh", "-c", `sleep 1; exec "$0"`, exe).Start() }
+	return func() error { return detached("sh", "-c", `sleep 3; exec "$0"`, exe).Start() }
 }
 
 // cleanupOldBinary removes what a portable Windows update left behind.
