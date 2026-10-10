@@ -1,7 +1,8 @@
 // Fake backend so CI can screenshot the UI in a normal browser.
 (() => {
-  const info = { os: "linux", os_name: "Arch Linux (Omarchy)", arch: "amd64", cpu: "AMD Ryzen 7 7840U", cores: 16, ram_gb: 32, gpu: ["AMD Radeon 780M"], shell: "bash", shell_path: "/usr/bin/bash", pkg_managers: ["pacman"], tools: { git: "2.51", python: "3.13", node: "v24.1", go: "1.25", docker: "28.1" }, home: "/home/luke", disk_free_gb: 312 };
-  const state = { version: "v0.3.0", setup_done: true, info, missing: [], installs: { node: "sudo pacman -S --noconfirm nodejs npm" }, providers: [
+  const os = window.__os || "linux";
+  const info = { os, os_name: "Arch Linux (Omarchy)", arch: "amd64", cpu: "AMD Ryzen 7 7840U", cores: 16, ram_gb: 32, gpu: ["AMD Radeon 780M"], shell: "bash", shell_path: "/usr/bin/bash", pkg_managers: ["pacman"], tools: { git: "2.51", python: "3.13", node: "v24.1", go: "1.25", docker: "28.1" }, home: "/home/luke", disk_free_gb: 312 };
+  const state = { version: "v0.4.0", setup_done: true, info, missing: [], installs: { node: "sudo pacman -S --noconfirm nodejs npm" }, providers: [
     { id: "gemini", name: "Google Gemini", short: "Google Gemini", key_hint: "AIza…", key_page: "https://aistudio.google.com/apikey", quota_page: "https://aistudio.google.com/", free: true, has_key: true, keys: 2, ready: true, in_chain: true, model: "gemini-3.8-flash" },
     { id: "groq", name: "Groq", short: "Groq", key_hint: "gsk_…", key_page: "https://console.groq.com/keys", free: true, has_key: true, keys: 1, ready: true, in_chain: true, model: "openai/gpt-oss-120b" },
     { id: "cerebras", name: "Cerebras", short: "Cerebras", key_hint: "csk-…", free: true, model: "gpt-oss-120b" },
@@ -13,7 +14,10 @@
     chain: [{ provider: "gemini", model: "gemini-3.8-flash" }, { provider: "groq", model: "openai/gpt-oss-120b" }],
     selection: { auto: true, provider: "auto", label: "Auto (free routing)" },
     routing: { fallback: true, fastest_first: true, keyless: false, daily_cap: 0, today_cost: 0 },
-    prefs: { theme: window.__theme || "light", folder: "/home/luke/code/homeglow", design_mode: "ask", project: "p1" }, model: "Auto · Google Gemini · gemini-3.8-flash",
+    prefs: { theme: window.__theme || "light", folder: "/home/luke/code/homeglow", design_mode: "ask", project: "p1", show_steps: false, autostart: false, hotkey: "" },
+    desktop: { os, tray: true, tray_note: "In the system tray", background: true, autostart: false, autostart_ok: false, hotkey: "ctrl+shift+space", hotkey_label: "Ctrl+Shift+Space", hotkey_ok: true,
+      hotkey_note: "Press Ctrl+Shift+Space anywhere for quick ask", needs_access: false, wayland: false, frameless: os === "windows", orb: false,
+      presets: [{ id: "ctrl+shift+space", label: "Ctrl+Shift+Space" }, { id: "alt+space", label: "Alt+Space" }, { id: "ctrl+alt+space", label: "Ctrl+Alt+Space" }, { id: "ctrl+shift+b", label: "Ctrl+Shift+B" }] }, model: "Auto · Google Gemini · gemini-3.8-flash",
     project: { id: "p1", name: "HomeGlow", folder: "/home/luke/code/homeglow", instructions: "Shopify theme. Use pnpm. Keep it fast on phones." }, yolo: false, persona: "", keyless: true, skills: ["deploy-site: build and push the HomeGlow theme"], memory: "- Uses pnpm, not npm (2026-10-09)" };
   const conv = { id: "c1", title: "Fix the failing test", folder: "/home/luke/code/homeglow", messages: [
     { role: "user", content: "Run the tests and fix whatever fails." },
@@ -43,10 +47,11 @@
     TestModel: async p => ({ name: p, ok: true, detail: "answered in 0.9s" }),
     AddProvider: async () => ({ ok: true, model: "llama-3.3-70b-versatile", where: "your system keychain" }),
     ConnectOpenRouter: async () => ({ ok: false, error: "Sign-in didn't finish." }),
-    UseFreeStack: async () => state.chain, CheckUpdate: async () => ({ current: "v0.3.0", latest: "v0.3.0", available: false }),
+    UseFreeStack: async () => state.chain, CheckUpdate: async () => ({ current: "v0.4.0", latest: "v0.4.0", available: false }),
     Files: async () => ["assets/theme.css", "design/option-a.html", "design/option-b.html", "layout/theme.liquid", "package.json", "sections/hero.liquid"],
     Design: async () => ({ base: window.__sample, target: { kind: "file", path: "index.html" }, files: ["index.html", "design/option-a.html"], versions: [{ n: 1, summary: "First pass at the landing page", when: "21:02" }, { n: 2, summary: "Warmer palette and rounded cards", when: "21:10" }, { n: 3, summary: "Bigger hero headline", when: "21:18" }] }),
-    Doctor: async () => [{ name: "Internet", ok: true, detail: "Online" }, { name: "Google Gemini", ok: true, detail: "gemini-3.8-flash answered in 0.9s" }, { name: "Groq", ok: false, detail: "openai/gpt-oss-120b: Groq hit its free limit for now. Blaze will use another model." }, { name: "Shell", ok: true, detail: "bash · /usr/bin/bash" }],
+    SetHotkey: async id => ({ ...state.desktop, hotkey: id }), RetryHotkey: async () => state.desktop, SetAutostart: async () => "",
+    Doctor: async () => [{ name: "Internet", ok: true, detail: "Online" }, { name: "Google Gemini", ok: true, detail: "gemini-3.8-flash answered in 0.9s" }, { name: "Groq", ok: false, detail: "openai/gpt-oss-120b: Groq hit its free limit for now. Blaze will use another model." }, { name: "Shell", ok: true, detail: "bash · /usr/bin/bash" }, { name: "Tray", ok: true, detail: "In the system tray" }, { name: "Shortcut", ok: true, detail: "Press Ctrl+Shift+Space anywhere for quick ask" }, { name: "Start at login", ok: true, detail: "Off (Settings › Behaviour)" }],
   };
   window.go = { main: { App: new Proxy(A, { get: (t, k) => t[k] || (async () => "") }) } };
   // Events are captured so the screenshot script can play a turn: fire("tool", {...}).
