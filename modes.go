@@ -10,6 +10,7 @@ package main
 //              bounded by a step and time budget and the daily spend cap.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -40,7 +41,14 @@ type ComposerPrefs struct {
 }
 
 // AutoReply is what Autopilot answers when the agent asks the user something.
-const AutoReply = "The user is away and can't answer. Make the decision yourself pragmatically, based on your understanding and best practice, note the assumption, and continue."
+const AutoReply = "The user is away and can't answer. Make the decision yourself pragmatically, based on your understanding and best practice, note the assumption, and continue. If the task is already done and verified, don't start new work: finish with your summary and the assumptions you made."
+
+// emit sends an event to the UI (a variable so tests can run without a window).
+var emit = func(ctx context.Context, ev string, data ...any) {
+	if ctx != nil && ctx.Value("frontend") != nil {
+		wr.EventsEmit(ctx, ev, data...)
+	}
+}
 
 const autoPrefix = "[Autopilot] "
 
@@ -102,8 +110,15 @@ type ModeView struct {
 	Approval string `json:"approval"`
 }
 
+func (a *App) modeView() ModeView { return ModeView{a.workMode(), a.approval()} }
+
+// Modes is what the composer shows on start.
+func (a *App) Modes() ModeView { a.waitReady(); return a.modeView() }
+
 func (a *App) emitModes() {
-	wr.EventsEmit(a.ctx, "modes", ModeView{a.workMode(), a.approval()})
+	if a.ctx != nil {
+		emit(a.ctx, "modes", a.modeView())
+	}
 }
 
 // SetWorkMode switches Plan / Build (takes effect from the next model step).
@@ -167,7 +182,7 @@ func normKey(k string) string {
 var planTools = map[string]bool{
 	"file_read": true, "file_list": true, "file_search": true,
 	"web_search": true, "fetch_page": true, "system_info": true,
-	"git": true, // read-only subcommands only (planGit)
+	"git":     true, // read-only subcommands only (planGit)
 	"job_log": true, "use_skill": true,
 	"see_screen": true, "screen_read": true, "read_screen": true, "screen_info": true,
 }
@@ -250,11 +265,16 @@ func (a *App) modeTools(all []llm.Tool) []llm.Tool {
 	}
 	var out []llm.Tool
 	for _, t := range all {
-		if planTools[t.Function.Name] {
+		if a.planAllows(t.Function.Name) {
 			out = append(out, t)
 		}
 	}
 	return out
+}
+
+// planAllows: Blaze's read/scout tools, plus connector tools that only read.
+func (a *App) planAllows(name string) bool {
+	return planTools[name] || (a.conn != nil && a.conn.ReadOnly(name))
 }
 
 // modeBlock is the reason a call is refused in the current mode ("" = allowed).
@@ -263,7 +283,7 @@ func (a *App) modeBlock(name, rawArgs string) string {
 		return ""
 	}
 	why := ""
-	if !planTools[name] {
+	if !a.planAllows(name) {
 		why = name + " can change things"
 	} else if name == "git" {
 		var args map[string]any
@@ -346,11 +366,11 @@ func Catastrophic(title, detail string) string {
 // everything except the hard blocklist, which is refused without asking.
 func (a *App) gate(title, detail string) bool {
 	if why := Catastrophic(title, detail); why != "" && a.approval() == "autopilot" {
-		wr.EventsEmit(a.ctx, "ap_blocked", map[string]string{"title": title, "detail": detail, "why": why})
+		emit(a.ctx, "ap_blocked", map[string]string{"title": title, "detail": detail, "why": why})
 		return false
 	}
 	if a.approval() == "autopilot" {
-		wr.EventsEmit(a.ctx, "ap_approved", map[string]string{"title": title, "detail": detail})
+		emit(a.ctx, "ap_approved", map[string]string{"title": title, "detail": detail})
 		return true
 	}
 	return a.confirm(title, detail)
@@ -373,7 +393,7 @@ func (a *App) startAutopilot(steps int) (autopilotRun, int) {
 	c := a.prefs.Composer
 	a.mu.Unlock()
 	r.deadline = r.started.Add(time.Duration(c.APMinutes) * time.Minute)
-	wr.EventsEmit(a.ctx, "autopilot", map[string]any{"on": true, "steps": c.APSteps, "minutes": c.APMinutes})
+	emit(a.ctx, "autopilot", map[string]any{"on": true, "steps": c.APSteps, "minutes": c.APMinutes})
 	return r, c.APSteps
 }
 
@@ -419,7 +439,7 @@ func (a *App) autoReply(r *autopilotRun, text string) bool {
 	a.mu.Lock()
 	a.history = append(a.history, llm.Message{Role: "user", Content: autoPrefix + AutoReply})
 	a.mu.Unlock()
-	wr.EventsEmit(a.ctx, "autoreply", AutoReply)
+	emit(a.ctx, "autoreply", AutoReply)
 	return true
 }
 

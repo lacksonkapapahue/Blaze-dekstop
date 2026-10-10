@@ -111,7 +111,7 @@ func Chat(ctx context.Context, p config.Provider, key, model string, msgs []Mess
 	if owner := KeyOwner(key); owner != "" && owner != p.ID && p.ID != config.Custom && !config.Keyless(p.ID) {
 		return nil, &HTTPError{Code: 401, Body: fmt.Sprintf("the key saved under %s is a %s key", p.Name, config.Name(owner))}
 	}
-	body := map[string]any{"model": model, "messages": wire(msgs, Info(p.ID, model).Vision), "stream": true}
+	body := map[string]any{"model": model, "messages": wire(KeepRecentImages(msgs, 3), Info(p.ID, model).Vision), "stream": true}
 	if len(tools) > 0 {
 		body["tools"] = AdaptTools(tools, p.ID)
 		body["tool_choice"] = "auto"

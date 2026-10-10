@@ -21,6 +21,7 @@
     selection: { auto: true, provider: "auto", label: "Auto (free routing)" },
     routing: { fallback: true, fastest_first: true, keyless: false, daily_cap: 0, today_cost: 0 },
     prefs: { theme: window.__theme || "light", folder: "/home/luke/code/homeglow", design_mode: "ask", project: "p1", show_steps: false, fold_cards: true, autostart: false, hotkey: "" },
+    modes: { work_mode: "build", approval: "auto" }, vision: window.__novision ? "" : "Google Gemini · gemini-3.8-flash",
     desktop: { os, tray: true, tray_note: "In the system tray", background: true, autostart: false, autostart_ok: false, hotkey: "ctrl+shift+space", hotkey_label: "Ctrl+Shift+Space", hotkey_ok: true,
       hotkey_note: "Press Ctrl+Shift+Space anywhere for quick ask", needs_access: false, wayland: false, frameless: os === "windows", orb: false,
       presets: [{ id: "ctrl+shift+space", label: "Ctrl+Shift+Space" }, { id: "alt+space", label: "Alt+Space" }, { id: "ctrl+alt+space", label: "Ctrl+Alt+Space" }, { id: "ctrl+shift+b", label: "Ctrl+Shift+B" }] }, model: "Auto · Google Gemini · gemini-3.8-flash",
@@ -112,7 +113,28 @@
   Object.entries(pairs).filter(([, p]) => p.w >= 2).sort((a, b) => b[1].w - a[1].w).forEach(([k, p]) => { const [a, b] = k.split(",").map(Number); if (deg[a] >= 5 && deg[b] >= 5) return; deg[a]++; deg[b]++; memEdges.push({ a, b, w: +p.w.toFixed(2), why: "both mention “" + p.why + "”" }); });
   allMem.forEach((n, i) => projNodes.forEach((p, pi) => { if (n.kind !== "project" && n.project === p.project) memEdges.push({ a: i, b: memNodes.length + skillNodes.length + pi, w: 1.5, why: "saved in " + p.label }); }));
   window.__memGraph = { nodes: allMem.map(n => ({ ...n, cat: catNames.indexOf(n.cat) })), edges: memEdges, cats: catNames.map(c => ({ name: c, count: allMem.filter(n => n.cat === c).length })), ai_sort: true, can_sort: true, sorting: false, unsorted: 0 };
+  // v0.5 composer: attachments, voice and modes.
+  const thumb = (a, b) => "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="${a}"/><rect x="8" y="22" width="32" height="18" fill="${b}"/><rect x="30" y="8" width="8" height="8" fill="#fff"/></svg>`);
+  const att = {
+    "/home/luke/Pictures/hero-mobile.png": { kind: "image", path: "/home/luke/Pictures/hero-mobile.png", name: "hero-mobile.png", size: 412000, mime: "image/png", thumb: thumb("#1F4BD8", "#F4C95D") },
+    "/home/luke/Downloads/error-trace.jpg": { kind: "image", path: "/home/luke/Downloads/error-trace.jpg", name: "error-trace.jpg", size: 2310000, mime: "image/jpeg", thumb: thumb("#26262A", "#E05A47") },
+    "/home/luke/code/homeglow/package.json": { kind: "file", path: "/home/luke/code/homeglow/package.json", name: "package.json", size: 1840 },
+    "/home/luke/Documents/brief-v2.pdf": { kind: "file", path: "/home/luke/Documents/brief-v2.pdf", name: "brief-v2.pdf", size: 884000 },
+    "/home/luke/code/homeglow/sections": { kind: "folder", path: "/home/luke/code/homeglow/sections", name: "sections", count: 23 },
+  };
+  window.__att = att;
+  const models = [{ name: "tiny", file: "ggml-tiny.bin", mb: 75, note: "fastest, rougher" }, { name: "base", file: "ggml-base.bin", mb: 142, note: "good on any PC (default)" }, { name: "small", file: "ggml-small.bin", mb: 466, note: "most accurate, slower on older PCs" }];
+  window.__stt = { ready: false, engine: "", engine_how: "download", engine_mb: 10, model: "base", model_mb: 142, have_model: false, models, lang: "auto", native: "" };
   const A = {
+    SendWith: async () => "ok", Modes: async () => state.modes,
+    SetWorkMode: async m => (state.modes = { ...state.modes, work_mode: m === "plan" ? "plan" : "build" }),
+    SetApprovalMode: async m => (state.modes = { ...state.modes, approval: m === "autopilot" ? "autopilot" : "auto" }),
+    AttachPaths: async ps => ps.map(p => att[p]).filter(Boolean),
+    AttachPick: async k => Object.values(att).filter(a => a.kind === k),
+    AttachPasted: async () => ({ kind: "image", path: "/home/luke/.blaze/desktop/pasted/20261010-pasted.png", name: "Pasted image.png", size: 96000, thumb: thumb("#111110", "#6B8CFF") }),
+    STTStatus: async () => window.__stt, SetSTT: async m => (window.__stt = { ...window.__stt, model: m || window.__stt.model }), STTSetup: async () => "ok",
+    Transcribe: async () => ({ text: "Make the hero image smaller on phones and keep the headline on one line.", secs: 1.8 }),
+    RecStart: async () => "", RecStop: async () => ({ text: "" }),
     State: async () => state, Conversations: async () => [{ id: "c1", title: "Float Rounding In Price Tests", updated: "Oct 9", source: "auto" }, { id: "c2", title: "Set up a Postgres container", updated: "Oct 8" }, { id: "c3", title: "Why is my fan so loud?", updated: "Oct 7" }, { id: "c6", title: "HomeGlow launch checklist", updated: "Oct 6", source: "manual" }],
     DefaultPersonality: async () => "PERSONALITY\nYou are Blaze. Be warm, sharp, and one step ahead: an expert who happens to be easy to talk to.\n- Answer first. Lead with the result.\n- Take a side.\n- Be specific.",
     SetPersonality: async () => "",
