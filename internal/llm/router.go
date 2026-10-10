@@ -289,7 +289,7 @@ func Complete(ctx context.Context, cfg *config.Config, msgs []Message, tools []T
 func chars(msgs []Message, tools []Tool) int {
 	n := 0
 	for _, m := range msgs {
-		n += len(m.Content) + 20
+		n += len(m.Content) + 20 + 4000*imageCount(m)
 		for _, c := range m.ToolCalls {
 			n += len(c.Function.Name) + len(c.Function.Arguments) + 30
 		}
@@ -325,6 +325,13 @@ func complete(ctx context.Context, cfg *config.Config, msgs []Message, tools []T
 			return nil, &RouteError{NoTools: true}
 		}
 		return nil, &RouteError{NoModels: true}
+	}
+	if HasImages(msgs) {
+		// Images: models that can see go first. When none can, the image travels as a path.
+		var canSee bool
+		if list, canSee = visionFirst(list); !canSee && o.OnStatus != nil && !waited && !shrunk {
+			o.OnStatus("None of your models can see images, so Blaze sent the image as a file path")
+		}
 	}
 	tokens := Estimate(chars(msgs, tools))
 	re := &RouteError{}

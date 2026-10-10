@@ -36,6 +36,7 @@ type Message struct {
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 	Name       string     `json:"name,omitempty"`
+	Attach     []Attach   `json:"attach,omitempty"` // what the user attached (attach.go); images are sent as image parts
 }
 
 type Tool struct {
@@ -110,7 +111,7 @@ func Chat(ctx context.Context, p config.Provider, key, model string, msgs []Mess
 	if owner := KeyOwner(key); owner != "" && owner != p.ID && p.ID != config.Custom && !config.Keyless(p.ID) {
 		return nil, &HTTPError{Code: 401, Body: fmt.Sprintf("the key saved under %s is a %s key", p.Name, config.Name(owner))}
 	}
-	body := map[string]any{"model": model, "messages": msgs, "stream": true}
+	body := map[string]any{"model": model, "messages": wire(msgs, Info(p.ID, model).Vision), "stream": true}
 	if len(tools) > 0 {
 		body["tools"] = AdaptTools(tools, p.ID)
 		body["tool_choice"] = "auto"
