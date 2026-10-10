@@ -1,0 +1,25 @@
+name: pr-shots
+# UI screenshots for pull requests (never builds or releases). Pushed to the shots-pr branch.
+on:
+  pull_request:
+    paths: ['frontend/**', 'ci/**']
+permissions:
+  contents: write
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Screenshot the UI
+        run: |
+          pip install -q playwright && python -m playwright install --with-deps chromium
+          python ci/shots.py
+      - name: Push screenshots to the shots-pr branch
+        run: |
+          cd shots
+          git init -q && git checkout -q -b shots-pr
+          git -c user.name=ci -c user.email=ci@blaze add -A
+          git -c user.name=ci -c user.email=ci@blaze commit -qm "PR UI shots ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" shots-pr

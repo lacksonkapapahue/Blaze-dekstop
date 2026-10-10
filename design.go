@@ -293,6 +293,23 @@ func (a *App) Design() DesignView {
 			v.Files = append(v.Files, f.rel)
 		}
 	}
+	// Never leave the picker blank: with no target yet, preview index.html (or the first page).
+	if v.Target.Kind == "" && len(v.Files) > 0 {
+		pick := v.Files[0]
+		for _, f := range v.Files {
+			if strings.EqualFold(filepath.Base(f), "index.html") {
+				pick = f
+				break
+			}
+		}
+		a.pv.mu.Lock()
+		if a.pv.state.Target.Kind == "" {
+			a.pv.state.Target = DesignTarget{Kind: "file", Path: pick}
+			a.pv.saveLocked()
+		}
+		v.Target = a.pv.state.Target
+		a.pv.mu.Unlock()
+	}
 	return v
 }
 

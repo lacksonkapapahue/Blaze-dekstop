@@ -2,10 +2,31 @@
 const API = () => window.go.main.App;
 const on = (ev, fn) => window.runtime.EventsOn(ev, fn);
 const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 const esc = s => MD.esc(String(s ?? ""));
 const pad = n => String(n).padStart(2, "0");
 const base = p => (p || "").split(/[\\/]/).filter(Boolean).pop() || p;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Line icons (16px grid, square caps), used across the app.
+const IC = {
+  plus: '<path d="M8 3v10M3 8h10"/>', x: '<path d="m4 4 8 8M12 4l-8 8"/>', check: '<path d="m3 8.5 3 3 7-7"/>',
+  chev: '<path d="m6 4 4 4-4 4"/>', down: '<path d="m4.5 6.5 3.5 3.5 3.5-3.5"/>', up: '<path d="m4.5 9.5 3.5-3.5 3.5 3.5"/>',
+  desktop: '<rect x="1.5" y="2.5" width="13" height="8.5"/><path d="M5.5 13.5h5M8 11v2.5"/>', tablet: '<rect x="3" y="1.5" width="10" height="13"/><path d="M7 12.5h2"/>',
+  phone: '<rect x="4.5" y="1.5" width="7" height="13"/><path d="M7.25 12.5h1.5"/>', sun: '<circle cx="8" cy="8" r="2.75"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/>',
+  moon: '<path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5z"/>', cursor: '<path d="m3 2.5 9.5 4-4 1.5-1.5 4z"/>',
+  open: '<path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M11.5 9.5v4h-9v-9h4"/>', file: '<path d="M3.5 1.5h6l3 3v10h-9z"/><path d="M9.5 1.5v3h3"/>',
+  globe: '<circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/>', clock: '<circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/>',
+  sparks: '<path d="M8 1.5v4M8 10.5v4M1.5 8h4M10.5 8h4"/>', retry: '<path d="M13 3.5v3h-3"/><path d="M12.6 6.5A5 5 0 1 0 13 9"/>',
+  copy: '<rect x="5" y="5" width="8.5" height="8.5"/><path d="M3 10.5H2.5v-8h8V3"/>', send: '<path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/>', stop: '<rect x="4" y="4" width="8" height="8"/>',
+  layers: '<path d="m8 2 6 3.5-6 3.5-6-3.5z"/><path d="m2 9 6 3.5L14 9"/>', key: '<circle cx="5" cy="10.5" r="2.5"/><path d="m7 8.5 6-6M11 4.5l1.5 1.5"/>',
+  chart: '<path d="M2.5 13.5h11M4.5 11V8M8 11V4.5M11.5 11V6.5"/>', sliders: '<path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6"/><rect x="8.5" y="3" width="3" height="3"/><rect x="4.5" y="10" width="3" height="3"/>',
+  palette: '<rect x="2.5" y="2.5" width="11" height="11"/><path d="M2.5 8h11M8 2.5v11"/>', brain: '<path d="M4 3.5h8v9H4z"/><path d="M6.5 6h3M6.5 8.5h3M6.5 11h1.5"/>',
+  book: '<path d="M3 2.5h8.5v11H3zM5.5 2.5v11"/>', cpu: '<rect x="4" y="4" width="8" height="8"/><path d="M6 1.5v2.5M10 1.5v2.5M6 12v2.5M10 12v2.5M1.5 6H4M1.5 10H4M12 6h2.5M12 10h2.5"/>',
+  dl: '<path d="M8 2v8.5M4.5 7 8 10.5 11.5 7M2.5 13.5h11"/>', trash: '<path d="M2.5 4.5h11M6 4.5V2.5h4v2M4 4.5l.7 9h6.6l.7-9"/>', ext: '<path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5"/>',
+};
+const icon = (n, cls = "i") => `<svg class="${cls}" viewBox="0 0 16 16">${IC[n] || ""}</svg>`;
 
 let S = null;          // State from Go
 let view = "work";     // current main view
@@ -28,13 +49,14 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme
 async function boot() {
   // Go's startup runs alongside page load, so keep asking until the backend answers.
   for (let i = 0; i < 40 && !S; i++) {
-    try { S = await API().State(); } catch (e) { await new Promise(r => setTimeout(r, 250)); }
+    try { S = await API().State(); } catch (e) { await sleep(250); }
   }
   if (!S) { $("#view").innerHTML = '<div class="page"><div class="col"><div class="label acc">Blaze</div><h1>Blaze couldn\'t start.</h1><p class="lead">The app\'s backend didn\'t answer. Quit Blaze and open it again.</p></div></div>'; return; }
   applyTheme();
+  $("#ver").textContent = S.version || "";
   pane = buildPane();
   setFolder(S.prefs.folder);
-  setModel(S.model);
+  setModel(S.model, S.selection);
   await refreshSide();
   hero();
   show(S.setup_done ? "work" : "setup");
@@ -42,10 +64,12 @@ async function boot() {
   if (!S.prefs.no_update_check) setTimeout(() => checkUpdate(true), 3000);
 }
 
+async function refreshState() { S = await API().State(); setModel(S.model, S.selection); return S; }
+
 // ---------- updates ----------
 let UPD = null;          // last CheckUpdate result
 let updBusy = false;
-const updText = t => document.querySelectorAll(".updstatus").forEach(e => e.textContent = t);
+const updText = t => $$(".updstatus").forEach(e => e.textContent = t);
 on("update", p => updText(p.text || ""));
 
 async function checkUpdate(auto) {
@@ -60,10 +84,10 @@ async function checkUpdate(auto) {
 
 function updateCard() {
   const u = UPD; if (!u || $("#log .col .updcard", pane)) return;
-  const card = h("div", "card confirm updcard", `<div class="label acc title">Update ready</div>
+  const card = h("div", "card confirm updcard", `<div class="title"><span class="label acc">Update ready</span></div>
     <div>Blaze <span class="mono ink">${esc(u.latest)}</span> is out. You have <span class="mono">${esc(u.current)}</span>.</div>
-    <div class="s" style="margin-top:6px">${esc(u.method || "")}</div><div class="label weak updstatus" style="margin-top:8px"></div>
-    <div class="actions"><button class="btn accent yes">${u.can_auto ? "Update now" : "Open release page"}</button><button class="btn line no">Later</button><button class="btn ghost skip">Skip this version</button></div>`);
+    <div class="sub small" style="margin-top:4px">${esc(u.method || "")}</div><div class="label weak updstatus" style="margin-top:8px"></div>
+    <div class="actions"><button class="btn accent sm yes">${u.can_auto ? "Update now" : "Open release page"}</button><button class="btn line sm no">Later</button><button class="btn ghost sm skip">Skip this version</button></div>`);
   card.querySelector(".yes").onclick = () => u.can_auto ? installUpdate(card) : API().OpenURL(u.page);
   card.querySelector(".no").onclick = () => card.remove();
   card.querySelector(".skip").onclick = async () => { await API().SkipUpdate(u.latest); UPD.skipped = true; $("#updCount").textContent = ""; card.remove(); };
@@ -80,20 +104,33 @@ async function installUpdate(box) {
   if (err) { updText(err); box.querySelectorAll("button").forEach(b => b.disabled = false); updBusy = false; }
 }
 
+// ---------- top bar ----------
 function setFolder(path) {
   const home = S.info.home;
   let p = path || "";
   if (home && p.startsWith(home)) p = "~" + p.slice(home.length);
   $("#folderName").textContent = p || "~";
 }
-function setModel(m) { $("#route").textContent = m || "No model"; }
+// The chip shows the model that answered last, or the default before any answer.
+function setModel(label, sel) {
+  if (sel) S.selection = sel;
+  const t = $("#routeText"); if (!t) return;
+  t.textContent = label || (S.selection && S.selection.auto ? "Auto · add a model" : "No model");
+  $("#routeDot").className = "dot" + (label ? "" : " off");
+  $("#route").title = (S.selection && S.selection.auto ? "Auto (free routing)" : "Default: " + (S.selection?.label || "")) + " · click to switch";
+}
 
 $("#folder").onclick = async () => { const d = await API().PickFolder(); S.prefs.folder = d; setFolder(d); };
-$("#route").onclick = () => { show(tab); openMenu("model"); };
+$("#route").onclick = e => { e.stopPropagation(); modelPopover($("#route")); };
 $("#newChat").onclick = () => newChat();
 $("#newProject").onclick = () => newProject();
-document.querySelectorAll(".nav").forEach(b => b.onclick = () => show(b.dataset.view));
-document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => show(b.dataset.tab));
+$$(".nav").forEach(b => b.onclick = () => show(b.dataset.view));
+$$("#tabs button").forEach(b => b.onclick = () => show(b.dataset.tab));
+addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") { e.preventDefault(); newChat(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); show("settings"); }
+  if (e.key === "Escape") closePop();
+});
 
 async function newChat() {
   if (busy) return;
@@ -109,8 +146,89 @@ document.addEventListener("click", e => {
   if (c) { navigator.clipboard.writeText(c.closest(".code").querySelector("pre").textContent); c.textContent = "Copied"; setTimeout(() => c.textContent = "Copy", 1200); }
   const st = e.target.closest(".step .head");
   if (st) st.parentElement.classList.toggle("open");
-  if (!e.target.closest("#menu") && !e.target.closest("#plus") && !e.target.closest("#route")) closeMenu();
+  if (!e.target.closest("#menu") && !e.target.closest("#plus")) closeMenu();
+  if (!e.target.closest(".pop") && !e.target.closest("#route") && !e.target.closest("[data-pop]")) closePop();
 });
+
+// ---------- popovers ----------
+let popEl = null;
+function closePop() { if (popEl) { popEl.remove(); popEl = null; } }
+function openPop(anchor, build, opts = {}) {
+  closePop();
+  const p = h("div", "pop"); popEl = p;
+  build(p);
+  document.body.append(p);
+  const r = anchor.getBoundingClientRect(), w = Math.max(opts.width || 300, p.offsetWidth || 0);
+  p.style.width = (opts.width || 300) + "px";
+  let left = opts.align === "left" ? r.left : r.right - w;
+  left = Math.max(8, Math.min(left, innerWidth - w - 8));
+  p.style.left = left + "px"; p.style.top = (r.bottom + 6) + "px";
+  return p;
+}
+
+const capPills = m => {
+  const out = [];
+  if (m.tools === "yes") out.push('<span class="pill acc" title="Can call tools">Tools</span>');
+  else if (m.tools === "no") out.push('<span class="pill" title="Can\'t call tools: chat only">No tools</span>');
+  if (m.vision) out.push('<span class="pill" title="Understands images">Vision</span>');
+  if (m.context) out.push(`<span class="pill" title="Context window">${m.context >= 1e6 ? (m.context / 1e6).toFixed(m.context % 1e6 ? 1 : 0) + "M" : Math.round(m.context / 1024) + "K"}</span>`);
+  if (m.free) out.push('<span class="pill" title="On a free tier">Free</span>');
+  return `<span class="caps">${out.join("")}</span>`;
+};
+
+// The model switcher: Auto, or any ready provider and any of its models.
+async function modelPopover(anchor) {
+  if (popEl && popEl.dataset.kind === "model") { closePop(); return; }
+  const st = await refreshState();
+  openPop(anchor, p => {
+    p.dataset.kind = "model";
+    p.innerHTML = `<div class="phd"><span class="label">Model</span><span class="grow"></span><button class="btn ghost xs mg">Manage models</button></div><div class="pbody"></div>`;
+    $(".mg", p).onclick = () => { closePop(); show("settings", "models"); };
+    const body = $(".pbody", p);
+    const sel = st.selection || { auto: true };
+    const auto = h("button", "opt" + (sel.auto ? " sel" : ""), `<span class="on-mark">${sel.auto ? icon("check", "i sm") : ""}</span><span class="col2"><span class="ot">Auto (free routing)</span><span class="od">Fastest healthy model in your chain; skips ones that are resting</span></span>`);
+    auto.onclick = async () => { const l = await API().SelectModel("auto", ""); setModel(l); closePop(); };
+    body.append(auto);
+    const ready = (st.providers || []).filter(x => x.ready && x.id !== "pollinations");
+    if (!ready.length) body.append(h("div", "pnote", "No provider is set up yet. Add a free Gemini or Groq key to start."));
+    ready.forEach(pv => {
+      const isCur = !sel.auto && sel.provider === pv.id;
+      const row = h("button", "opt" + (isCur ? " sel" : ""), `<span class="on-mark">${isCur ? icon("check", "i sm") : ""}</span><span class="col2"><span class="ot">${esc(pv.short)}</span><span class="om">${esc(isCur ? sel.model : pv.model || "choose a model")}</span></span><span class="chev">${icon("chev", "i sm")}</span>`);
+      const list = h("div", "models"); list.style.display = "none";
+      row.onclick = async () => {
+        if (list.style.display === "") { list.style.display = "none"; return; }
+        $$(".models", body).forEach(x => x.style.display = "none");
+        list.style.display = ""; list.innerHTML = `<div class="pnote">Loading ${esc(pv.short)}'s models…</div>`;
+        const ml = await API().ModelOptions(pv.id, false);
+        drawModelRows(list, pv, ml, isCur ? sel.model : pv.model, async m => { const l = await API().SelectModel(pv.id, m.id); setModel(l); closePop(); });
+      };
+      body.append(row, list);
+    });
+    const add = h("button", "opt", `<span class="on-mark">${icon("plus", "i sm")}</span><span class="col2"><span class="ot">Add a provider…</span><span class="od">Free keys: Gemini, Groq, Cerebras, OpenRouter, NVIDIA, Mistral</span></span>`);
+    add.onclick = () => { closePop(); show("settings", "providers"); };
+    body.append(add);
+  }, { width: 380 });
+}
+
+function drawModelRows(list, pv, ml, current, pick) {
+  list.innerHTML = "";
+  const ms = (ml && ml.models) || [];
+  if (ms.length > 8) {
+    const q = h("input", "field psearch"); q.placeholder = `Search ${ms.length} models`;
+    q.oninput = () => $$(".mrow", list).forEach(r => r.style.display = r.dataset.id.toLowerCase().includes(q.value.toLowerCase()) ? "" : "none");
+    list.append(q); setTimeout(() => q.focus(), 0);
+  }
+  ms.forEach(m => {
+    const no = m.tools === "no";
+    const r = h("button", "mrow" + (m.id === current ? " cur" : "") + (no ? " no" : ""), `<span class="mid" title="${esc(m.name || m.id)}${m.note ? " · " + esc(m.note) : ""}">${esc(m.id)}</span>${capPills(m)}`);
+    r.dataset.id = m.id;
+    if (no) r.title = "This model can't call tools, so Blaze can't act with it.";
+    r.onclick = e => { e.stopPropagation(); pick(m); };
+    list.append(r);
+  });
+  if (!ms.length) list.append(h("div", "pnote", "No models listed."));
+  if (ml && ml.error) list.append(h("div", "pnote", esc(ml.error)));
+}
 
 // ---------- sidebar ----------
 async function refreshSide() {
@@ -131,14 +249,15 @@ async function refreshSide() {
   item("", "General", "Chats without a project");
   projects.forEach(p => item(p.id, p.name, p.folder));
 
-  $("#chatsLabel").textContent = "Chats · " + (S.project ? S.project.name : "General");
+  $("#chatsLabel").textContent = "Chats";
+  $("#chatsCtx").textContent = "· " + (S.project ? S.project.name : "General");
   const list = await API().Conversations(pid) || [];
   const nav = $("#chats"); nav.innerHTML = "";
-  if (!list.length) nav.append(h("div", "label weak none", "No chats yet"));
+  if (!list.length) nav.append(h("div", "none", "No chats yet"));
   list.forEach(c => {
-    const b = h("button", "chat" + (c.id === convId && (view === "work" || view === "design") ? " on" : ""), `<span class="t">${esc(c.title)}</span><span class="x" title="Delete">×</span>`);
+    const b = h("button", "chat" + (c.id === convId && (view === "work" || view === "design") ? " on" : ""), `<span class="t">${esc(c.title)}</span><span class="when">${esc(c.updated || "")}</span><span class="x" title="Delete">${icon("x", "i sm")}</span>`);
     b.onclick = async e => {
-      if (e.target.classList.contains("x")) { await API().DeleteConversation(c.id); if (c.id === convId) { convId = ""; hero(); } refreshSide(); return; }
+      if (e.target.closest(".x")) { await API().DeleteConversation(c.id); if (c.id === convId) { convId = ""; hero(); } refreshSide(); return; }
       if (busy) return;
       openChat(c.id);
     };
@@ -157,7 +276,7 @@ async function openChat(id) {
 
 async function refreshJobCount() {
   const t = await API().Jobs();
-  const n = (t.match(/\[running/g) || []).length;
+  const n = (String(t || "").match(/\[running/g) || []).length;
   $("#jobCount").textContent = n ? pad(n) : "";
 }
 
@@ -165,14 +284,14 @@ async function refreshJobCount() {
 function show(v, arg) {
   if (v === "chat") v = "work";
   view = v;
-  if (v === "work" || v === "design") tab = v;
-  document.querySelectorAll(".nav").forEach(b => b.classList.toggle("on", b.dataset.view === v));
-  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === v));
+  if (v === "work" || v === "design") { tab = v; API().SetTab(v); }
+  $$(".nav").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+  $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === v));
   $("#tabs").classList.toggle("dim", v !== "work" && v !== "design");
   if (v === "design") $("#designDot").className = "";
-  const el = $("#view"); pane.remove(); el.innerHTML = ""; closeMenu();
+  const el = $("#view"); pane.remove(); el.innerHTML = ""; closeMenu(); closePop();
   ({ work: workView, design: designView, setup: setupView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, project: projectView, newproject: newProjectView })[v](el, arg);
-  document.querySelectorAll("#chats .chat").forEach(b => b.classList.remove("on"));
+  $$("#chats .chat").forEach(b => b.classList.remove("on"));
 }
 
 function workView(el) {
@@ -182,23 +301,41 @@ function workView(el) {
   $("#input").focus();
 }
 
+// Page scaffold: eyebrow, title, lead, optional actions on the right.
+function page(el, eyebrow, title, lead) {
+  const pg = h("div", "page"); const col = h("div", "col"); pg.append(col); el.append(pg);
+  const head = h("div", "phead", `<div class="ph"><div class="label acc">${esc(eyebrow)}</div><h1>${title}</h1>${lead ? `<p class="lead">${lead}</p>` : ""}</div>`);
+  const acts = h("div", "acts"); acts.style.cssText = "display:flex;gap:8px"; head.append(acts);
+  col.append(head);
+  return { col, acts };
+}
+function group(title, desc, right) {
+  const g = h("div", "group");
+  const gh = h("div", "gh", `<span class="label">${esc(title)}</span>`);
+  if (right) gh.append(right);
+  g.append(gh);
+  if (desc) g.append(h("div", "gd", desc));
+  return g;
+}
+
 // ---------- chat pane ----------
 function buildPane() {
   const p = h("div", "chatpane");
   p.innerHTML = `<div id="log"><div class="col"></div></div>
   <div id="composer"><div class="cwrap">
     <div id="menu" class="menu" style="display:none"></div>
-    <div id="attach" class="attach"></div>
     <div class="inbox">
-      <button id="plus" class="plusbtn" title="Commands and files">+</button>
-      <textarea id="input" rows="1" placeholder="Ask Blaze · / commands · @ files"></textarea>
+      <div id="attach" class="attach"></div>
+      <textarea id="input" rows="1" placeholder="Ask Blaze to do something…"></textarea>
+      <div class="ibar">
+        <button id="plus" class="plusbtn" title="Commands and files">${icon("plus", "i sm")}</button>
+        <span class="grow"></span>
+        <label class="toggle" title="Auto-approve risky actions (deletes still ask)"><input type="checkbox" id="yolo"><span class="label">Auto-approve</span></label>
+        <button id="send" class="btn accent sm">${icon("send", "i sm")}<span>Send</span></button>
+      </div>
     </div>
-    <div class="row">
-      <span class="label weak" id="hint">/ commands · @ files · Shift+Enter new line</span>
-      <span class="grow"></span>
-      <label class="toggle" title="Auto-approve risky actions (deletes still ask)"><input type="checkbox" id="yolo"><span class="label">Auto-approve</span></label>
-      <button id="send" class="btn accent">Send</button>
-    </div></div></div>`;
+    <div class="hintline"><span class="label weak" id="hint">/ commands · @ files · Shift+Enter new line</span></div>
+  </div></div>`;
   const input = $("#input", p), yolo = $("#yolo", p);
   yolo.checked = !!S.yolo;
   yolo.onchange = () => { S.yolo = yolo.checked; API().SetYolo(yolo.checked); };
@@ -208,25 +345,30 @@ function buildPane() {
   $("#plus", p).onclick = () => menuOpen() ? closeMenu() : openMenu("root");
   return p;
 }
-function grow() { const i = $("#input"); i.style.height = "auto"; i.style.height = Math.min(i.scrollHeight, 220) + "px"; }
+function grow() { const i = $("#input"); if (!i) return; i.style.height = "auto"; i.style.height = Math.min(i.scrollHeight, 240) + "px"; }
 
 function hero() {
   const col = $("#log .col", pane); col.innerHTML = "";
   const os = S.info.os_name || "your computer";
   const where = S.project ? S.project.name : os;
   const box = h("div", "hero");
-  box.innerHTML = `<div class="label acc">Blaze · ${esc(where)}</div><div class="big" style="margin-top:10px">What should we <em>get done</em>?</div>
-    <p class="lead" style="margin-top:12px">Blaze runs commands, edits files here, writes code, uses git and the web. Designs open live in the Design tab. Type <span class="kbd">/</span> for commands or <span class="kbd">@</span> to attach a file.</p>`;
+  box.innerHTML = `<div class="label acc">${esc(where)}</div><div class="big">What should we <em>get done</em>?</div>
+    <p class="lead">Blaze runs commands, edits files here, writes code, uses git and the web. Visual work opens live in Design. Type <span class="kbd">/</span> for commands or <span class="kbd">@</span> to attach a file.</p>`;
   const sug = h("div", "suggest");
   [["Explore", "What's in this folder? Give me a short tour."],
    ["Fix", "Run the tests here and fix whatever fails."],
    ["Design", "Suggest 3 directions for a clean landing page for this project."],
    ["System", "How much disk space is left, and what's using the most?"]].forEach(([k, t]) => {
-    const b = h("button", "", `<span class="label">${k}</span>${esc(t)}`);
+    const b = h("button", "", `<span class="label">${k}</span><span>${esc(t)}</span>`);
     b.onclick = () => { $("#input").value = t; submit(); };
     sug.append(b);
   });
   box.append(sug); col.append(box);
+  if (S.setup_done && !(S.providers || []).some(p => p.ready && p.id !== "pollinations")) {
+    const c = h("div", "callout acc", `${icon("key")}<div><b>No model yet.</b> Blaze needs one AI model that can use tools. A free Gemini or Groq key takes a minute. <a data-go="providers" style="color:var(--accent);cursor:pointer">Add one</a></div>`);
+    c.style.marginTop = "18px"; $("a", c).onclick = () => show("settings", "providers");
+    box.append(c);
+  }
 }
 
 function loadConv(conv) {
@@ -239,8 +381,8 @@ function loadConv(conv) {
     if (m.role === "user") { col.append(userMsg(m.content)); turn = null; }
     else if (m.role === "assistant") {
       if (!turn) { turn = blazeMsg(); col.append(turn.el); }
-      (m.tool_calls || []).forEach(tc => { const s = addStep(turn, tc.id, tc.function.name, tc.function.arguments); finishStep(s, results[tc.id] || ""); });
-      if (m.content) { turn.text += (turn.text ? "\n\n" : "") + m.content; turn.mdEl.innerHTML = MD.render(turn.text); }
+      (m.tool_calls || []).forEach(tc => { const s = addStep(turn, tc.id, tc.function.name, tc.function.arguments); finishStep(turn, s, results[tc.id] || ""); });
+      if (m.content && m.content !== "…") { turn.text += (turn.text ? "\n\n" : "") + m.content; turn.mdEl.innerHTML = MD.render(turn.text); }
     }
   });
   scrollDown(true);
@@ -255,22 +397,22 @@ function userMsg(content) {
     const act = (text.match(/^\[Design edit\] (.*)/) || [])[1] || "Edit";
     const req = (text.match(/\nRequest: ([\s\S]*)$/) || [])[1] || "";
     const tags = [...text.matchAll(/\nElement: (.*)/g)].map(x => x[1]);
-    m.append(h("div", "bubble", `<span class="label acc">${esc(act)}</span> ${esc(req)}<div class="chips">${tags.map(t => `<span class="fchip">${esc(t.length > 40 ? "…" + t.slice(-40) : t)}</span>`).join("")}</div>`));
+    m.append(h("div", "bubble", `<span class="label acc">${esc(act)}</span> ${esc(req)}`));
+    if (tags.length) m.append(h("div", "chips", tags.map(t => `<span class="fchip">${esc(t.length > 40 ? "…" + t.slice(-40) : t)}</span>`).join("")));
   } else {
-    const b = h("div", "bubble", esc(text));
-    if (files.length) b.append(h("div", "chips", files.map(f => `<span class="fchip">@ ${esc(f)}</span>`).join("")));
-    m.append(b);
+    m.append(h("div", "bubble", esc(text)));
+    if (files.length) m.append(h("div", "chips", files.map(f => `<span class="fchip">@ ${esc(f)}</span>`).join("")));
   }
   return m;
 }
 
 function blazeMsg() {
   const el = h("div", "msg blaze");
-  el.append(h("div", "who label", "Blaze"));
+  el.append(h("div", "who", `<span class="mk"></span><span class="label">Blaze</span>`));
   const stepsEl = h("div", "steps"); stepsEl.style.display = "none";
   const mdEl = h("div", "md");
   el.append(stepsEl, mdEl);
-  return { el, stepsEl, mdEl, text: "", steps: {} };
+  return { el, stepsEl, mdEl, text: "", steps: {}, order: [] };
 }
 
 function scrollDown(force) {
@@ -281,7 +423,7 @@ function scrollDown(force) {
 function setBusy(b) {
   busy = b;
   const send = $("#send", pane);
-  send.textContent = b ? "Stop" : "Send";
+  send.innerHTML = b ? `${icon("stop", "i sm")}<span>Stop</span>` : `${icon("send", "i sm")}<span>Send</span>`;
   send.classList.toggle("accent", !b); send.classList.toggle("line", b);
   $("#hint", pane).textContent = b ? "Working… Stop ends the task" : "/ commands · @ files · Shift+Enter new line";
 }
@@ -290,7 +432,7 @@ let thinkingEl = null;
 function thinking(onOff, text) {
   if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
   if (onOff && current) {
-    thinkingEl = h("div", "thinking label", `<span class="sq"></span><span>${esc(text || "Thinking")}</span>`);
+    thinkingEl = h("div", "thinking", `<span class="sq"></span><span>${esc(text || "Thinking")}</span>`);
     current.el.append(thinkingEl); scrollDown();
   }
 }
@@ -305,6 +447,11 @@ function submit() {
   attachments = []; drawAttach();
 }
 
+async function runCommand(c) {
+  if (c.sub) { openMenu("sub", await c.sub(), c.name); return; }
+  await c.run();
+}
+
 async function sendText(text, files) {
   if (busy) return;
   const col = $("#log .col", pane);
@@ -317,35 +464,109 @@ async function sendText(text, files) {
   if (r === "busy") setBusy(true);
 }
 
+// One line per tool step: a verb and its target.
 function describe(name, args) {
   let a = {}; try { a = JSON.parse(args || "{}"); } catch (e) {}
-  const v = k => String(a[k] ?? "").split("\n")[0].slice(0, 90);
+  const v = k => String(a[k] ?? "").split("\n")[0].slice(0, 120);
   switch (name) {
-    case "run_shell": return "$ " + v("command");
-    case "git": return "git " + v("args");
-    case "web_search": return "search  " + v("query");
-    case "fetch_page": return "read  " + v("url");
-    case "run_code": return "run " + v("language");
-    case "file_read": case "file_write": case "file_edit": case "file_delete": case "file_list": case "file_search":
-      return name.replace("file_", "") + "  " + (v("path") || v("pattern") || ".");
+    case "run_shell": return ["run", v("command")];
+    case "git": return ["git", v("args")];
+    case "web_search": return ["search", v("query")];
+    case "fetch_page": return ["read", v("url")];
+    case "run_code": return ["run", v("language") + " code"];
+    case "file_read": return ["read", v("path")];
+    case "file_write": return ["write", v("path")];
+    case "file_edit": return ["edit", v("path")];
+    case "file_delete": return ["delete", v("path")];
+    case "file_list": return ["list", v("path") || "."];
+    case "file_search": return ["search", v("pattern")];
+    case "open_url": return ["open", v("target") || v("url")];
+    case "install_tool": return ["install", v("name")];
   }
-  return name.replace(/_/g, " ");
+  return [name.replace(/_/g, " "), ""];
 }
+const describeText = (n, a) => describe(n, a).filter(Boolean).join(" ");
 
+const MAX_STEPS_SHOWN = 6;
 function addStep(turn, id, name, args) {
   turn.stepsEl.style.display = "";
-  const s = h("div", "step run", `<div class="head"><span class="st"></span><span>${esc(describe(name, args))}</span><span class="sum"></span></div><pre></pre>`);
+  const [verb, tgt] = describe(name, args);
+  const s = h("div", "step run", `<div class="head"><span class="st"></span><span class="verb">${esc(verb)}</span><span class="tgt">${esc(tgt)}</span><span class="sum"></span></div><pre></pre>`);
   s.dataset.tool = name;
-  turn.stepsEl.append(s); turn.steps[id] = s; return s;
+  turn.stepsEl.append(s); turn.steps[id] = s; turn.order.push(s);
+  foldSteps(turn);
+  return s;
 }
 
-function finishStep(s, result) {
+// Older steps fold behind one "N earlier steps" line.
+function foldSteps(turn) {
+  const vis = turn.order.filter(s => !s.dataset.dup);
+  let more = $(".more", turn.stepsEl);
+  if (vis.length <= MAX_STEPS_SHOWN || turn.expanded) { if (more) more.remove(); vis.forEach(s => s.classList.remove("hide")); return; }
+  const hidden = vis.slice(0, vis.length - MAX_STEPS_SHOWN);
+  vis.forEach(s => s.classList.toggle("hide", hidden.includes(s)));
+  if (!more) { more = h("button", "more"); more.onclick = () => { turn.expanded = true; foldSteps(turn); }; turn.stepsEl.prepend(more); }
+  more.textContent = `${hidden.length} earlier step${hidden.length > 1 ? "s" : ""} · show`;
+}
+
+const isBad = r => /^Error|^exit [1-9]|did NOT approve|^Refused|^Blaze couldn't/.test(r || "");
+function summary(result) {
+  const lines = String(result || "").split("\n").map(x => x.trim()).filter(Boolean);
+  let first = lines[0] || "";
+  first = first.replace(/^Error in [\w_]+:\s*/, "").replace(/^Error:\s*/, "");
+  return first.length > 90 ? first.slice(0, 90) + "…" : first;
+}
+
+function finishStep(turn, s, result) {
   if (!s) return;
-  const first = (result || "").split("\n")[0];
-  const bad = /^Error|^exit [1-9]|did NOT approve|^Refused/.test(result || "");
+  const bad = isBad(result);
   s.classList.remove("run"); s.classList.add(bad ? "bad" : "ok");
-  s.querySelector(".sum").textContent = first.slice(0, 80);
+  const sum = summary(result);
+  s.querySelector(".sum").textContent = sum;
   s.querySelector("pre").textContent = result;
+  // The same error again collapses into the previous line with a ×N count.
+  if (bad && turn) {
+    const i = turn.order.indexOf(s), prev = turn.order.slice(0, i).reverse().find(x => !x.dataset.dup);
+    if (prev && prev.classList.contains("bad") && prev.dataset.tool === s.dataset.tool && prev.querySelector(".sum").textContent === sum) {
+      s.dataset.dup = "1"; s.classList.add("hide");
+      const n = (+prev.dataset.n || 1) + 1; prev.dataset.n = n;
+      let rep = $(".rep", prev); if (!rep) { rep = h("span", "rep"); prev.querySelector(".head").append(rep); }
+      rep.textContent = "×" + n;
+      foldSteps(turn);
+    }
+  }
+}
+
+function routeMeta(turn, d) {
+  if (!turn || $(".meta", turn.el)) return;
+  const m = h("div", "meta");
+  const secs = d && d.seconds ? ` · ${d.seconds.toFixed(1)}s` : "";
+  m.innerHTML = `<span class="route"><span class="dot${d && d.keyless ? " off" : ""}"></span>${esc((d && d.route) || "")}${secs}</span>${d && d.note ? `<span class="note">${esc(d.note)}</span>` : ""}<span class="grow"></span><span class="acts"><button class="btn ghost xs cp" title="Copy answer">${icon("copy", "i sm")}</button><button class="btn ghost xs rt" title="Ask again">${icon("retry", "i sm")}</button></span>`;
+  const text = turn.text;
+  $(".cp", m).onclick = () => navigator.clipboard.writeText(text);
+  $(".rt", m).onclick = () => retry();
+  turn.el.append(m);
+}
+
+// The error card: one plain sentence, what each model said (short), and actions.
+function errorCard(target, e) {
+  if (typeof e === "string") e = { message: e, detail: "" };
+  const fails = e.failures || [];
+  const card = h("div", "card err");
+  const setup = e.kind === "setup";
+  card.innerHTML = `<div class="title"><span class="label ink">${setup ? "Set up a model" : "Couldn't finish"}</span></div>
+    <div class="msgtext">${esc(e.message || "Something went wrong.")}</div>
+    ${fails.length > 1 ? `<div class="fails">${fails.map(f => `<div><span class="n">${esc(f.name)}</span><span>${esc(f.message)}</span></div>`).join("")}</div>` : ""}
+    <div class="actions"></div><pre></pre>`;
+  const acts = $(".actions", card);
+  const btn = (cls, html, fn) => { const b = h("button", "btn sm " + cls, html); b.onclick = fn; acts.append(b); return b; };
+  if (setup) btn("accent", `${icon("key", "i sm")}Add a model`, () => show("settings", "providers"));
+  else if (e.kind !== "steps") btn("accent", `${icon("retry", "i sm")}Retry`, () => retry());
+  if (e.kind !== "steps") { const sw = btn("line", `${icon("layers", "i sm")}Switch model`, ev => { ev.stopPropagation(); modelPopover(sw); }); sw.dataset.pop = "1"; }
+  if (e.kind === "steps") btn("accent", "Continue", () => { $("#input").value = "continue"; submit(); });
+  if (e.detail && e.detail !== e.message) btn("ghost", "Details", () => card.classList.toggle("open"));
+  $("pre", card).textContent = e.detail || "";
+  target.append(card);
 }
 
 // ---------- events from Go ----------
@@ -363,19 +584,31 @@ on("tool", t => {
   thinking(false);
   if (current.text) current.text += "\n\n";
   addStep(current, t.id, t.name, t.args);
-  thinking(true, describe(t.name, t.args));
+  thinking(true, describeText(t.name, t.args));
   scrollDown();
 });
 on("tool_done", t => {
   if (!current) return;
   const s = current.steps[t.id];
-  finishStep(s, t.result);
+  finishStep(current, s, t.result);
   if (view === "design" && s && /^file_(write|edit)$/.test(s.dataset.tool)) reloadPreview();
 });
+on("repair", r => {
+  if (!current) return;
+  current.stepsEl.style.display = "";
+  const n = (r.dropped || []).length;
+  let fx = $(".fixnote", current.stepsEl);
+  if (!fx) { fx = h("div", "fixnote"); current.stepsEl.append(fx); }
+  fx.dataset.n = (+fx.dataset.n || 0) + n;
+  fx.textContent = `Skipped ${fx.dataset.n} malformed tool call${fx.dataset.n > 1 ? "s" : ""} from the model and asked it again.`;
+  fx.title = (r.dropped || []).join("\n");
+});
+on("route", r => { if (r && r.route) setModel(r.route); });
+on("model", m => { if (m) setModel(m.label, m.selection); });
 on("confirm", c => {
   thinking(false);
-  const card = h("div", "card confirm", `<div class="label acc title">${esc(c.title)}</div><div class="detail">${esc(c.detail)}</div>
-    <div class="actions"><button class="btn accent yes">Yes, do it</button><button class="btn line no">No</button></div>`);
+  const card = h("div", "card confirm", `<div class="title"><span class="label acc">${esc(c.title)}</span></div><div class="detail">${esc(c.detail)}</div>
+    <div class="actions"><button class="btn accent sm yes">Yes, do it</button><button class="btn line sm no">No</button></div>`);
   const done = yes => { API().Answer(c.id, yes); card.classList.add("done"); card.querySelector(".actions").innerHTML = `<span class="label">${yes ? "Approved" : "Declined"}</span>`; thinking(true); };
   card.querySelector(".yes").onclick = () => done(true);
   card.querySelector(".no").onclick = () => done(false);
@@ -384,19 +617,18 @@ on("confirm", c => {
 });
 on("done", d => {
   thinking(false);
-  if (current) current.el.append(h("div", "route label weak", `${esc(d.route)} · ${d.seconds.toFixed(1)}s`));
-  setModel(d.route);
+  if (current) routeMeta(current, d);
+  if (d && d.route) setModel(d.route);
   current = null; setBusy(false); scrollDown(); refreshSide();
 });
-on("error", msg => {
+on("error", e => {
   thinking(false);
-  const target = current ? current.el : $("#log .col", pane);
-  target.append(h("div", "card err", `<div class="label ink title">Couldn't finish</div><div class="md">${MD.render(msg)}</div>`));
+  errorCard(current ? current.el : $("#log .col", pane), e);
   current = null; setBusy(false); scrollDown(true); refreshSide();
 });
 on("stopped", () => {
   thinking(false);
-  if (current) current.el.append(h("div", "route label weak", "Stopped"));
+  if (current) current.el.append(h("div", "meta", `<span class="route">Stopped</span>`));
   current = null; setBusy(false); refreshSide();
 });
 on("design", d => {
@@ -406,8 +638,8 @@ on("design", d => {
   $("#designDot").className = "dotnew";
   if (mode === "never") return;
   const what = d.target.kind === "url" ? d.target.url : d.target.path;
-  const card = h("div", "card confirm", `<div class="label acc title">Design ready</div><div>Preview <span class="mono ink">${esc(what || "the design")}</span> live, with versions and point-to-edit.</div>
-    <div class="actions"><button class="btn accent yes">Open Design</button><button class="btn line no">Not now</button><button class="btn ghost al">Always open</button></div>`);
+  const card = h("div", "card confirm", `<div class="title"><span class="label acc">Design ready</span></div><div>Preview <span class="mono">${esc(what || "the design")}</span> live, with versions and point-to-edit.</div>
+    <div class="actions"><button class="btn accent sm yes">Open Design</button><button class="btn line sm no">Not now</button><button class="btn ghost sm al">Always open</button></div>`);
   card.querySelector(".yes").onclick = () => { card.remove(); show("design"); };
   card.querySelector(".no").onclick = () => card.remove();
   card.querySelector(".al").onclick = async () => { await API().SetDesignMode("always"); S.prefs.design_mode = "always"; card.remove(); show("design"); };
@@ -415,9 +647,20 @@ on("design", d => {
 });
 
 // ---------- command menu ----------
+// /model is two levels: Auto or a provider, then that provider's models.
+async function modelMenuItems() {
+  const items = (await API().Models() || []).map(m => m.provider === "auto"
+    ? { name: "Auto (free routing)", desc: (m.current ? "in use · " : "") + "fastest healthy model in your chain", run: async () => setModel(await API().SelectModel("auto", "")) }
+    : { name: m.name, desc: (m.current ? "in use · " : "") + m.model, sub: async () => {
+        const ml = await API().ModelOptions(m.provider, false);
+        return (ml.models || []).filter(x => x.tools !== "no").map(x => ({ name: x.id, desc: [x.tools === "yes" ? "tools" : x.tools === "no" ? "no tools" : "", x.vision ? "vision" : "", x.id === m.model ? "current" : ""].filter(Boolean).join(" · "), run: async () => setModel(await API().SelectModel(m.provider, x.id)) }));
+      } });
+  return items.concat([{ name: "Manage models…", desc: "Settings › Models", run: () => show("settings", "models") }]);
+}
+
 const COMMANDS = [
   { name: "new", desc: "Start a new chat", run: () => newChat() },
-  { name: "model", desc: "See or switch the AI model", sub: async () => (await API().Models() || []).map((m, i) => ({ name: m.name, desc: m.model + (i === 0 ? " · in use" : ""), run: async () => setModel(await API().UseModel(m.provider)) })).concat([{ name: "Add a model…", desc: "Settings › models", run: () => show("settings") }]) },
+  { name: "model", desc: "Switch provider and model, or Auto", sub: modelMenuItems },
   { name: "project", desc: "Switch project or make a new one", sub: async () => [{ name: "General", desc: "No project", run: () => switchProject("") }].concat((await API().Projects() || []).map(p => ({ name: p.name, desc: p.folder, run: () => switchProject(p.id) }))).concat([{ name: "New project…", desc: "Pick a folder", run: () => newProject() }]) },
   { name: "folder", desc: "Change the working folder", run: () => $("#folder").click() },
   { name: "design", desc: "Open the Design tab", run: () => show("design") },
@@ -432,6 +675,7 @@ const COMMANDS = [
   { name: "jobs", desc: "Background jobs and their logs", run: () => show("jobs") },
   { name: "schedule", desc: "Scheduled jobs", run: () => show("schedule") },
   { name: "doctor", desc: "Check models, shell and tools", run: () => show("doctor") },
+  { name: "usage", desc: "Tokens and cost per model", run: () => show("settings", "usage") },
   { name: "memory", desc: "What Blaze remembers about you", run: () => show("settings", "memory") },
   { name: "settings", desc: "Models, behaviour, appearance", run: () => show("settings") },
   { name: "update", desc: "Check for a new version of Blaze", run: () => show("settings", "updates") },
@@ -444,20 +688,20 @@ function closeMenu() { const m = $("#menu"); if (m) m.style.display = "none"; me
 
 async function openMenu(kind, items, title) {
   if (kind === "root") items = COMMANDS.map(c => ({ ...c, slash: true }));
-  if (kind === "model") { items = await COMMANDS[1].sub(); title = "Model"; }
+  if (kind === "model") { items = await modelMenuItems(); title = "Model"; }
   menu = { items: items || [], idx: 0, kind, title };
   drawMenu();
 }
 
 function drawMenu() {
-  const m = $("#menu");
+  const m = $("#menu"); if (!m) return;
   if (!menu.items.length) { closeMenu(); return; }
   m.innerHTML = (menu.title ? `<div class="mhead label">${esc(menu.title)}</div>` : "") +
-    menu.items.slice(0, 40).map((it, i) => `<button class="mi ${i === menu.idx ? "on" : ""}" data-i="${i}"><span class="mn">${it.slash ? "/" : ""}${esc(it.name)}${it.sub ? " ›" : ""}</span><span class="md2">${esc(it.desc || "")}</span></button>`).join("") +
+    menu.items.slice(0, 60).map((it, i) => `<button class="mi ${i === menu.idx ? "on" : ""}" data-i="${i}"><span class="mn">${it.slash ? "/" : ""}${esc(it.name)}${it.sub ? " ›" : ""}</span><span class="md2">${esc(it.desc || "")}</span></button>`).join("") +
     `<div class="mfoot label weak">↑↓ move · Enter pick · Esc close</div>`;
   m.style.display = "";
   m.querySelectorAll(".mi").forEach(b => { b.onmouseenter = () => { menu.idx = +b.dataset.i; m.querySelectorAll(".mi").forEach(x => x.classList.toggle("on", x === b)); }; b.onclick = () => pickMenu(+b.dataset.i); });
-  const sel = m.querySelector(".mi.on"); if (sel) sel.scrollIntoView({ block: "nearest" });
+  const sel = m.querySelector(".mi.on"); if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: "nearest" });
 }
 
 async function pickMenu(i) {
@@ -472,7 +716,7 @@ async function pickMenu(i) {
   if (it.sub) { openMenu("sub", await it.sub(), it.name); return; }
   closeMenu(); grow();
   await it.run();
-  if (view === "work" || view === "design") input.focus();
+  if ((view === "work" || view === "design") && $("#input")) $("#input").focus();
 }
 
 let filesCache = null, filesAt = 0;
@@ -493,8 +737,9 @@ async function onType() {
 
 function onKey(e) {
   if (menuOpen() && menu.items.length) {
-    if (e.key === "ArrowDown") { e.preventDefault(); menu.idx = (menu.idx + 1) % Math.min(menu.items.length, 40); drawMenu(); return; }
-    if (e.key === "ArrowUp") { e.preventDefault(); menu.idx = (menu.idx - 1 + Math.min(menu.items.length, 40)) % Math.min(menu.items.length, 40); drawMenu(); return; }
+    const n = Math.min(menu.items.length, 60);
+    if (e.key === "ArrowDown") { e.preventDefault(); menu.idx = (menu.idx + 1) % n; drawMenu(); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); menu.idx = (menu.idx - 1 + n) % n; drawMenu(); return; }
     if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pickMenu(menu.idx); return; }
   }
   if (e.key === "Escape") { closeMenu(); return; }
@@ -513,6 +758,7 @@ async function retry() {
   const msgs = col.querySelectorAll(".msg");
   const last = msgs[msgs.length - 1];
   if (last && last.classList.contains("blaze")) last.remove();
+  col.querySelectorAll(":scope > .card.err").forEach(c => c.remove());
   current = blazeMsg(); col.append(current.el);
   setBusy(true); thinking(true);
   const r = await API().Retry();
@@ -534,13 +780,12 @@ async function newProject() {
 }
 
 function newProjectView(el, folder) {
-  const page = h("div", "page"); const col = h("div", "col"); page.append(col); el.append(page);
-  col.append(h("div", "label acc", "New project"), h("h1", "", "Set up the project"), h("p", "lead", "A project keeps its own chats and instructions, and Blaze always works in its folder."));
-  const g = h("div", "group");
-  g.innerHTML = `<span class="label">01 · Folder</span><div class="mono ink" style="margin-bottom:18px">${esc(folder)}</div>
-    <span class="label">02 · Name</span><input class="field nm" value="${esc(base(folder))}" style="margin-bottom:18px">
-    <span class="label">03 · Instructions <span class="weak">optional</span></span><textarea class="field ins" placeholder="Anything Blaze should always follow here, e.g. 'TypeScript, pnpm, Tailwind. Run pnpm test before saying done.'"></textarea>`;
-  const row = h("div", "actions"); row.style.cssText = "display:flex;gap:8px;margin-top:20px";
+  const { col } = page(el, "New project", "Set up the project", "A project keeps its own chats and instructions, and Blaze always works in its folder.");
+  const g = h("div", "box pad formgrid");
+  g.innerHTML = `<div><div class="label" style="margin-bottom:6px">Folder</div><div class="mono" style="color:var(--ink)">${esc(folder)}</div></div>
+    <div><div class="label" style="margin-bottom:6px">Name</div><input class="field nm" value="${esc(base(folder))}"></div>
+    <div><div class="label" style="margin-bottom:6px">Instructions <span class="weak">optional</span></div><textarea class="field ins" placeholder="Anything Blaze should always follow here, e.g. 'TypeScript, pnpm, Tailwind. Run pnpm test before saying done.'"></textarea></div>`;
+  const row = h("div", "keyrow"); row.style.marginTop = "16px";
   const ok = h("button", "btn accent", "Create project"), cancel = h("button", "btn line", "Cancel");
   ok.onclick = async () => {
     try {
@@ -554,43 +799,42 @@ function newProjectView(el, folder) {
 }
 
 async function projectView(el, id) {
-  const page = h("div", "page"); const col = h("div", "col"); page.append(col); el.append(page);
   const d = await API().ProjectDetails(id);
   const p = d.project;
-  col.append(h("div", "label acc", "Project"), h("h1", "", esc(p.name)), h("p", "lead mono", esc(p.folder)));
-  const actions = h("div"); actions.style.cssText = "display:flex;gap:8px;margin-bottom:24px";
-  const nc = h("button", "btn accent", "New chat"); nc.onclick = () => newChat();
+  const { col, acts } = page(el, "Project", esc(p.name), `<span class="mono small">${esc(p.folder)}</span>`);
+  const nc = h("button", "btn accent", `${icon("plus", "i sm")}New chat`); nc.onclick = () => newChat();
   const ds = h("button", "btn line", "Open Design"); ds.onclick = () => show("design");
-  actions.append(nc, ds); col.append(actions);
+  acts.append(ds, nc);
 
-  const g1 = h("div", "group"); g1.append(h("span", "label", "01 · Chats"));
+  const g1 = group("Chats");
   const rows = h("div", "rows");
   (d.chats || []).forEach((c, i) => { const r = h("div", "r click", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${esc(c.title)}</div></div><span class="label weak">${esc(c.updated)}</span>`); r.onclick = () => openChat(c.id); rows.append(r); });
-  if (!(d.chats || []).length) rows.append(h("div", "empty", "No chats in this project yet."));
+  if (!(d.chats || []).length) rows.append(h("div", "empty", "<b>No chats yet</b>Start one with New chat."));
   g1.append(rows);
 
-  const g2 = h("div", "group"); g2.append(h("span", "label", "02 · Instructions Blaze always follows here"));
-  const nm = h("input", "field"); nm.value = p.name; nm.style.marginBottom = "8px";
+  const g2 = group("Instructions", "Blaze always follows these in this project.");
+  const box = h("div", "box pad formgrid");
+  const nm = h("input", "field"); nm.value = p.name;
   const ins = h("textarea", "field"); ins.value = p.instructions || ""; ins.placeholder = "e.g. Python 3.12 with uv. Keep functions small. Never push to main.";
-  const sv = h("button", "btn line", "Save"); sv.style.marginTop = "8px";
+  const sv = h("button", "btn line sm", "Save"); sv.style.justifySelf = "start";
   sv.onclick = async () => { await API().UpdateProject(p.id, nm.value, ins.value); sv.textContent = "Saved"; setTimeout(() => sv.textContent = "Save", 1200); refreshSide(); };
-  g2.append(nm, ins, sv);
+  box.append(nm, ins, sv); g2.append(box);
 
-  const g3 = h("div", "group"); g3.append(h("span", "label", "03 · Git"));
-  g3.append(d.branch ? h("div", "", `<div class="ink" style="margin-bottom:8px">Branch <span class="mono acc2">${esc(d.branch)}</span></div><div class="logbox">${esc(d.status)}</div>`) : h("div", "empty", "Not a git repository."));
+  const g3 = group("Git");
+  g3.append(d.branch ? h("div", "", `<div style="margin-bottom:8px">Branch <span class="mono acc2">${esc(d.branch)}</span></div><div class="logbox">${esc(d.status || "Clean")}</div>`) : h("div", "rows", `<div class="empty">Not a git repository.</div>`));
 
-  const g4 = h("div", "group"); g4.append(h("span", "label", "04 · Recently changed files"));
+  const g4 = group("Recently changed files", "Click a file to attach it to a new message.");
   const fr = h("div", "rows");
   (d.recent || []).forEach((f, i) => {
     const r = h("div", "r click", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t mono small">${esc(f.path)}</div></div><span class="label weak">${esc(f.when)}</span>`);
-    r.title = "Attach to a new message"; r.onclick = () => { attachments = [f.path]; drawAttach(); show("work"); };
+    r.onclick = () => { attachments = [f.path]; drawAttach(); show("work"); };
     fr.append(r);
   });
   if (!(d.recent || []).length) fr.append(h("div", "empty", "No files yet."));
   g4.append(fr);
 
   const g5 = h("div", "group");
-  const del = h("button", "btn ghost", "Remove project");
+  const del = h("button", "btn ghost sm danger", `${icon("trash", "i sm")}Remove project`);
   del.onclick = async () => { if (del.dataset.sure) { await API().DeleteProject(p.id); await refreshSide(); hero(); show("work"); } else { del.dataset.sure = 1; del.textContent = "Remove it and its chats? Files stay on disk. Click again"; } };
   g5.append(del);
   col.append(g1, g2, g3, g4, g5);
@@ -601,22 +845,28 @@ let D = null;            // DesignView from Go
 let viewing = 0;         // version being viewed (0 = live)
 let compare = [];        // versions picked to compare
 let device = "desktop", selectOn = false, selection = null, frameTheme = "light";
+let stripOpen = localStorage.getItem("blaze.strip") !== "0";
 
 function designView(el) {
   const wrap = h("div", "design");
+  const w = +localStorage.getItem("blaze.dside") || 400;
+  wrap.style.setProperty("--dside", Math.max(300, Math.min(w, 760)) + "px");
   wrap.innerHTML = `<div class="dmain">
       <div class="dbar">
-        <select id="dtarget" class="field sel"></select>
-        <div class="seg" id="ddev"><button data-d="desktop">Desktop</button><button data-d="tablet">Tablet</button><button data-d="phone">Phone</button></div>
-        <div class="seg" id="dtheme"><button data-t="light">Light</button><button data-t="dark">Dark</button></div>
+        <button id="dtarget" class="picker" title="What to preview"><span class="pk">Preview</span>${icon("file", "i sm")}<span class="pv" id="dtargetName">Choose…</span>${icon("down", "i sm caret")}</button>
+        <span class="vsep"></span>
+        <div class="seg icons" id="ddev"><button data-d="desktop" title="Desktop width">${icon("desktop")}</button><button data-d="tablet" title="Tablet width">${icon("tablet")}</button><button data-d="phone" title="Phone width">${icon("phone")}</button></div>
+        <div class="seg icons" id="dtheme"><button data-t="light" title="Light">${icon("sun")}</button><button data-t="dark" title="Dark">${icon("moon")}</button></div>
         <span class="grow"></span>
-        <button id="dselect" class="btn line sm">Select</button>
-        <button id="ddirs" class="btn line sm">Directions</button>
-        <button id="dopen" class="btn ghost sm">Open ↗</button>
+        <button id="dselect" class="btn line sm" title="Point at an element to edit it">${icon("cursor", "i sm")}<span class="btxt">Select</span></button>
+        <button id="ddirs" class="btn ghost sm" title="Ask for 3 different directions">${icon("sparks", "i sm")}<span class="btxt">Directions</span></button>
+        <button id="dvtoggle" class="btn ghost sm" title="Show or hide versions">${icon("clock", "i sm")}<span class="btxt">Versions</span><span class="vcount" id="dvcount"></span></button>
+        <button id="dopen" class="btn ghost sm icon" title="Open in browser">${icon("open", "i sm")}</button>
       </div>
       <div class="dstage" id="dstage"></div>
-      <div class="dstrip"><div class="dstriphead"><span class="label">Versions</span><span class="grow"></span><label class="toggle"><input type="checkbox" id="dcmp"><span class="label">Compare</span></label></div><div id="dversions" class="dversions"></div></div>
+      <div class="dstrip${stripOpen ? "" : " closed"}" id="dstrip"><div class="dstriphead"><span class="label">Versions</span><span class="vcount" id="dvn"></span><span class="grow"></span><label class="toggle"><input type="checkbox" id="dcmp"><span class="label">Compare</span></label><button class="btn ghost xs" id="dstripx" title="Hide versions">${icon("down", "i sm")}</button></div><div id="dversions" class="dversions"></div></div>
     </div>
+    <div class="dsplit" title="Drag to resize"></div>
     <div class="dside"></div>`;
   el.append(wrap);
   pane.classList.add("narrow");
@@ -626,33 +876,74 @@ function designView(el) {
   $("#dselect").onclick = () => { selectOn = !selectOn; drawStage(); };
   $("#ddirs").onclick = () => directions();
   $("#dopen").onclick = () => API().OpenPreview(viewing);
-  $("#dcmp").onchange = e => { compare = e.target.checked ? [] : []; drawVersions(); drawStage(); };
-  $("#dtarget").onchange = async e => {
-    const v = e.target.value;
-    if (v === "__url") { urlPrompt(); return; }
-    D = await API().SetDesignTarget("file", v); viewing = 0; drawDesign();
+  const strip = () => { $("#dstrip").classList.toggle("closed", !stripOpen); localStorage.setItem("blaze.strip", stripOpen ? "1" : "0"); $("#dvtoggle").classList.toggle("on", stripOpen); };
+  $("#dvtoggle").onclick = () => { stripOpen = !stripOpen; strip(); };
+  $("#dstripx").onclick = () => { stripOpen = false; strip(); };
+  strip();
+  $("#dcmp").onchange = () => { compare = []; drawVersions(); drawStage(); };
+  $("#dtarget").dataset.pop = "1";
+  $("#dtarget").onclick = e => { e.stopPropagation(); targetPopover(); };
+  // Resizable split between preview and chat.
+  const split = $(".dsplit", wrap);
+  split.onmousedown = e => {
+    e.preventDefault(); split.classList.add("drag");
+    const right = wrap.getBoundingClientRect().right;
+    $$("iframe", wrap).forEach(f => f.style.pointerEvents = "none");
+    const move = ev => { const nw = Math.max(300, Math.min(right - ev.clientX, wrap.clientWidth - 360)); wrap.style.setProperty("--dside", nw + "px"); };
+    const up = () => { split.classList.remove("drag"); removeEventListener("mousemove", move); removeEventListener("mouseup", up); $$("iframe", wrap).forEach(f => f.style.pointerEvents = ""); localStorage.setItem("blaze.dside", parseInt(getComputedStyle(wrap).getPropertyValue("--dside"))); };
+    addEventListener("mousemove", move); addEventListener("mouseup", up);
   };
   drawDesign();
+}
+
+function targetLabel() {
+  const t = (D && D.target) || {};
+  if (t.kind === "url") return t.url;
+  if (t.kind === "file") return t.path;
+  return (D && D.files && D.files.length) ? "Choose a page…" : "Nothing to preview yet";
+}
+
+function targetPopover() {
+  openPop($("#dtarget"), p => {
+    p.innerHTML = `<div class="phd"><span class="label">Preview</span></div><div class="pbody"></div>`;
+    const body = $(".pbody", p), t = (D && D.target) || {};
+    const files = (D && D.files) || [];
+    if (files.length > 10) {
+      const q = h("input", "field psearch"); q.placeholder = `Search ${files.length} files`;
+      q.oninput = () => $$(".opt.f", body).forEach(r => r.style.display = r.dataset.f.toLowerCase().includes(q.value.toLowerCase()) ? "" : "none");
+      body.append(q);
+    }
+    files.forEach(f => {
+      const cur = t.kind === "file" && t.path === f;
+      const o = h("button", "opt f" + (cur ? " sel" : ""), `<span class="on-mark">${cur ? icon("check", "i sm") : icon("file", "i sm")}</span><span class="col2"><span class="om" style="color:var(--ink)">${esc(f)}</span></span>`);
+      o.dataset.f = f;
+      o.onclick = async () => { closePop(); D = await API().SetDesignTarget("file", f); viewing = 0; drawDesign(); };
+      body.append(o);
+    });
+    if (!files.length) body.append(h("div", "pnote", "No HTML or SVG files in this folder yet."));
+    const form = h("div", "urlform", `<input class="field mono" placeholder="localhost:5173" value="${esc(t.kind === "url" ? t.url : "")}"><button class="btn accent sm">Preview</button>`);
+    const go = async () => { const v = $("input", form).value.trim(); if (!v) return; closePop(); D = await API().SetDesignTarget("url", v); viewing = 0; drawDesign(); };
+    $("button", form).onclick = go; $("input", form).onkeydown = e => { if (e.key === "Enter") go(); };
+    const ft = h("div", "pft"); ft.style.display = "block"; ft.append(h("div", "label weak", "Local server URL"), form); form.style.padding = "6px 0 0";
+    p.append(ft);
+  }, { width: 340, align: "left" });
 }
 
 async function drawDesign() {
   if (view !== "design") return;
   D = await API().Design();
-  const sel = $("#dtarget"); if (!sel) return;
+  if (!$("#dtarget")) return;
   const t = D.target || {};
-  const opts = (D.files || []).map(f => `<option value="${esc(f)}" ${t.kind === "file" && t.path === f ? "selected" : ""}>${esc(f)}</option>`);
-  if (t.kind === "url") opts.unshift(`<option selected>${esc(t.url)}</option>`);
-  if (!t.kind) opts.unshift(`<option selected disabled>Pick what to preview</option>`);
-  opts.push(`<option value="__url">Local server URL…</option>`);
-  sel.innerHTML = opts.join("");
+  $("#dtargetName").textContent = targetLabel();
+  $("#dtarget").querySelector("svg").outerHTML = icon(t.kind === "url" ? "globe" : "file", "i sm");
+  const n = (D.versions || []).length;
+  $("#dvcount").textContent = n ? pad(n) : "";
+  $("#dvn").textContent = n ? `${n} saved` : "";
   drawVersions(); drawStage();
 }
 
-function urlPrompt() {
-  const st = $("#dstage");
-  st.innerHTML = `<div class="dempty"><div class="label acc">Local server</div><p class="lead">The address your dev server prints, e.g. localhost:5173</p><div class="keyrow"><input class="field" id="durl" placeholder="http://localhost:5173"><button class="btn accent" id="durlok">Preview</button></div></div>`;
-  $("#durlok").onclick = async () => { D = await API().SetDesignTarget("url", $("#durl").value.trim()); viewing = 0; drawDesign(); };
-}
+// kept for /design url flows: focus the URL field in the target popover
+function urlPrompt() { targetPopover(); setTimeout(() => { const i = popEl && $(".urlform input", popEl); if (i) i.focus(); }, 0); }
 
 function frameURL(n) {
   const t = D.target || {};
@@ -666,22 +957,25 @@ function frameURL(n) {
 
 function drawStage() {
   const st = $("#dstage"); if (!st) return;
-  document.querySelectorAll("#ddev button").forEach(b => b.classList.toggle("on", b.dataset.d === device));
-  document.querySelectorAll("#dtheme button").forEach(b => b.classList.toggle("on", b.dataset.t === frameTheme));
-  $("#dselect").classList.toggle("accent", selectOn); $("#dselect").classList.toggle("line", !selectOn);
-  $("#dselect").textContent = selectOn ? "Selecting · Esc" : "Select";
+  $$("#ddev button").forEach(b => b.classList.toggle("on", b.dataset.d === device));
+  $$("#dtheme button").forEach(b => b.classList.toggle("on", b.dataset.t === frameTheme));
+  const sb = $("#dselect");
+  sb.classList.toggle("accent", selectOn); sb.classList.toggle("line", !selectOn);
+  sb.innerHTML = `${icon("cursor", "i sm")}<span class="btxt">${selectOn ? "Selecting · Esc" : "Select"}</span>`;
   st.innerHTML = "";
   if (!D || !D.target || !D.target.kind) {
-    st.innerHTML = `<div class="dempty"><div class="label acc">Design</div><div class="big2">Nothing to preview yet.</div><p class="lead">Ask for something visual in the chat and it shows up here live, version by version. Or pick a file or local server above.</p></div>`;
-    const b = h("button", "btn accent", "Suggest 3 directions"); b.onclick = () => directions(); $(".dempty", st).append(b);
+    st.innerHTML = `<div class="dempty"><div class="label acc">Design</div><div class="big2">Nothing to preview yet.</div><p class="lead">Ask for something visual in the chat and it appears here live, version by version. Or choose a page or a local dev server with the Preview picker above.</p><div class="keyrow"></div></div>`;
+    const b = h("button", "btn accent sm", `${icon("sparks", "i sm")}Suggest 3 directions`); b.onclick = () => directions();
+    const u = h("button", "btn line sm", `${icon("globe", "i sm")}Local server…`); u.onclick = e => { e.stopPropagation(); urlPrompt(); };
+    $(".keyrow", st).append(b, u);
     return;
   }
   const isUrl = D.target.kind === "url";
   if (viewing && !isUrl) {
     const v = (D.versions || []).find(x => x.n === viewing);
-    const bar = h("div", "viewing", `<span class="label acc">Viewing ${pad(viewing)}</span><span class="sub">${esc(v ? v.summary : "")}</span><span class="grow"></span>`);
-    const rs = h("button", "btn accent sm", "Restore this"); rs.onclick = async () => { const r = await API().RestoreVersion(viewing); if (r !== "ok") rs.textContent = r; else { viewing = 0; drawDesign(); } };
-    const lv = h("button", "btn line sm", "Back to live"); lv.onclick = () => { viewing = 0; drawStage(); drawVersions(); };
+    const bar = h("div", "viewing", `<span class="label acc">Version ${pad(viewing)}</span><span class="sub">${esc(v ? v.summary : "")}</span><span class="grow"></span>`);
+    const rs = h("button", "btn accent xs", "Restore this"); rs.onclick = async () => { const r = await API().RestoreVersion(viewing); if (r !== "ok") rs.textContent = r; else { viewing = 0; drawDesign(); } };
+    const lv = h("button", "btn line xs", "Back to live"); lv.onclick = () => { viewing = 0; drawStage(); drawVersions(); };
     bar.append(rs, lv); st.append(bar);
   }
   const frames = h("div", "frames");
@@ -690,7 +984,7 @@ function drawStage() {
     const box = h("div", "fbox " + device);
     if (compare.length === 2) box.prepend(h("div", "label fcap", n ? "Version " + pad(n) : "Live"));
     const f = h("iframe", "pframe"); f.src = frameURL(n);
-    f.onload = () => { f.contentWindow.postMessage({ blaze: "mode", on: selectOn && compare.length !== 2 }, "*"); f.contentWindow.postMessage({ blaze: "theme", value: frameTheme }, "*"); };
+    f.onload = () => { try { f.contentWindow.postMessage({ blaze: "mode", on: selectOn && compare.length !== 2 }, "*"); f.contentWindow.postMessage({ blaze: "theme", value: frameTheme }, "*"); } catch (e) {} };
     box.append(f); frames.append(box);
   });
   st.append(frames);
@@ -706,14 +1000,15 @@ function drawVersions() {
   const box = $("#dversions"); if (!box || !D) return;
   box.innerHTML = "";
   const vs = (D.versions || []).slice().reverse();
-  if (!vs.length) { box.append(h("div", "label weak", "Each change Blaze makes is saved here as a version.")); return; }
+  if (!vs.length) { box.append(h("div", "vempty", "Each change Blaze makes is saved here as a version you can view, compare and restore.")); return; }
   const cmp = $("#dcmp").checked;
   vs.forEach((v, i) => {
     const t = h("button", "vtile" + ((viewing === v.n && !cmp) || compare.includes(v.n) ? " on" : ""));
     const thumb = h("div", "vthumb");
-    if (i < 6 && D.target.kind === "file") { const f = h("iframe"); f.src = frameURL(v.n); f.tabIndex = -1; thumb.append(f); }
-    t.append(thumb, h("div", "vcap", `<span class="label acc">${pad(v.n)}</span> <span>${esc(v.summary || "Change")}</span>`));
-    t.title = v.when;
+    if (i < 6 && D.target.kind === "file") { const f = h("iframe"); f.src = frameURL(v.n); f.tabIndex = -1; f.loading = "lazy"; thumb.append(f); }
+    else thumb.append(h("div", "vn", pad(v.n)));
+    t.append(thumb, h("div", "vcap", `<b>${pad(v.n)}</b><span>${esc(v.summary || "Change")}</span>`));
+    t.title = (v.summary || "") + (v.when ? " · " + v.when : "");
     t.onclick = () => {
       if (cmp) { compare = compare.includes(v.n) ? compare.filter(x => x !== v.n) : compare.concat(v.n).slice(-2); }
       else { viewing = D.target.kind === "url" ? 0 : v.n; if (D.target.kind === "url") { API().RestoreVersion(v.n).then(drawDesign); return; } }
@@ -745,7 +1040,7 @@ function drawSelBar() {
   if (!selection) return;
   const items = selection.items, one = items[items.length - 1];
   const bar = h("div", "selbar");
-  bar.innerHTML = `<div class="sbhead"><span class="label acc">${items.length > 1 ? pad(items.length) + " elements" : "&lt;" + esc(one.tag) + "&gt;"}</span><span class="sbtext">${esc(one.text.slice(0, 60))}</span><button class="x" title="Clear">×</button></div>
+  bar.innerHTML = `<div class="sbhead"><span class="label acc">${items.length > 1 ? pad(items.length) + " elements" : "&lt;" + esc(one.tag) + "&gt;"}</span><span class="sbtext">${esc((one.text || "").slice(0, 60))}</span><button class="x" title="Clear">${icon("x", "i sm")}</button></div>
     <div class="sbacts"><button data-a="Change">Change</button><button data-a="Remove">Remove</button><button data-a="Restyle">Restyle</button><button data-a="Replace text">Replace text</button><button data-a="Ask">Ask…</button></div>
     <div class="sbform" style="display:none"><input class="field" placeholder=""><button class="btn accent sm go">Do it</button></div>
     <div class="sbtweak" style="display:none">
@@ -757,7 +1052,7 @@ function drawSelBar() {
       <button class="btn accent sm apply">Apply</button>
     </div>`;
   const frame = $(".pframe", st);
-  const post = msg => frame && frame.contentWindow.postMessage(msg, "*");
+  const post = msg => { try { frame && frame.contentWindow.postMessage(msg, "*"); } catch (e) {} };
   $(".x", bar).onclick = () => { selection = null; post({ blaze: "clear" }); bar.remove(); };
   const form = $(".sbform", bar), input = $("input", form), tweak = $(".sbtweak", bar);
   let action = "";
@@ -807,33 +1102,36 @@ function rgbHex(c) {
 // ---------- setup wizard ----------
 let wizStep = 0;
 function setupView(el) {
-  const page = h("div", "page"); const col = h("div", "col"); page.append(col); el.append(page);
-  const titles = ["Your computer", "Tools", "AI models"];
+  const pg = h("div", "page"); const col = h("div", "col"); pg.append(col); el.append(pg);
+  const titles = ["Your computer", "Tools", "AI model"];
   const draw = () => {
-    col.innerHTML = `<div class="steps-wiz">${titles.map((t, i) => `<span class="label ${i === wizStep ? "on" : ""}">${pad(i + 1)} ${t}</span>`).join("")}</div>`;
+    col.innerHTML = `<div class="steps-wiz">${titles.map((t, i) => `<span class="label ${i === wizStep ? "on" : i < wizStep ? "done" : ""}">${pad(i + 1)} · ${t}</span>`).join("")}</div>`;
     [pcStep, toolsStep, modelsStep][wizStep](col);
   };
   function nav(col, last) {
-    const row = h("div", "actions"); row.style.cssText = "display:flex;gap:8px;margin-top:28px";
+    const row = h("div", "keyrow"); row.style.marginTop = "24px";
     if (wizStep > 0) { const b = h("button", "btn line", "Back"); b.onclick = () => { wizStep--; draw(); }; row.append(b); }
-    const n = h("button", "btn accent", last ? "Start using Blaze" : "Continue");
-    n.onclick = async () => { if (last) { await API().FinishSetup(); S = await API().State(); setModel(S.model); show("work"); } else { wizStep++; draw(); } };
-    row.append(n); col.append(row);
+    const ready = (S.providers || []).some(p => p.ready && p.id !== "pollinations");
+    const n = h("button", "btn accent", last ? (ready ? "Start using Blaze" : "Skip for now") : "Continue");
+    n.onclick = async () => { if (last) { await API().FinishSetup(); await refreshState(); hero(); show("work"); } else { wizStep++; draw(); } };
+    row.append(n);
+    if (last && !ready) row.append(h("span", "sub small", "Blaze can't act until it has a model that can use tools."));
+    col.append(row);
   }
   function pcStep(col) {
     col.append(h("h1", "", "Hi. This is your computer."), h("p", "lead", "Blaze detected all of this itself, so it never has to ask what you're running."));
-    col.append(pcTable(S.info)); nav(col);
+    const t = pcTable(S.info); t.style.marginTop = "18px"; col.append(t); nav(col);
   }
   function toolsStep(col) {
     col.append(h("h1", "", "Developer tools"), h("p", "lead", "Blaze works best with these. Install the missing ones with your system's package manager, or skip."));
-    const rows = h("div", "rows");
+    const rows = h("div", "rows"); rows.style.marginTop = "18px";
     ["git", "python", "node"].forEach((t, i) => {
       const have = S.info.tools[t] || (t === "python" && S.info.tools.python3);
       const cmd = S.installs[t];
-      const r = h("div", "r", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${t}</div><div class="s">${have ? esc(have) : cmd ? esc(cmd) : "Not installed · no package manager found"}</div></div>`);
+      const r = h("div", "r", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${t}</div><div class="s mono">${have ? esc(have) : cmd ? esc(cmd) : "Not installed · no package manager found"}</div></div>`);
       if (have) r.append(h("span", "pill acc", "Installed"));
       else if (cmd) {
-        const b = h("button", "btn line", "Install");
+        const b = h("button", "btn line sm", "Install");
         b.onclick = async () => { b.disabled = true; b.textContent = "Installing…"; const out = await API().InstallTool(t); S = await API().State(); b.textContent = /^exit 0/.test(out) ? "Installed" : "Failed"; r.querySelector(".s").textContent = out.split("\n").slice(-1)[0] || out.split("\n")[0]; };
         r.append(b);
       } else r.append(h("span", "pill", "Missing"));
@@ -842,8 +1140,10 @@ function setupView(el) {
     col.append(rows); nav(col);
   }
   function modelsStep(col) {
-    col.append(h("h1", "", "Pick a free AI model"), h("p", "lead", "Add one or more free keys. Blaze switches between them when one is busy. Keys go in your system keychain. Skip it, and a slower keyless model answers."));
-    col.append(providerRows(() => draw())); nav(col, true);
+    col.append(h("h1", "", "Give Blaze a model"), h("p", "lead", "Blaze needs one AI model that can use tools. These have free tiers; add one or more and Auto switches between them when one is busy. Keys go in your system keychain."));
+    const rows = providerRows(async () => { await refreshState(); draw(); }, { setup: true });
+    rows.style.marginTop = "18px";
+    col.append(rows); nav(col, true);
   }
   draw();
 }
@@ -861,165 +1161,405 @@ function pcTable(info) {
   return kv;
 }
 
-function providerRows(redraw) {
-  const rows = h("div", "rows");
-  const inChain = id => (S.chain || []).some(e => e.provider === id);
-  S.providers.filter(p => p.id !== "pollinations").forEach((p, i) => {
-    const r = h("div", "r");
-    const used = inChain(p.id);
-    r.innerHTML = `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${esc(p.name)} ${p.free ? '<span class="pill">Free</span>' : ""}</div><div class="s">${used ? "Added · " + esc((S.chain.find(e => e.provider === p.id) || {}).model || "") : p.keyless ? "Runs on this computer, no key" : "Key starts " + esc(p.key_hint)}</div></div>`;
-    const btn = h("button", used ? "btn ghost" : "btn line", used ? "Remove" : "Add");
-    r.append(btn);
-    const form = h("div", "keyform"); form.style.cssText = "grid-column:2/4;display:none";
-    form.innerHTML = p.keyless ? "" : `<div class="keyrow"><input class="field" type="password" placeholder="Paste your ${esc(p.name)} key" ${p.has_key ? 'value="••••••••"' : ""}><button class="btn line get">Get a key</button><button class="btn accent save">Test & save</button></div>`;
-    const msg = h("div", "s"); msg.style.marginTop = "8px"; form.append(msg);
-    r.append(form);
-    btn.onclick = async () => {
-      if (used) { await API().RemoveProvider(p.id); S = await API().State(); setModel(S.model); redraw(); return; }
-      if (p.keyless) { btn.disabled = true; btn.textContent = "Checking…"; const res = await API().AddProvider(p.id, ""); S = await API().State(); setModel(S.model); if (res.ok) redraw(); else { btn.disabled = false; btn.textContent = "Add"; form.style.display = ""; msg.textContent = res.error; } return; }
-      form.style.display = form.style.display ? "" : "none";
+// Provider list with keys: add/test/remove keys, get-a-key page, per-provider model, quota.
+// opts.setup shows only the free providers first, with the rest behind "More providers".
+function providerRows(redraw, opts = {}) {
+  const wrap = h("div");
+  const rows = h("div", "rows prov");
+  const free = ["gemini", "groq", "cerebras", "openrouter", "nvidia", "mistral"];
+  let list = (S.providers || []).filter(p => p.id !== "pollinations");
+  let rest = [];
+  if (opts.setup) { rest = list.filter(p => !free.includes(p.id) && !p.ready); list = list.filter(p => free.includes(p.id) || p.ready); }
+  const draw = (target, items) => items.forEach(p => target.append(...providerRow(p, redraw)));
+  draw(rows, list);
+  wrap.append(rows);
+  if (rest.length) {
+    const more = h("button", "btn ghost sm", `${icon("down", "i sm")}More providers (${rest.length})`); more.style.marginTop = "8px";
+    more.onclick = () => { more.remove(); const r2 = h("div", "rows prov"); r2.style.marginTop = "8px"; draw(r2, rest); wrap.append(r2); };
+    wrap.append(more);
+  }
+  return wrap;
+}
+
+function providerRow(p, redraw) {
+  const r = h("div", "r");
+  const status = p.ready ? `<span class="pill acc">${p.keys > 1 ? p.keys + " keys" : p.keyless ? "Local" : "Ready"}</span>` : "";
+  r.innerHTML = `<span class="dot ${p.ready ? "" : "off"}"></span><div class="main"><div class="t">${esc(p.short)} ${p.free && !p.keyless ? '<span class="pill">Free tier</span>' : ""} ${status}</div><div class="s">${p.ready ? `<span class="mono">${esc(p.model || "no model chosen")}</span>` : p.keyless ? "Runs on this computer, no key" : p.id === "custom" ? "Any OpenAI-compatible service" : "Key starts " + esc(p.key_hint)}</div></div>`;
+  const acts = h("div", "acts");
+  const tgl = h("button", p.ready ? "btn ghost sm" : "btn line sm", p.ready ? `Manage${icon("down", "i sm")}` : `${icon("plus", "i sm")}Add`);
+  acts.append(tgl); r.append(acts);
+  const x = h("div", "xpand"); x.style.display = "none";
+  tgl.onclick = () => { x.style.display = x.style.display ? "" : "none"; if (!x.dataset.built) { x.dataset.built = 1; buildProviderPanel(x, p, redraw); } };
+  return [r, x];
+}
+
+async function buildProviderPanel(x, p, redraw) {
+  x.innerHTML = "";
+  const msg = h("div", "s small"); msg.style.marginTop = "8px";
+  const done = async res => {
+    if (res.ok) { msg.innerHTML = `<span class="ok">Saved (${esc(res.where)}).</span> ${esc(res.note || "")} Using <span class="mono">${esc(res.model)}</span>.`; await refreshState(); setTimeout(redraw, 900); }
+    else msg.innerHTML = `<span class="bad">${esc(res.error)}</span>`;
+  };
+  if (p.id === "custom") {
+    const f = h("div", "keyrow", `<input class="field mono cb" placeholder="https://my-service.example.com/v1" value="${esc(p.base || "")}"><input class="field cn" placeholder="Name (optional)" style="max-width:180px">`);
+    f.style.marginBottom = "8px";
+    $(".cb", f).onchange = () => API().SetCustomProvider($(".cb", f).value, $(".cn", f).value);
+    $(".cn", f).onchange = () => API().SetCustomProvider($(".cb", f).value, $(".cn", f).value);
+    x.append(f);
+  }
+  if (p.ready && !p.keyless) {
+    x.append(h("div", "label sub2", "Keys"));
+    const kl = h("div", "keylist");
+    (await API().Keys(p.id) || []).forEach((k, i) => {
+      const d = h("div", "", `<span>${esc(k.masked)}</span>${k.main ? '<span class="pill">Main</span>' : `<span class="pill">Key ${i + 1}</span>`}<span class="weak small">${esc(k.source)}</span><span class="grow"></span>`);
+      const rm = h("button", "btn ghost xs", "Remove"); rm.onclick = async () => { await API().RemoveKey(p.id, i); await refreshState(); redraw(); };
+      d.append(rm); kl.append(d);
+    });
+    x.append(kl);
+  }
+  if (!p.keyless) {
+    x.append(h("div", "label sub2", p.ready ? "Add another key" : "Key"));
+    const kr = h("div", "keyrow", `<input class="field mono" type="password" placeholder="${esc(p.key_hint && p.key_hint !== "…" ? p.key_hint : "Paste your key")}">`);
+    if (p.key_page) { const g = h("button", "btn line sm", `Get a key${icon("ext", "i sm")}`); g.onclick = () => API().OpenURL(p.key_page); kr.append(g); }
+    const sv = h("button", "btn accent sm", "Test & save");
+    sv.onclick = async () => { sv.disabled = true; sv.textContent = "Testing…"; msg.textContent = ""; const res = await API().AddProvider(p.id, $("input", kr).value.trim()); sv.disabled = false; sv.textContent = "Test & save"; done(res); };
+    $("input", kr).onkeydown = e => { if (e.key === "Enter") sv.click(); };
+    kr.append(sv); x.append(kr);
+    if (p.id === "openrouter") {
+      const oc = h("button", "btn line sm", "Sign in with OpenRouter instead"); oc.style.marginTop = "8px";
+      oc.onclick = async () => { oc.disabled = true; oc.textContent = "Waiting for you in the browser…"; done(await API().ConnectOpenRouter()); oc.disabled = false; oc.textContent = "Sign in with OpenRouter instead"; };
+      x.append(oc);
+    }
+  } else if (!p.ready) {
+    const b = h("button", "btn accent sm", "Check and add"); b.onclick = async () => { b.disabled = true; b.textContent = "Checking…"; done(await API().AddProvider(p.id, "")); b.disabled = false; b.textContent = "Check and add"; };
+    x.append(b);
+  }
+  x.append(msg);
+  if (p.ready) {
+    x.append(h("div", "label sub2", "Model for " + p.short));
+    const mb = h("div", "modelbox");
+    const bar = h("div", "mbar", `<span class="mono small grow cur">${esc(p.model || "none")}</span>`);
+    const rf = h("button", "btn ghost xs", `${icon("retry", "i sm")}Refresh list`);
+    const dt = h("button", "btn ghost xs", "Check my plan");
+    dt.title = "Sends each model a one-word test to see which ones your key's plan allows (uses a little quota)";
+    bar.append(rf, dt);
+    const ml = h("div", "mlist"); const mf = h("div", "mfoot2");
+    mb.append(bar, ml, mf); x.append(mb);
+    const load = async (how) => {
+      ml.innerHTML = `<div class="pnote">${how === "detect" ? "Checking which models your plan allows…" : "Loading models…"}</div>`;
+      const l = how === "detect" ? await API().DetectModels(p.id) : await API().ModelOptions(p.id, how === "refresh");
+      drawModelRows(ml, p, l, p.model, async m => {
+        if (m.tools === "no") { mf.innerHTML = `<span class="bad">${esc(m.id)} can't call tools, so Blaze can't act with it. Pick one marked Tools.</span>`; return; }
+        await API().SetProviderModel(p.id, m.id); p.model = m.id; $(".cur", bar).textContent = m.id; $$(".mrow", ml).forEach(r => r.classList.toggle("cur", r.dataset.id === m.id)); await refreshState();
+      });
+      mf.innerHTML = `${l.plan ? `<span class="pill acc">${esc(l.plan)}</span>` : ""}<span>${(l.models || []).length} models${l.fetched ? " · live list " + esc(l.fetched) : " · built-in list"}</span>`;
     };
-    const get = $(".get", form); if (get) get.onclick = () => API().OpenURL(p.key_page);
-    const save = $(".save", form);
-    if (save) save.onclick = async () => {
-      const f = $("input", form); let key = f.value.trim(); if (key.startsWith("••")) key = "";
-      save.disabled = true; save.textContent = "Testing…"; msg.textContent = "";
-      const res = await API().AddProvider(p.id, key);
-      save.disabled = false; save.textContent = "Test & save";
-      if (res.ok) { S = await API().State(); setModel(S.model); redraw(); } else { msg.innerHTML = `<span class="bad">${esc(res.error)}</span>`; }
-    };
-    rows.append(r);
-  });
-  return rows;
+    rf.onclick = () => load("refresh"); dt.onclick = () => load("detect");
+    load("");
+    const qa = h("div", "keyrow"); qa.style.marginTop = "12px";
+    const qb = h("button", "btn line sm", `${icon("chart", "i sm")}Plan & quota`);
+    const tb = h("button", "btn line sm", "Test");
+    const mk = h("button", "btn line sm", "Make default");
+    const rm = h("button", "btn ghost sm danger", `${icon("trash", "i sm")}Remove ${esc(p.short)}`);
+    const qout = h("div"); qout.style.marginTop = "8px";
+    qb.onclick = async () => { qb.disabled = true; qout.innerHTML = `<div class="sub small">Checking…</div>`; const q = await API().Quota(p.id); qb.disabled = false;
+      qout.innerHTML = `<div class="qrows">${(q.rows || []).map(r => `<span>${esc(r.label)}</span><span class="mono">${esc(r.value)}</span>`).join("")}</div>${q.note ? `<div class="sub small" style="margin-top:6px">${esc(q.note)}</div>` : ""}`;
+      if (q.page) { const o = h("button", "btn ghost xs", `Open ${esc(p.short)}'s usage page${icon("ext", "i sm")}`); o.style.marginTop = "6px"; o.onclick = () => API().OpenURL(q.page); qout.append(o); } };
+    tb.onclick = async () => { tb.disabled = true; tb.textContent = "Testing…"; const c = await API().TestModel(p.id, ""); tb.disabled = false; tb.textContent = "Test"; qout.innerHTML = `<div class="small ${c.ok ? "ok" : "bad"}">${esc(c.detail)}</div>`; };
+    mk.onclick = async () => { const l = await API().SelectModel(p.id, ""); setModel(l); await refreshState(); qout.innerHTML = `<div class="small ok">${esc(p.short)} is now the default.</div>`; };
+    rm.onclick = async () => { if (!rm.dataset.sure) { rm.dataset.sure = 1; rm.textContent = "Remove its keys too? Click again"; return; } await API().RemoveProvider(p.id); await refreshState(); redraw(); };
+    qa.append(tb, qb, mk, h("span", "grow"), rm); x.append(qa, qout);
+  }
 }
 
 // ---------- settings ----------
+const SECTIONS = [
+  ["models", "Models", "layers"], ["providers", "Providers & keys", "key"], ["usage", "Usage", "chart"],
+  ["behaviour", "Behaviour", "sliders"], ["appearance", "Appearance", "palette"], ["memory", "Memory", "brain"],
+  ["skills", "Skills", "book"], ["computer", "This computer", "cpu"], ["updates", "Updates", "dl"],
+];
+let settingsSection = "models";
+
 function settingsView(el, focus) {
-  const page = h("div", "page"); const col = h("div", "col"); page.append(col); el.append(page);
-  const draw = async () => {
-    S = await API().State(); setModel(S.model);
-    col.innerHTML = "";
-    col.append(h("div", "label acc", "Settings"), h("h1", "", "Blaze"), h("p", "lead", `Version ${esc(S.version)} · settings and keys are shared with the Blaze command line.`));
-
-    const g1 = h("div", "group"); g1.append(h("span", "label", "01 · Model order"));
-    const chain = h("div", "rows");
-    (S.chain || []).forEach((e, i) => {
-      const r = h("div", "r", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${esc((S.providers.find(p => p.id === e.provider) || {}).name || e.provider)}</div><div class="s">${esc(e.model)}</div></div>`);
-      const up = h("button", "btn ghost", "↑"); up.disabled = i === 0;
-      up.onclick = async () => { const c = [...S.chain]; [c[i - 1], c[i]] = [c[i], c[i - 1]]; await API().SetChain(c); draw(); };
-      r.append(up); chain.append(r);
-    });
-    if (!(S.chain || []).length) chain.append(h("div", "empty", "No models yet."));
-    g1.append(chain);
-    const g1b = h("div", "group"); g1b.append(h("span", "label", "02 · Add or remove models"), providerRows(draw));
-
-    const g2 = h("div", "group"); g2.append(h("span", "label", "03 · Behaviour"));
-    const t1 = h("label", "toggle", `<input type="checkbox" ${S.yolo ? "checked" : ""}><span>Auto-approve risky commands and installs <span class="label weak">deletes still ask</span></span>`);
-    $("input", t1).onchange = e => { API().SetYolo(e.target.checked); $("#yolo", pane).checked = e.target.checked; };
-    const t2 = h("label", "toggle", `<input type="checkbox" ${S.keyless ? "checked" : ""}><span>Fall back to the keyless model when every key fails</span>`);
-    $("input", t2).onchange = e => API().SetKeyless(e.target.checked);
-    t2.style.marginTop = "12px"; t2.style.display = "flex";
-    const pers = h("textarea", "field"); pers.placeholder = "How Blaze should talk (optional), e.g. short answers, explain like I'm new to coding…"; pers.value = S.persona || "";
-    const ps = h("button", "btn line", "Save style"); ps.onclick = async () => { await API().SetPersona(pers.value); ps.textContent = "Saved"; setTimeout(() => ps.textContent = "Save style", 1200); };
-    const pw = h("div"); pw.style.marginTop = "14px"; pw.append(pers, ps); ps.style.marginTop = "8px";
-    g2.append(t1, t2, pw);
-
-    const g3 = h("div", "group"); g3.append(h("span", "label", "04 · Appearance"));
-    const seg = h("div", "seg");
-    ["system", "light", "dark"].forEach(t => { const b = h("button", S.prefs.theme === t ? "on" : "", t); b.onclick = async () => { await API().SetTheme(t); S.prefs.theme = t; applyTheme(); draw(); }; seg.append(b); });
-    g3.append(seg);
-
-    const g3b = h("div", "group"); g3b.append(h("span", "label", "05 · Design tab"), h("p", "s", "When Blaze makes something visual, open it in Design:"));
-    const seg2 = h("div", "seg"); seg2.style.marginTop = "10px";
-    [["ask", "Ask first"], ["always", "Always"], ["never", "Never"]].forEach(([k, t]) => { const b = h("button", (S.prefs.design_mode || "ask") === k ? "on" : "", t); b.onclick = async () => { await API().SetDesignMode(k); S.prefs.design_mode = k; draw(); }; seg2.append(b); });
-    g3b.append(seg2);
-
-    const g4 = h("div", "group"); g4.id = "memory"; g4.append(h("span", "label", "06 · What Blaze remembers"));
-    const mem = h("textarea", "field"); mem.value = S.memory || ""; mem.placeholder = "Nothing yet. Blaze saves lasting facts here as you work, or type your own.";
-    const ms = h("button", "btn line", "Save"); ms.style.marginTop = "8px"; ms.onclick = async () => { await API().SetMemory(mem.value); ms.textContent = "Saved"; setTimeout(() => ms.textContent = "Save", 1200); };
-    g4.append(mem, ms);
-
-    const g5 = h("div", "group"); g5.append(h("span", "label", "07 · Skills"));
-    const sk = h("div", "rows");
-    (S.skills || []).forEach((s, i) => sk.append(h("div", "r", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="s">${esc(s)}</div></div><span></span>`)));
-    if (!(S.skills || []).length) sk.append(h("div", "empty", "No skills yet. Ask Blaze to save one after a task, the same SKILL.md format as the phone app."));
-    g5.append(sk);
-
-    const g6 = h("div", "group"); g6.append(h("span", "label", "08 · This computer"), pcTable(S.info));
-    const rf = h("button", "btn line", "Detect again"); rf.style.marginTop = "14px";
-    rf.onclick = async () => { rf.textContent = "Detecting…"; await API().RefreshPC(); draw(); };
-    g6.append(rf);
-    const g7 = h("div", "group"); g7.id = "updates"; g7.append(h("span", "label", "09 · Updates"));
-    const ur = h("div", "s"); const us = h("div", "label weak updstatus"); us.style.marginTop = "8px";
-    const ub = h("div", "keyrow"); ub.style.marginTop = "12px";
-    const chk = h("button", "btn line", "Check for updates"); const ins = h("button", "btn accent", "Update now"); ins.style.display = "none";
-    const drawU = u => {
-      if (!u) { ur.textContent = `You have ${S.version}.`; return; }
-      if (u.error) ur.textContent = `You have ${u.current || S.version}. ${u.error}`;
-      else if (u.available) ur.textContent = `Blaze ${u.latest} is out. You have ${u.current}. ${u.method || ""}`;
-      else ur.textContent = `You're on the latest version, ${u.current}.`;
-      ins.style.display = u.available ? "" : "none";
-      ins.textContent = u.can_auto ? "Update now" : "Open release page";
-    };
-    chk.onclick = async () => { chk.disabled = true; chk.textContent = "Checking…"; drawU(await checkUpdate(false)); chk.disabled = false; chk.textContent = "Check again"; };
-    ins.onclick = () => UPD && (UPD.can_auto ? installUpdate(g7) : API().OpenURL(UPD.page));
-    const t3 = h("label", "toggle", `<input type="checkbox" ${S.prefs.no_update_check ? "" : "checked"}><span>Check for updates when Blaze opens</span>`);
-    $("input", t3).onchange = e => { API().SetUpdateCheck(e.target.checked); S.prefs.no_update_check = !e.target.checked; };
-    t3.style.marginTop = "14px"; t3.style.display = "flex";
-    ub.append(chk, ins); g7.append(ur, us, ub, t3); drawU(UPD);
-    col.append(g1, g1b, g2, g3, g3b, g4, g5, g6, g7);
-    if (focus) { const f = $("#" + focus, col); if (f) f.scrollIntoView(); focus = ""; }
+  if (focus) settingsSection = focus;
+  if (!SECTIONS.some(x => x[0] === settingsSection)) settingsSection = "models";
+  const wrap = h("div", "settings");
+  const nav = h("nav", "snav", `<span class="label">Settings</span>`);
+  const pageEl = h("div", "spage"); const col = h("div", "col"); pageEl.append(col);
+  SECTIONS.forEach(([id, name, ic]) => {
+    const b = h("button", id === settingsSection ? "on" : "", `${icon(ic)}<span>${esc(name)}</span>`);
+    b.dataset.s = id;
+    if (id === "updates") b.append(h("span", "count", UPD && UPD.available && !UPD.skipped ? "NEW" : ""));
+    b.onclick = () => { settingsSection = id; $$("button", nav).forEach(x => x.classList.toggle("on", x === b)); drawSection(); };
+    nav.append(b);
+  });
+  nav.append(h("div", "sver", `Blaze ${esc(S.version)} · shared with Blaze CLI in ~/.blaze`));
+  wrap.append(nav, pageEl); el.append(wrap);
+  const drawSection = async () => {
+    await refreshState();
+    col.innerHTML = ""; pageEl.scrollTop = 0;
+    const [, name] = SECTIONS.find(s => s[0] === settingsSection) || SECTIONS[0];
+    const head = h("div", "phead", `<div class="ph"><div class="label acc">Settings</div><h1>${esc(name)}</h1></div>`);
+    col.append(head);
+    await ({ models: setModels, providers: setProviders, usage: setUsage, behaviour: setBehaviour, appearance: setAppearance, memory: setMemory, skills: setSkills, computer: setComputer, updates: setUpdates })[settingsSection](col, drawSection);
   };
-  draw();
+  drawSection();
+}
+
+async function setModels(col, redraw) {
+  const sel = S.selection || { auto: true };
+  col.append(h("p", "lead", "Choose what answers your messages. Only models that can call tools are used for work and Design; the keyless model is never used for them."));
+  col.lastChild.style.marginBottom = "20px";
+  // 01 default
+  const g1 = group("Default model");
+  const ch = h("div", "choice");
+  const a = h("button", sel.auto ? "on" : "", `<span class="radio"></span><span><span class="ct">Auto (free routing)</span><span class="cd" style="display:block">Uses your chain below: the fastest healthy model goes first, and it moves on when one is rate limited, out of quota or failing.</span></span>`);
+  const f = h("button", sel.auto ? "" : "on", `<span class="radio"></span><span><span class="ct">One model</span><span class="cd" style="display:block">${sel.auto ? "Always start with a model you pick." : `Using <span class="mono">${esc(sel.label)}</span>.`}</span></span>`);
+  ch.append(a, f); g1.append(ch);
+  const ready = (S.providers || []).filter(p => p.ready && p.id !== "pollinations");
+  const pk = h("div", "picker2");
+  const ps = h("select", "field"); ps.innerHTML = ready.map(p => `<option value="${p.id}" ${!sel.auto && sel.provider === p.id ? "selected" : ""}>${esc(p.short)}</option>`).join("") || `<option value="">No provider yet</option>`;
+  const msel = h("div", "field mono", ""); msel.style.cssText = "display:flex;align-items:center;cursor:pointer;overflow:hidden;white-space:nowrap"; msel.tabIndex = 0;
+  const box = h("div", "modelbox"); box.style.display = "none";
+  const fill = async () => {
+    const pid = ps.value; if (!pid) { msel.textContent = "Add a provider first"; return; }
+    const pv = ready.find(p => p.id === pid);
+    const curModel = !sel.auto && sel.provider === pid ? sel.model : pv.model;
+    msel.textContent = curModel || "Choose a model";
+    box.innerHTML = `<div class="mlist"><div class="pnote">Loading…</div></div>`;
+    const l = await API().ModelOptions(pid, false);
+    drawModelRows($(".mlist", box), pv, l, curModel, async m => {
+      if (m.tools === "no") { msel.textContent = `${m.id} can't call tools; pick one marked Tools`; return; }
+      setModel(await API().SelectModel(pid, m.id)); redraw();
+    });
+  };
+  msel.onclick = () => { box.style.display = box.style.display ? "" : "none"; };
+  ps.onchange = () => { fill(); box.style.display = ""; };
+  const use = h("button", "btn accent", "Use this model");
+  use.onclick = async () => { if (!ps.value) { show("settings", "providers"); return; } const m = msel.textContent.trim(); setModel(await API().SelectModel(ps.value, /\s/.test(m) ? "" : m)); redraw(); };
+  pk.append(ps, msel, use);
+  const fixedArea = h("div"); fixedArea.append(pk, box);
+  fixedArea.style.display = sel.auto ? "none" : "";
+  a.onclick = async () => { setModel(await API().SelectModel("auto", "")); redraw(); };
+  f.onclick = () => { a.classList.remove("on"); f.classList.add("on"); fixedArea.style.display = ""; fill(); };
+  if (!sel.auto) fill();
+  g1.append(fixedArea);
+  const rt = S.routing || {};
+  const fb = h("label", "toggle", `<input type="checkbox" ${rt.fallback ? "checked" : ""}><span><span class="tt">When the chosen model fails, continue with the chain</span><span class="td">Rate limits, outages and timeouts hand the turn to the next healthy model instead of stopping.</span></span>`);
+  fb.style.marginTop = "12px"; fb.style.display = sel.auto ? "none" : "flex";
+  $("input", fb).onchange = e => { rt.fallback = e.target.checked; API().SetRouting(rt); };
+  g1.append(fb);
+
+  // 02 chain
+  const fs = h("button", "btn ghost xs", "Use my free stack"); fs.title = "Every free-tier provider with a key, in the recommended order";
+  const g2 = group("Auto chain", "Tried top to bottom. Health updates live: resting models wait out their limit, then come back.", fs);
+  const rows = h("div", "rows");
+  const status = await API().RouterStatus() || [];
+  const stat = {}; status.forEach(s => stat[s.provider + "|" + s.model] = s);
+  const chain = (S.chain || []).slice();
+  const save = async c => { await API().SetChain(c); redraw(); };
+  fs.onclick = async () => { await API().UseFreeStack(); redraw(); };
+  chain.forEach((e, i) => {
+    const pv = (S.providers || []).find(p => p.id === e.provider) || { short: e.provider };
+    const st = stat[e.provider + "|" + e.model];
+    const health = !pv.ready ? "No key" : st ? (st.cooling ? `Resting ${st.cooling}s${st.resting ? " · " + st.resting : ""}` : st.ok ? `${st.avg_ms} ms avg · ${st.ok} ok` : st.fails ? "Failing" : "Ready") : "Not tried yet";
+    const noTools = st && !st.can_tools;
+    const r = h("div", "r chainrow", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${esc(pv.short)} <span class="dot ${!pv.ready || noTools ? "off" : st && st.cooling ? "warn" : ""}"></span>${noTools ? '<span class="pill">No tools · skipped</span>' : ""}</div><div class="s"><span class="mono">${esc(e.model)}</span> · ${esc(health)}${st && st.last_error ? ` · <span title="${esc(st.last_error)}">last error</span>` : ""}</div></div>`);
+    const ac = h("div", "acts");
+    const up = h("button", "btn ghost xs icon", icon("up", "i sm")); up.disabled = i === 0; up.title = "Move up";
+    const dn = h("button", "btn ghost xs icon", icon("down", "i sm")); dn.disabled = i === chain.length - 1; dn.title = "Move down";
+    const rm = h("button", "btn ghost xs icon", icon("x", "i sm")); rm.title = "Remove from chain";
+    up.onclick = () => { const c = chain.slice(); [c[i - 1], c[i]] = [c[i], c[i - 1]]; save(c); };
+    dn.onclick = () => { const c = chain.slice(); [c[i + 1], c[i]] = [c[i], c[i + 1]]; save(c); };
+    rm.onclick = () => save(chain.filter((_, j) => j !== i));
+    ac.append(up, dn, rm); r.append(ac); rows.append(r);
+  });
+  if (!chain.length) rows.append(h("div", "empty", "<b>The chain is empty</b>Add a provider's key and it joins here, or use your free stack."));
+  g2.append(rows);
+  // add to chain
+  const addRow = h("div", "keyrow"); addRow.style.marginTop = "8px";
+  const ap = h("select", "field"); ap.style.maxWidth = "200px"; ap.innerHTML = ready.map(p => `<option value="${p.id}">${esc(p.short)}</option>`).join("");
+  const am = h("input", "field mono"); am.placeholder = "model id (blank = provider's model)";
+  const ab = h("button", "btn line sm", `${icon("plus", "i sm")}Add to chain`);
+  ab.onclick = () => { if (!ap.value) return; save(chain.concat([{ provider: ap.value, model: am.value.trim() }])); };
+  if (ready.length) { addRow.append(ap, am, ab); g2.append(addRow); }
+
+  // 03 routing
+  const g3 = group("Routing");
+  const bx = h("div", "box pad formgrid");
+  const tg = (on, title, desc, fn) => { const l = h("label", "toggle", `<input type="checkbox" ${on ? "checked" : ""}><span><span class="tt">${title}</span><span class="td">${desc}</span></span>`); $("input", l).onchange = e => fn(e.target.checked); return l; };
+  bx.append(
+    tg(rt.fastest_first, "Fastest healthy model first", "Among equally healthy models, Auto tries the one that has been answering fastest.", v => { rt.fastest_first = v; API().SetRouting(rt); }),
+    tg(rt.keyless, "Keyless fallback for plain chat", "When no model is set up at all, Pollinations may answer questions in Work, without tools. It is never used for actions or Design.", v => { rt.keyless = v; API().SetRouting(rt); }),
+  );
+  const cap = h("div", "keyrow", `<span class="tt" style="color:var(--ink);flex:1">Daily spend cap (USD) <span class="td sub small" style="display:block">Past it, a paid default model hands over to the free Auto chain until tomorrow. Today so far: $${(rt.today_cost || 0).toFixed(4)}.</span></span><input class="field mono" style="max-width:110px" placeholder="none" value="${rt.daily_cap || ""}">`);
+  $("input", cap).onchange = e => { rt.daily_cap = parseFloat(e.target.value) || 0; API().SetRouting(rt); };
+  bx.append(cap); g3.append(bx);
+  col.append(g1, g2, g3);
+}
+
+async function setProviders(col, redraw) {
+  col.append(h("p", "lead", "Add keys for the AI services you use. A second key for the same service joins its key ring: when one runs out of quota, Blaze carries on with the next. Keys are stored in your system keychain."));
+  col.lastChild.style.marginBottom = "20px";
+  const g = group("Providers");
+  g.append(providerRows(redraw));
+  col.append(g);
+}
+
+async function setUsage(col, redraw) {
+  const u = await API().Usage() || {};
+  const fmtN = n => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : String(n || 0);
+  const money = t => t && t.priced ? "$" + (t.cost || 0).toFixed(t.cost < 1 ? 4 : 2) : (t && t.cost ? "≈$" + t.cost.toFixed(4) : "$0");
+  col.append(h("p", "lead", "Tokens per day and model, with a cost estimate where the price is known. Free tiers count as $0. Counted on this computer."));
+  col.lastChild.style.marginBottom = "20px";
+  const t = u.today || {}, m = u.month || {};
+  const stats = h("div", "stats", `<div><div class="label">Today</div><div class="v">${fmtN((t.in || 0) + (t.out || 0))}</div><div class="sub small">tokens · ${t.calls || 0} calls</div></div>
+    <div><div class="label">Today's cost</div><div class="v">${money(t)}</div><div class="sub small">estimated</div></div>
+    <div><div class="label">This month</div><div class="v">${fmtN((m.in || 0) + (m.out || 0))}</div><div class="sub small">tokens · ${m.calls || 0} calls</div></div>
+    <div><div class="label">Month's cost</div><div class="v">${money(m)}</div><div class="sub small">estimated</div></div>`);
+  const days = u.days || [];
+  const max = Math.max(1, ...days.map(d => d.tokens));
+  const chart = h("div", "chart", days.map(d => `<div class="${d.tokens ? "" : "z"}" style="height:${Math.max(2, Math.round(d.tokens / max * 100))}%" title="${esc(d.day)}: ${fmtN(d.tokens)} tokens · ${d.calls} calls"></div>`).join(""));
+  const cx = h("div", "chartx", `<span class="label weak">${esc((days[0] || {}).day || "")}</span><span class="label weak">Last 14 days</span><span class="label weak">Today</span>`);
+  const g1 = group("Overview"); g1.append(stats, chart, cx);
+  const rs = h("button", "btn ghost xs", "Reset");
+  rs.onclick = async () => { if (!rs.dataset.sure) { rs.dataset.sure = 1; rs.textContent = "Clear all usage? Click again"; return; } await API().ResetUsage(); redraw(); };
+  const g2 = group("By model · this month", "", rs);
+  const rows = h("div", "rows");
+  (u.models || []).forEach((x, i) => rows.append(h("div", "r", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${esc((S.providers.find(p => p.id === x.provider) || {}).short || x.provider)} <span class="mono small sub">${esc(x.model)}</span></div><div class="s">${fmtN(x.in)} in · ${fmtN(x.out)} out · ${x.calls} calls</div></div><span class="mono small">${money(x)}</span>`)));
+  if (!(u.models || []).length) rows.append(h("div", "empty", "<b>No usage yet</b>It shows up here after your first message."));
+  g2.append(rows);
+  col.append(g1, g2);
+}
+
+async function setBehaviour(col, redraw) {
+  const g1 = group("Actions");
+  const bx = h("div", "box pad formgrid");
+  const t1 = h("label", "toggle", `<input type="checkbox" ${S.yolo ? "checked" : ""}><span><span class="tt">Auto-approve risky commands and installs</span><span class="td">Deletes and anything destructive still ask first.</span></span>`);
+  $("input", t1).onchange = e => { API().SetYolo(e.target.checked); S.yolo = e.target.checked; const y = $("#yolo", pane); if (y) y.checked = e.target.checked; };
+  bx.append(t1); g1.append(bx);
+  const g2 = group("Design tab", "When Blaze makes something visual, open it in Design:");
+  const seg2 = h("div", "seg");
+  [["ask", "Ask first"], ["always", "Always"], ["never", "Never"]].forEach(([k, t]) => { const b = h("button", (S.prefs.design_mode || "ask") === k ? "on" : "", t); b.onclick = async () => { await API().SetDesignMode(k); S.prefs.design_mode = k; redraw(); }; seg2.append(b); });
+  g2.append(seg2);
+  const g3 = group("Style", "How Blaze should talk to you (optional).");
+  const pers = h("textarea", "field"); pers.placeholder = "e.g. Short answers. Explain like I'm new to coding."; pers.value = S.persona || "";
+  const ps = h("button", "btn line sm", "Save style"); ps.style.marginTop = "8px";
+  ps.onclick = async () => { await API().SetPersona(pers.value); ps.textContent = "Saved"; setTimeout(() => ps.textContent = "Save style", 1200); };
+  g3.append(pers, ps);
+  col.append(g1, g2, g3);
+}
+
+async function setAppearance(col, redraw) {
+  const g = group("Theme");
+  const seg = h("div", "seg");
+  [["system", "System"], ["light", "Light"], ["dark", "Dark"]].forEach(([t, n]) => { const b = h("button", S.prefs.theme === t ? "on" : "", n); b.onclick = async () => { await API().SetTheme(t); S.prefs.theme = t; applyTheme(); redraw(); }; seg.append(b); });
+  g.append(seg);
+  col.append(g);
+}
+
+async function setMemory(col) {
+  const g = group("What Blaze remembers", "Lasting facts Blaze saves as you work. Edit freely; it's plain text in ~/.blaze/memory.md.");
+  g.id = "memory";
+  const mem = h("textarea", "field"); mem.style.minHeight = "260px"; mem.value = S.memory || ""; mem.placeholder = "Nothing yet. Blaze saves lasting facts here as you work, or type your own.";
+  const ms = h("button", "btn line sm", "Save"); ms.style.marginTop = "8px"; ms.onclick = async () => { await API().SetMemory(mem.value); ms.textContent = "Saved"; setTimeout(() => ms.textContent = "Save", 1200); };
+  g.append(mem, ms); col.append(g);
+}
+
+async function setSkills(col) {
+  const g = group("Skills", "Reusable instructions Blaze loads when a task matches. Ask Blaze to save one after a task; same SKILL.md format as the phone app.");
+  const sk = h("div", "rows");
+  (S.skills || []).forEach((s, i) => { const [n, ...d] = s.split(":"); sk.append(h("div", "r", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t mono small">${esc(n)}</div><div class="s">${esc(d.join(":").trim())}</div></div><span></span>`)); });
+  if (!(S.skills || []).length) sk.append(h("div", "empty", "<b>No skills yet</b>After a task, say “save this as a skill”."));
+  g.append(sk); col.append(g);
+}
+
+async function setComputer(col, redraw) {
+  const rf = h("button", "btn ghost xs", `${icon("retry", "i sm")}Detect again`);
+  rf.onclick = async () => { rf.textContent = "Detecting…"; await API().RefreshPC(); redraw(); };
+  const g = group("Detected", "Blaze reads this itself so it never has to ask what you're running.", rf);
+  g.append(pcTable(S.info)); col.append(g);
+}
+
+async function setUpdates(col) {
+  const g = group("Updates"); g.id = "updates";
+  const bx = h("div", "box pad");
+  const ur = h("div", ""); const us = h("div", "label weak updstatus"); us.style.marginTop = "8px";
+  const ub = h("div", "keyrow"); ub.style.marginTop = "12px";
+  const chk = h("button", "btn line sm", "Check for updates"); const ins = h("button", "btn accent sm", "Update now"); ins.style.display = "none";
+  const drawU = u => {
+    if (!u) { ur.textContent = `You have ${S.version}.`; return; }
+    if (u.error) ur.textContent = `You have ${u.current || S.version}. ${u.error}`;
+    else if (u.available) ur.textContent = `Blaze ${u.latest} is out. You have ${u.current}. ${u.method || ""}`;
+    else ur.textContent = `You're on the latest version, ${u.current}.`;
+    ins.style.display = u.available ? "" : "none";
+    ins.textContent = u.can_auto ? "Update now" : "Open release page";
+  };
+  chk.onclick = async () => { chk.disabled = true; chk.textContent = "Checking…"; drawU(await checkUpdate(false)); chk.disabled = false; chk.textContent = "Check again"; };
+  ins.onclick = () => UPD && (UPD.can_auto ? installUpdate(bx) : API().OpenURL(UPD.page));
+  const t3 = h("label", "toggle", `<input type="checkbox" ${S.prefs.no_update_check ? "" : "checked"}><span class="tt">Check for updates when Blaze opens</span>`);
+  $("input", t3).onchange = e => { API().SetUpdateCheck(e.target.checked); S.prefs.no_update_check = !e.target.checked; };
+  t3.style.marginTop = "14px"; t3.style.display = "flex";
+  ub.append(chk, ins); bx.append(ur, us, ub, t3); drawU(UPD); g.append(bx); col.append(g);
 }
 
 // ---------- doctor ----------
 function doctorView(el) {
-  const page = h("div", "page"); const col = h("div", "col"); page.append(col); el.append(page);
-  col.append(h("div", "label acc", "Doctor"), h("h1", "", "Check everything"), h("p", "lead", "Pings each model and checks the shell, tools, disk and scheduler."));
+  const { col, acts } = page(el, "Doctor", "Check everything", "Pings each model in your route and checks the shell, tools, disk and scheduler.");
   const rows = h("div", "rows"); const run = h("button", "btn accent", "Run checks");
-  col.append(run, rows); rows.style.marginTop = "20px";
+  acts.append(run); col.append(rows);
   run.onclick = async () => {
-    run.disabled = true; run.textContent = "Checking…"; rows.innerHTML = "";
-    const res = await API().Doctor();
+    run.disabled = true; run.textContent = "Checking…"; rows.innerHTML = `<div class="empty">Running checks…</div>`;
+    const res = await API().Doctor() || [];
+    rows.innerHTML = "";
     const ok = res.filter(r => r.ok).length;
     run.disabled = false; run.textContent = `${ok} of ${res.length} passed · run again`;
-    res.forEach((r, i) => rows.append(h("div", "r", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${esc(r.name)}</div><div class="s">${esc(r.detail)}</div></div><span class="pill ${r.ok ? "acc" : ""}">${r.ok ? "OK" : "Fix"}</span>`)));
+    res.forEach((r, i) => rows.append(h("div", "r", `<span class="dot ${r.ok ? "" : "ink"}"></span><div class="main"><div class="t">${esc(r.name)}</div><div class="s">${esc(r.detail)}</div></div><span class="pill ${r.ok ? "acc" : "ink"}">${r.ok ? "OK" : "Fix"}</span>`)));
   };
   run.click();
 }
 
 // ---------- jobs ----------
 function jobsView(el) {
-  const page = h("div", "page"); const col = h("div", "col"); page.append(col); el.append(page);
-  col.append(h("div", "label acc", "Jobs"), h("h1", "", "Background jobs"), h("p", "lead", "Servers, watchers and long builds Blaze started. They stop when you quit Blaze."));
-  const box = h("div", "logbox"); const ctl = h("div", "keyrow");
-  ctl.innerHTML = `<input class="field" placeholder="Job number" style="max-width:140px"><button class="btn line v">Show log</button><button class="btn line s">Stop</button><button class="btn ghost r">Refresh</button>`;
-  col.append(ctl, box); box.style.marginTop = "14px";
-  const id = () => parseInt($("input", ctl).value, 10) || 0;
-  const all = async () => box.textContent = await API().Jobs();
-  $(".v", ctl).onclick = async () => box.textContent = id() ? await API().JobLog(id()) : await API().Jobs();
-  $(".s", ctl).onclick = async () => { if (id()) { box.textContent = await API().JobStop(id()); refreshJobCount(); } };
-  $(".r", ctl).onclick = all; all();
+  const { col, acts } = page(el, "Jobs", "Background jobs", "Servers, watchers and long builds Blaze started. They stop when you quit Blaze.");
+  const rf = h("button", "btn line sm", `${icon("retry", "i sm")}Refresh`); acts.append(rf);
+  const rows = h("div", "rows"); const box = h("div", "logbox"); box.style.marginTop = "14px"; box.style.display = "none";
+  col.append(rows, box);
+  const draw = async () => {
+    const t = String(await API().Jobs() || "");
+    rows.innerHTML = "";
+    const jobs = [...t.matchAll(/^Job (\d+) \[([^\]]+)\] (.*)$/gm)];
+    jobs.forEach(m => {
+      const id = +m[1], running = /^running/.test(m[2]);
+      const r = h("div", "r", `<span class="dot ${running ? "" : "off"}"></span><div class="main"><div class="t mono small">${esc(m[3])}</div><div class="s">Job ${id} · ${esc(m[2])}</div></div>`);
+      const a = h("div", "acts");
+      const lg = h("button", "btn ghost xs", "Log"); lg.onclick = async () => { box.style.display = ""; box.textContent = await API().JobLog(id); };
+      a.append(lg);
+      if (running) { const st = h("button", "btn line xs", "Stop"); st.onclick = async () => { box.style.display = ""; box.textContent = await API().JobStop(id); refreshJobCount(); draw(); }; a.append(st); }
+      r.append(a); rows.append(r);
+    });
+    if (!jobs.length) { rows.append(h("div", "empty", "<b>No background jobs</b>When Blaze starts a server or watcher, it shows up here.")); if (t.trim() && !/no jobs/i.test(t)) { box.style.display = ""; box.textContent = t; } }
+  };
+  rf.onclick = draw; draw();
 }
 
 // ---------- schedule ----------
 function scheduleView(el) {
-  const page = h("div", "page"); const col = h("div", "col"); page.append(col); el.append(page);
+  const { col } = page(el, "Schedule", "Scheduled jobs", `They run even when Blaze is closed, through ${S.info.os === "windows" ? "Task Scheduler" : "cron"}. To add one, ask in chat, e.g. “every day at 7 back up my notes folder”.`);
+  const body = h("div"); col.append(body);
   const draw = async () => {
-    col.innerHTML = "";
-    col.append(h("div", "label acc", "Schedule"), h("h1", "", "Scheduled jobs"), h("p", "lead", `They run even when Blaze is closed, through ${S.info.os === "windows" ? "Task Scheduler" : "cron"}. To add one, ask in chat, e.g. "every day at 7 back up my notes folder".`));
+    body.innerHTML = "";
     const list = await API().Schedules() || [];
     const rows = h("div", "rows"); const box = h("div", "logbox"); box.style.display = "none"; box.style.marginTop = "14px";
     list.forEach((j, i) => {
       const r = h("div", "r", `<span class="n">${pad(i + 1)}</span><div class="main"><div class="t">${esc(j.name)} <span class="pill">${esc(j.when)}</span></div><div class="s mono">${esc(j.command || "blaze: " + j.prompt)}</div></div>`);
-      const b = h("div"); b.style.display = "flex";
-      const lg = h("button", "btn ghost", "Log"); lg.onclick = async () => { box.style.display = ""; box.textContent = await API().ScheduleLog(j.name); };
-      const rm = h("button", "btn ghost", "Remove"); rm.onclick = async () => { await API().RemoveSchedule(j.name); draw(); };
+      const b = h("div", "acts");
+      const lg = h("button", "btn ghost xs", "Log"); lg.onclick = async () => { box.style.display = ""; box.textContent = await API().ScheduleLog(j.name); };
+      const rm = h("button", "btn ghost xs", "Remove"); rm.onclick = async () => { await API().RemoveSchedule(j.name); draw(); };
       b.append(lg, rm); r.append(b); rows.append(r);
     });
-    if (!list.length) rows.append(h("div", "empty", "Nothing scheduled yet."));
-    col.append(rows, box);
+    if (!list.length) rows.append(h("div", "empty", "<b>Nothing scheduled yet</b>Ask in chat to schedule a job."));
+    body.append(rows, box);
   };
   draw();
 }

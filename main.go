@@ -97,12 +97,16 @@ func runJob(name string) int {
 			fmt.Fprintln(log, "Error:", err)
 			return 1
 		}
-		hist = append(hist, llm.Message{Role: "assistant", Content: r.Text, ToolCalls: r.ToolCalls})
-		if len(r.ToolCalls) == 0 {
+		n := llm.NormalizeCalls(r.ToolCalls, tools.Names())
+		hist = append(hist, llm.Message{Role: "assistant", Content: r.Text, ToolCalls: n.Calls})
+		if len(n.Dropped) > 0 {
+			fmt.Fprintln(log, "[skipped malformed tool calls]", strings.Join(n.Dropped, "; "))
+		}
+		if len(n.Calls) == 0 {
 			fmt.Fprintln(log, r.Text)
 			return 0
 		}
-		for _, tc := range r.ToolCalls {
+		for _, tc := range n.Calls {
 			hist = append(hist, llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: tools.Run(env, tc.Function.Name, tc.Function.Arguments)})
 		}
 	}
