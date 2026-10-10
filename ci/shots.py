@@ -42,7 +42,22 @@ with sync_playwright() as p:
         for v in ["settings", "doctor", "setup", "schedule", "jobs"]:
             pg.evaluate(f"show('{v}')"); pg.wait_for_timeout(400)
             pg.screenshot(path=str(out / f"{v}-{theme}.png"))
-        for s in ["providers", "usage", "behaviour"]:
+        for v, arg in [("connectors", ""), ("connector", "google"), ("connector", "spotify"), ("mcp", "linear")]:
+            pg.set_viewport_size({"width": 1280, "height": 1240 if v == "connector" else 820})
+            pg.evaluate(f"show('{v}', '{arg}')"); pg.wait_for_timeout(500)
+            pg.screenshot(path=str(out / f"{v}{'-' + arg if arg else ''}-{theme}.png"))
+        pg.set_viewport_size({"width": 1280, "height": 820})
+        pg.evaluate("""show('work'); loadConv(window.__conv);
+          fire('connector_reauth', {id: 'github', name: 'GitHub'});
+          fire('confirm', {id: 'k1', title: 'Send this email from Gmail?', detail: 'To: gloria@example.com\\nSubject: Fees plan\\n\\nHi Mum, the payment plan is attached.', always: true});
+          fire('connector_suggest', {id: 'slack', name: 'Slack', action: 'connect', reason: 'Blaze needs Slack to read #general for this.'});
+          fire('toast', {text: 'Google is now connected', kind: 'ok'});"""); pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"connector-cards-{theme}.png"))
+        pg.evaluate("document.querySelector('#input').value='/conn'; onType()"); pg.wait_for_timeout(300)
+        pg.evaluate("pickMenu(0)"); pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"connect-menu-{theme}.png"))
+        pg.evaluate("closeMenu(); document.querySelector('#input').value=''")
+        for s in ["providers", "usage", "behaviour", "connectors"]:
             pg.evaluate(f"show('settings','{s}')"); pg.wait_for_timeout(500)
             pg.screenshot(path=str(out / f"settings-{s}-{theme}.png"))
         if errs:
