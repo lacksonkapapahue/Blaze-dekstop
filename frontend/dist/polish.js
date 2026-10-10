@@ -102,16 +102,16 @@
     const ctx = cv.getContext("2d");
     const st = getComputedStyle(document.documentElement);
     const acc = st.getPropertyValue("--accent").trim() || "#1F4BD8", ink = st.getPropertyValue("--ink").trim() || "#111110";
-    const N = css >= 10 ? 30 : 22;
+    const N = css >= 10 ? 34 : 24;
     const pts = Array.from({ length: N }, (_, i) => { const y = 1 - (i + .5) * 2 / N, r = Math.sqrt(1 - y * y), t = i * 2.39996; return [Math.cos(t) * r, y, Math.sin(t) * r]; });
-    const R = px * .40, c = px / 2;
+    const R = px * .42, c = px / 2;
     for (let f = 0; f < FRAMES; f++) {
       const a = f / FRAMES * Math.PI * 2, ox = f * px;
       pts.forEach(([x, y, z], i) => {
         const xr = x * Math.cos(a) - z * Math.sin(a), zr = x * Math.sin(a) + z * Math.cos(a);
         const yr = y * Math.cos(.4) - zr * Math.sin(.4), zz = y * Math.sin(.4) + zr * Math.cos(.4);
-        const d = (zz + 1) / 2, s = Math.max(1, Math.round(dpr * (css >= 10 ? 1.25 : 1.05) * (.55 + d * .6)));
-        ctx.globalAlpha = .25 + d * .75;
+        const d = (zz + 1) / 2, s = Math.max(1, Math.round(dpr * (css >= 10 ? 1.5 : 1.2) * (.5 + d * .7)));
+        ctx.globalAlpha = .4 + d * .6;
         ctx.fillStyle = i % 7 === 0 ? ink : acc;
         ctx.fillRect(Math.round(ox + c + xr * R - s / 2), Math.round(c + yr * R - s / 2), s, s);
       });

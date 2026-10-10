@@ -13,7 +13,7 @@
 .morb { display: block; flex: none; image-rendering: pixelated; }
 .msg.blaze .who .mk.has-orb { width: 10px; height: 10px; background: none; }
 .msg.blaze .work .sq.has-orb, .msg.blaze .work.done .sq.has-orb { width: 10px; height: 10px; background: none; animation: none; }
-.msg.blaze .work.done .sq.has-orb .morb { opacity: .55; transition: opacity .15s; }
+.msg.blaze .work.done .sq.has-orb .morb { opacity: .7; transition: opacity .15s; }
 .msg.blaze .work.done:hover .sq.has-orb .morb { opacity: 1; }
 .thinking .sq.has-orb { width: 10px; height: 10px; background: none; animation: none; }
 .acard .amk.has-orb { width: 8px; height: 8px; background: none; animation: none; }
