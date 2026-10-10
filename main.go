@@ -20,6 +20,7 @@ import (
 	"github.com/lacksonkapapahue/blaze-desktop/internal/config"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/llm"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/sched"
+	"github.com/lacksonkapapahue/blaze-desktop/internal/screen"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/sysinfo"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/tools"
 )
@@ -34,7 +35,12 @@ var version = "dev"
 
 func main() {
 	if len(os.Args) > 2 && os.Args[1] == "run-job" {
-		os.Exit(runJob(os.Args[2]))
+		code := runJob(os.Args[2])
+		jobNotify(os.Args[2], code)
+		os.Exit(code)
+	}
+	if len(os.Args) > 1 && os.Args[1] == "__screen" {
+		os.Exit(screen.HelperMain(os.Args[2:])) // the screen-reading helper (internal/screen)
 	}
 	app := NewApp()
 	app.flags = parseFlags(os.Args[1:])

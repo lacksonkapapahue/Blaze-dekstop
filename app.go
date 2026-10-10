@@ -55,6 +55,9 @@ type Prefs struct {
 	OnboardSkipped bool `json:"onboard_skipped"` // onboarding was skipped or finished; don't open it by itself
 
 	MemoryAISort *bool `json:"memory_ai_sort,omitempty"` // let a model sort new memories into categories (default on)
+
+	Notify NotifyPrefs `json:"notify"` // notifications and proactive suggestions (notify_app.go)
+	Vision VisionPrefs `json:"vision"` // screen reading (vision_app.go)
 }
 
 type App struct {
@@ -116,6 +119,7 @@ func (a *App) startup(ctx context.Context) {
 	a.newEnv()
 	a.startConnectors()
 	a.startShell()
+	a.startNotify()
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -192,6 +196,8 @@ type State struct {
 	Routing   RoutingView       `json:"routing"`
 	Desktop   DesktopView       `json:"desktop"`
 	Connected int               `json:"connected"` // connectors + MCP servers ready
+	Notify    NotifyView        `json:"notify"`
+	Vision    VisionPrefs       `json:"vision"`
 }
 
 func (a *App) State() State {
@@ -209,7 +215,8 @@ func (a *App) State() State {
 	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.RouteChain(), Prefs: prefs,
 		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: a.cfg.AllowKeyless(), Missing: a.info.Missing(),
 		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName(),
-		Selection: a.selection(), Routing: a.routing(), Providers: a.providerViews(), Desktop: a.desktopView(), Connected: a.conn.ConnectedCount()}
+		Selection: a.selection(), Routing: a.routing(), Providers: a.providerViews(), Desktop: a.desktopView(), Connected: a.conn.ConnectedCount(),
+		Notify: a.notifyView(false), Vision: a.prefs.Vision}
 	for _, m := range s.Missing {
 		s.Installs[m] = a.info.InstallCommand(m)
 	}
@@ -507,6 +514,7 @@ func (a *App) run(ctx context.Context) {
 		id, hist := a.convID, append([]llm.Message(nil), a.history...)
 		a.mu.Unlock()
 		a.maybeRetitle(id, hist) // background, never blocks the turn
+		a.afterTurn(started)
 	}()
 	steps := a.cfg.MaxSteps
 	if steps <= 0 {
@@ -781,11 +789,12 @@ type Check struct {
 	Name   string `json:"name"`
 	OK     bool   `json:"ok"`
 	Detail string `json:"detail"`
+	Fix    string `json:"fix,omitempty"` // a link that fixes it (e.g. a macOS privacy pane)
 }
 
 func (a *App) Doctor() []Check {
 	var out []Check
-	add := func(n string, ok bool, d string) { out = append(out, Check{n, ok, d}) }
+	add := func(n string, ok bool, d string) { out = append(out, Check{Name: n, OK: ok, Detail: d}) }
 	c := &http.Client{Timeout: 8 * time.Second}
 	resp, err := c.Get("https://www.google.com/generate_204")
 	online := err == nil && resp.StatusCode < 400
@@ -845,6 +854,8 @@ func (a *App) Doctor() []Check {
 	default:
 		add("Start at login", false, "On, but the login entry is missing. Turn it off and on again.")
 	}
+	out = append(out, a.notifyCheck())
+	out = append(out, a.visionChecks()...)
 	return out
 }
 

@@ -194,6 +194,30 @@ with sync_playwright() as p:
         pg.evaluate("""window.go.main.App.State().then(s => { s.__d = s.desktop; s.desktop = { ...s.desktop, os: 'darwin', needs_access: true, hotkey: 'alt+space', hotkey_label: 'Option+Space', hotkey_ok: false, hotkey_note: 'macOS needs Accessibility permission for the shortcut.' }; return show('setup', 3); })"""); pg.wait_for_timeout(900)
         pg.screenshot(path=str(out / f"onboard-04-perms-mac-{theme}.png"))
         pg.evaluate("window.go.main.App.State().then(s => { s.desktop = s.__d; Onboard.close(); show('work'); })"); pg.wait_for_timeout(300)
+        # notify-vision: Settings › Notifications (notifications, suggestions, screen vision, recent).
+        pg.evaluate("show('settings','notifications')"); pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"settings-notifications-{theme}.png"))
+        pg.evaluate("[...document.querySelectorAll('.group')].find(g => /Proactive suggestions/.test(g.textContent)).scrollIntoView({block: 'start'})"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"settings-suggestions-{theme}.png"))
+        pg.evaluate("[...document.querySelectorAll('.group')].find(g => /Screen vision/.test(g.textContent)).scrollIntoView({block: 'start'})"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"settings-vision-{theme}.png"))
+        if not pg.evaluate("/Proactive suggestions/.test(document.querySelector('#view').textContent)"):
+            errs.append("Settings › Notifications did not render")
+        # The privacy indicator while the screen is read, then a clicked suggestion in the chat.
+        pg.evaluate("loadConv(window.__conv); show('work'); fire('screen', {on: true, how: 'text'})"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"screen-indicator-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('#screenind.on')"):
+            errs.append("privacy indicator did not show")
+        pg.evaluate("fire('screen', {on: false})"); pg.wait_for_timeout(1800)
+        if pg.evaluate("!!document.querySelector('#screenind.on')"):
+            errs.append("privacy indicator did not hide")
+        pg.evaluate("""fire('suggest', {id: 'n3', kind: 'suggest', title: 'pnpm test fails in price.ts', body: 'Expected 19.99, got 19.989999. I can fix the rounding.', prompt: 'Fix the failing price test'})"""); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"suggest-{theme}.png"))
+        # The indicator in the orb.
+        pg.set_viewport_size({"width": 400, "height": 560})
+        pg.evaluate("newChat().then(() => { fire('orb', true); fire('screen', {on: true, how: 'pixels'}); })"); pg.wait_for_timeout(700)
+        pg.screenshot(path=str(out / f"orb-screen-{theme}.png"))
+        pg.evaluate("fire('screen', {on: false}); fire('orb', false)"); pg.set_viewport_size({"width": 1280, "height": 820}); pg.wait_for_timeout(1700)
         if errs:
             print("JS errors:", errs); sys.exit(1)
     # Windows runs frameless with its own title-bar buttons.
@@ -203,6 +227,21 @@ with sync_playwright() as p:
     pg.on("pageerror", lambda e: errs.append(str(e)))
     pg.goto(url); pg.wait_for_timeout(600)
     pg.screenshot(path=str(out / "home-windows-light.png"))
+    if errs:
+        print("JS errors:", errs); sys.exit(1)
+    # macOS: screen vision needs two permissions; Settings and Doctor offer to grant them.
+    pg = b.new_page(viewport={"width": 1280, "height": 820}, device_scale_factor=1)
+    pg.add_init_script(f"window.__theme='light';window.__os='darwin';window.__sample='{sample}';" + mock)
+    pg.on("pageerror", lambda e: errs.append(str(e)))
+    pg.goto(url); pg.wait_for_timeout(600)
+    pg.evaluate("show('settings','notifications')"); pg.wait_for_timeout(600)
+    pg.evaluate("[...document.querySelectorAll('.group')].find(g => /Screen vision/.test(g.textContent)).scrollIntoView({block: 'start'})"); pg.wait_for_timeout(200)
+    pg.screenshot(path=str(out / "settings-vision-mac-light.png"))
+    pg.evaluate("show('doctor')"); pg.wait_for_timeout(600)
+    pg.evaluate("document.querySelector('#view .page').scrollTop = 1e6"); pg.wait_for_timeout(200)
+    pg.screenshot(path=str(out / "doctor-mac-light.png"))
+    if pg.evaluate("document.querySelectorAll('#view .fixbtn').length") < 2:
+        errs.append("Doctor has no Fix buttons for the macOS permissions")
     if errs:
         print("JS errors:", errs); sys.exit(1)
     b.close()

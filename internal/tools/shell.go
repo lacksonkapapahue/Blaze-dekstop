@@ -195,7 +195,11 @@ func (js *Jobs) Start(sh *Shell, cmd string) (*job, error) {
 		if c.ProcessState != nil {
 			j.code = c.ProcessState.ExitCode()
 		}
+		code := j.code
 		j.mu.Unlock()
+		if OnJobDone != nil {
+			OnJobDone(j.ID, j.Cmd, code, time.Since(j.Started).Seconds())
+		}
 	}()
 	return j, nil
 }

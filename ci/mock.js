@@ -145,6 +145,37 @@
     ForgetMemory: async () => "", SortMemories: async () => "", SetMemoryAISort: async () => {},
     Doctor: async () => [{ name: "Internet", ok: true, detail: "Online" }, { name: "Google Gemini", ok: true, detail: "gemini-3.8-flash answered in 0.9s" }, { name: "Groq", ok: false, detail: "openai/gpt-oss-120b: Groq hit its free limit for now. Blaze will use another model." }, { name: "Shell", ok: true, detail: "bash · /usr/bin/bash" }, { name: "Tray", ok: true, detail: "In the system tray" }, { name: "Shortcut", ok: true, detail: "Press Ctrl+Shift+Space anywhere for quick ask" }, { name: "Start at login", ok: true, detail: "Off (Settings › Behaviour)" }],
   };
+  // notify-vision: Settings › Notifications, the privacy indicator, Doctor's lines.
+  const nprefs = { proactive: true, every: 10, max_hour: 3 };
+  const vprefs = {};
+  const nhist = [
+    { id: "n3", kind: "suggest", title: "pnpm test fails in price.ts", body: "Expected 19.99, got 19.989999. I can fix the rounding.", prompt: "Fix the failing price test", at: "2026-10-10T10:42:00", method: "D-Bus notifications · mako", clicked: true },
+    { id: "n2", kind: "task", title: "Blaze finished", body: "All 42 tests pass now.", at: "2026-10-10T10:31:00", method: "D-Bus notifications · mako" },
+    { id: "n1", kind: "job", title: "Scheduled job “backup-notes” finished", body: "sent 1,204 files", at: "2026-10-09T07:00:00", method: "notify-send" }];
+  const nview = () => ({ prefs: nprefs, quiet: nprefs.no_quiet ? ["", ""] : [nprefs.quiet_from || "22:00", nprefs.quiet_to || "08:00"], method: "D-Bus notifications · mako", kind: "native", clicks: true, fallback: "notify-send", probed: "Oct 10 09:12", history: nhist, watch: "Checked 10:52 · nothing worth interrupting" });
+  const caps = os === "darwin"
+    ? { text: false, text_via: "AX", text_note: "Blaze needs Accessibility access to read other apps' windows", pixels: false, pixels_via: "screencapture", pixels_note: "Allow Blaze in System Settings › Privacy & Security › Screen Recording", permission: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture", text_perm: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" }
+    : { text: true, text_via: "AT-SPI", text_note: "14 apps readable", pixels: true, pixels_via: "grim", pixels_note: "" };
+  const vview = () => ({ prefs: vprefs, caps, os, last: os === "darwin" ? "" : "Firefox — Pull request #12 · 4s ago · AT-SPI 140 ms", warm: false });
+  state.notify = nview(); state.vision = vprefs;
+  Object.assign(A, {
+    NotifyStatus: async () => nview(), ProbeNotify: async () => nview(), TestNotify: async () => "",
+    SetNotifyPrefs: async p => { Object.keys(nprefs).forEach(k => delete nprefs[k]); Object.assign(nprefs, p); return nview(); },
+    NotifyHistory: async () => nhist, ClearNotifyHistory: async () => { nhist.length = 0; }, SuggestionAction: async () => {},
+    CheckSuggestionNow: async () => "Checked 10:58 · nothing worth interrupting",
+    VisionStatus: async () => vview(), SetVisionPrefs: async p => { Object.keys(vprefs).forEach(k => delete vprefs[k]); Object.assign(vprefs, p); return vview(); },
+    TryReadScreen: async () => "Read Firefox — \"Pull request #12\": 142 items in 138 ms via AT-SPI.", GrantScreen: async () => {}, GrantScreenText: async () => {},
+  });
+  const doctor0 = A.Doctor;
+  A.Doctor = async () => (await doctor0()).concat(os === "darwin"
+    ? [{ name: "Notifications", ok: true, detail: "macOS Notification Center · cached in ~/.blaze/notify.json" },
+       { name: "Screen reading", ok: false, detail: "AX · Blaze needs Accessibility access to read other apps' windows", fix: caps.text_perm },
+       { name: "Screenshots", ok: false, detail: "screencapture · Allow Blaze in System Settings › Privacy & Security › Screen Recording", fix: caps.permission },
+       { name: "Proactive suggestions", ok: true, detail: "Every 10 min at most, 3 an hour, quiet 22:00–08:00" }]
+    : [{ name: "Notifications", ok: true, detail: "D-Bus notifications · mako · cached in ~/.blaze/notify.json" },
+       { name: "Screen reading", ok: true, detail: "AT-SPI · 14 apps readable" },
+       { name: "Screenshots", ok: false, detail: "grim · Install grim for screenshots (Arch: sudo pacman -S grim)", fix: "https://archlinux.org/packages/extra/x86_64/grim/" },
+       { name: "Proactive suggestions", ok: true, detail: "Every 10 min at most, 3 an hour, quiet 22:00–08:00 · Checked 10:52 · nothing worth interrupting" }]);
   window.go = { main: { App: new Proxy(A, { get: (t, k) => t[k] || (async () => "") }) } };
   // Events are captured so the screenshot script can play a turn: fire("tool", {...}).
   window.__ev = {};

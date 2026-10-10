@@ -1759,7 +1759,13 @@ function doctorView(el) {
     rows.innerHTML = "";
     const ok = res.filter(r => r.ok).length;
     run.disabled = false; run.textContent = `${ok} of ${res.length} passed · run again`;
-    res.forEach((r, i) => rows.append(h("div", "r", `<span class="dot ${r.ok ? "" : "ink"}"></span><div class="main"><div class="t">${esc(r.name)}</div><div class="s">${esc(r.detail)}</div></div><span class="pill ${r.ok ? "acc" : "ink"}">${r.ok ? "OK" : "Fix"}</span>`)));
+    res.forEach((r, i) => {
+      const row = h("div", "r", `<span class="dot ${r.ok ? "" : "ink"}"></span><div class="main"><div class="t">${esc(r.name)}</div><div class="s">${esc(r.detail)}</div></div>`);
+      // A check that can be fixed in one click (a macOS privacy pane) gets a button; the rest a status label.
+      if (!r.ok && r.fix) { const b = h("button", "btn line sm fixbtn", `Fix${icon("ext", "i sm")}`); b.onclick = () => API().OpenURL(r.fix); row.append(b); }
+      else row.append(h("span", `pill ${r.ok ? "acc" : "ink"}`, r.ok ? "OK" : "Fix"));
+      rows.append(row);
+    });
   };
   run.click();
 }

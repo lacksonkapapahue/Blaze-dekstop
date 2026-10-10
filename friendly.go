@@ -29,6 +29,12 @@ func friendlyTool(name, rawArgs string) string {
 	}
 	var s string
 	switch name {
+	case "read_screen":
+		s = "Reading your screen"
+	case "see_screen":
+		s = "Looking at your screen"
+	case "notify":
+		s = "Sending a notification"
 	case "file_read":
 		s = "Reading " + file()
 	case "file_edit":
