@@ -62,7 +62,7 @@
 .lg.proj { background: none; border: 1.5px solid var(--ink); width: 9px; height: 9px; }
 
 /* timeline */
-.mtime { position: absolute; left: 14px; right: 14px; bottom: 14px; height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 8px; border: 1px solid var(--hair2); background: color-mix(in srgb, var(--raised) 92%, transparent); backdrop-filter: blur(6px); box-shadow: var(--shadow); }
+.mtime { position: absolute; left: 14px; right: 14px; bottom: 14px; height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 8px; border: 1px solid var(--hair2); background: var(--raised); background: color-mix(in srgb, var(--raised) 92%, transparent); backdrop-filter: blur(6px); box-shadow: var(--shadow); }
 .mplay { width: 32px; height: 32px; flex: none; display: grid; place-items: center; background: var(--ink); color: var(--paper); transition: background .12s; }
 .mplay svg { fill: currentColor; }
 .mplay:hover, .mplay.on { background: var(--accent); color: var(--on-accent); }
