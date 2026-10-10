@@ -37,11 +37,79 @@ let convId = "";
 let attachments = [];  // @ files for the next message
 let pane = null;       // the chat pane (log + composer), moved between Work and Design
 
+// ---------- particles ----------
+// Blaze's signature drifting dots (same field as the phone app's ParticleField):
+// 44 faint ink dots drifting upward, faster and with accent sparks while Blaze works.
+// Colours follow the theme; ~12 fps idle, ~30 fps busy; paused when hidden or reduced motion.
+const Particles = (() => {
+  let cv = null, ctx = null, on = true, target = 0, energy = 0, time = 0, last = 0, raf = 0;
+  let ink = [17, 17, 16], acc = [31, 75, 216], w = 0, h0 = 0, dpr = 1;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const dots = Array.from({ length: 44 }, () => ({ x: rnd(), y: rnd(), r: 0.8 + rnd() * 0.9, vx: (rnd() - 0.5) * 2, vy: -0.6 - rnd() * 1.4 }));
+  const rgb = v => { const c = document.createElement("canvas").getContext("2d"); if (!c) return null; c.fillStyle = v; const m = /^#(..)(..)(..)/.exec(c.fillStyle); return m ? [1, 2, 3].map(i => parseInt(m[i], 16)) : null; };
+  function recolor() {
+    const cs = getComputedStyle(document.documentElement);
+    ink = rgb(cs.getPropertyValue("--ink").trim()) || ink; acc = rgb(cs.getPropertyValue("--accent").trim()) || acc;
+    draw();
+  }
+  function size() {
+    if (!cv) return; dpr = window.devicePixelRatio || 1;
+    w = cv.clientWidth; h0 = cv.clientHeight;
+    cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h0 * dpr));
+    draw();
+  }
+  function draw() {
+    if (!ctx || !w) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h0);
+    if (!on) return;
+    const speed = 1 + energy * 5;
+    dots.forEach((d, i) => {
+      const px = (((d.x + d.vx * time * speed) % 1) + 1) % 1, py = (((d.y + d.vy * time * speed) % 1) + 1) % 1;
+      const spark = i % 9 === 0 && energy > 0.1;
+      const a = spark ? 0.5 * energy : 0.10 + 0.12 * energy + (i % 7 === 0 ? 0.08 : 0);
+      const c = spark ? acc : ink;
+      ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+      ctx.beginPath(); ctx.arc(px * w, py * h0, d.r, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+  function loop(now) {
+    raf = 0;
+    if (!cv || !on || document.hidden || !cv.isConnected) return;
+    const gap = target > 0 ? 33 : 85;
+    if (!last) last = now;
+    const dt = now - last;
+    if (dt >= gap) {
+      last = now;
+      energy += (target - energy) * Math.min(1, dt / 700 * 3);
+      if (!reduce.matches) time = (time + dt / 60000) % 1;
+      draw();
+    }
+    if (!reduce.matches || Math.abs(target - energy) > 0.01) raf = requestAnimationFrame(loop);
+  }
+  function kick() { if (!raf && on && cv) { last = 0; raf = requestAnimationFrame(loop); } }
+  document.addEventListener("visibilitychange", kick);
+  reduce.addEventListener?.("change", kick);
+  return {
+    attach(c) {
+      cv = c; ctx = c.getContext && c.getContext("2d");
+      if (!ctx) return;
+      on = !(S && S.prefs && S.prefs.no_particles);
+      if (window.ResizeObserver) new ResizeObserver(() => { size(); kick(); }).observe(c);
+      recolor(); size(); kick();
+    },
+    recolor() { if (ctx) recolor(); },
+    busy(b) { target = b ? 1 : 0; kick(); },
+    enable(v) { on = v; draw(); kick(); },
+  };
+})();
+
 // ---------- theme ----------
 function applyTheme() {
   const t = S?.prefs?.theme || "system";
   const dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.dataset.theme = dark ? "dark" : "light";
+  Particles.recolor();
 }
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
 
@@ -321,7 +389,7 @@ function group(title, desc, right) {
 // ---------- chat pane ----------
 function buildPane() {
   const p = h("div", "chatpane");
-  p.innerHTML = `<div id="log"><div class="col"></div></div>
+  p.innerHTML = `<canvas class="particles" aria-hidden="true"></canvas><div id="log"><div class="col"></div></div>
   <div id="composer"><div class="cwrap">
     <div id="menu" class="menu" style="display:none"></div>
     <div class="inbox">
@@ -343,6 +411,7 @@ function buildPane() {
   input.addEventListener("keydown", onKey);
   $("#send", p).onclick = () => busy ? API().Stop() : submit();
   $("#plus", p).onclick = () => menuOpen() ? closeMenu() : openMenu("root");
+  Particles.attach($("canvas.particles", p));
   return p;
 }
 function grow() { const i = $("#input"); if (!i) return; i.style.height = "auto"; i.style.height = Math.min(i.scrollHeight, 240) + "px"; }
@@ -422,6 +491,7 @@ function scrollDown(force) {
 
 function setBusy(b) {
   busy = b;
+  Particles.busy(b);
   const send = $("#send", pane);
   send.innerHTML = b ? `${icon("stop", "i sm")}<span>Stop</span>` : `${icon("send", "i sm")}<span>Send</span>`;
   send.classList.toggle("accent", !b); send.classList.toggle("line", b);
@@ -1455,6 +1525,10 @@ async function setAppearance(col, redraw) {
   const seg = h("div", "seg");
   [["system", "System"], ["light", "Light"], ["dark", "Dark"]].forEach(([t, n]) => { const b = h("button", S.prefs.theme === t ? "on" : "", n); b.onclick = async () => { await API().SetTheme(t); S.prefs.theme = t; applyTheme(); redraw(); }; seg.append(b); });
   g.append(seg);
+  const pt = h("label", "toggle", `<input type="checkbox" ${S.prefs.no_particles ? "" : "checked"}><span class="tt">Background particles</span>`);
+  $("input", pt).onchange = e => { S.prefs.no_particles = !e.target.checked; API().SetParticles(e.target.checked); Particles.enable(e.target.checked); };
+  pt.style.marginTop = "14px"; pt.style.display = "flex";
+  g.append(pt, h("div", "label weak", "Drifting dots behind the chat, livelier while Blaze works. Turn off for the lightest feel."));
   col.append(g);
 }
 
