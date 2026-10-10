@@ -34,6 +34,9 @@ type Prefs struct {
 	Welcome bool     `json:"welcome_done"`
 	Project string   `json:"project"`     // current project id ("" = General)
 	Design  string   `json:"design_mode"` // ask, always, never
+
+	NoUpdateCheck bool   `json:"no_update_check"` // don't look for updates on launch
+	SkipUpdate    string `json:"skip_update"`     // a release the user chose to skip, e.g. v0.3.0
 }
 
 type App struct {
@@ -50,14 +53,26 @@ type App struct {
 	convID  string
 	history []llm.Message
 	pv      *preview
+	ready   chan struct{} // closed when startup has finished
 }
 
-func NewApp() *App { return &App{pending: map[string]chan bool{}} }
+func NewApp() *App { return &App{pending: map[string]chan bool{}, ready: make(chan struct{})} }
+
+// waitReady blocks until startup is done. Wails runs OnStartup in a goroutine while
+// the page loads, so the UI's first calls can arrive before cfg/env exist.
+func (a *App) waitReady() {
+	select {
+	case <-a.ready:
+	case <-time.After(30 * time.Second):
+	}
+}
 
 func prefsFile() string { return filepath.Join(config.Dir(), "desktop.json") }
 
 func (a *App) startup(ctx context.Context) {
+	defer close(a.ready)
 	a.ctx = ctx
+	cleanupOldBinary()
 	a.cfg = config.Load()
 	a.info = sysinfo.Detect()
 	b, _ := os.ReadFile(prefsFile())
@@ -171,6 +186,7 @@ type State struct {
 }
 
 func (a *App) State() State {
+	a.waitReady()
 	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.Chain, Prefs: a.prefs,
 		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: !a.cfg.NoKeyless, Missing: a.info.Missing(),
 		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName()}

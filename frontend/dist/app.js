@@ -26,7 +26,11 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme
 
 // ---------- boot ----------
 async function boot() {
-  S = await API().State();
+  // Go's startup runs alongside page load, so keep asking until the backend answers.
+  for (let i = 0; i < 40 && !S; i++) {
+    try { S = await API().State(); } catch (e) { await new Promise(r => setTimeout(r, 250)); }
+  }
+  if (!S) { $("#view").innerHTML = '<div class="page"><div class="col"><div class="label acc">Blaze</div><h1>Blaze couldn\'t start.</h1><p class="lead">The app\'s backend didn\'t answer. Quit Blaze and open it again.</p></div></div>'; return; }
   applyTheme();
   pane = buildPane();
   setFolder(S.prefs.folder);
@@ -35,6 +39,45 @@ async function boot() {
   hero();
   show(S.setup_done ? "work" : "setup");
   setInterval(refreshJobCount, 4000);
+  if (!S.prefs.no_update_check) setTimeout(() => checkUpdate(true), 3000);
+}
+
+// ---------- updates ----------
+let UPD = null;          // last CheckUpdate result
+let updBusy = false;
+const updText = t => document.querySelectorAll(".updstatus").forEach(e => e.textContent = t);
+on("update", p => updText(p.text || ""));
+
+async function checkUpdate(auto) {
+  let u = null;
+  try { u = await API().CheckUpdate(); } catch (e) { u = { error: String(e) }; }
+  if (!u || typeof u !== "object") return null;
+  UPD = u;
+  $("#updCount").textContent = u.available && !u.skipped ? "NEW" : "";
+  if (auto && u.available && !u.skipped && S.setup_done) updateCard();
+  return u;
+}
+
+function updateCard() {
+  const u = UPD; if (!u || $("#log .col .updcard", pane)) return;
+  const card = h("div", "card confirm updcard", `<div class="label acc title">Update ready</div>
+    <div>Blaze <span class="mono ink">${esc(u.latest)}</span> is out. You have <span class="mono">${esc(u.current)}</span>.</div>
+    <div class="s" style="margin-top:6px">${esc(u.method || "")}</div><div class="label weak updstatus" style="margin-top:8px"></div>
+    <div class="actions"><button class="btn accent yes">${u.can_auto ? "Update now" : "Open release page"}</button><button class="btn line no">Later</button><button class="btn ghost skip">Skip this version</button></div>`);
+  card.querySelector(".yes").onclick = () => u.can_auto ? installUpdate(card) : API().OpenURL(u.page);
+  card.querySelector(".no").onclick = () => card.remove();
+  card.querySelector(".skip").onclick = async () => { await API().SkipUpdate(u.latest); UPD.skipped = true; $("#updCount").textContent = ""; card.remove(); };
+  $("#log .col", pane).append(card); scrollDown(true);
+}
+
+async function installUpdate(box) {
+  if (updBusy || busy) { updText(busy ? "Finish or stop the current task first." : "Already updating…"); return; }
+  updBusy = true;
+  box.querySelectorAll("button").forEach(b => b.disabled = true);
+  updText("Starting the download…");
+  let err = "";
+  try { err = await API().InstallUpdate(); } catch (e) { err = String(e); }
+  if (err) { updText(err); box.querySelectorAll("button").forEach(b => b.disabled = false); updBusy = false; }
 }
 
 function setFolder(path) {
@@ -391,6 +434,7 @@ const COMMANDS = [
   { name: "doctor", desc: "Check models, shell and tools", run: () => show("doctor") },
   { name: "memory", desc: "What Blaze remembers about you", run: () => show("settings", "memory") },
   { name: "settings", desc: "Models, behaviour, appearance", run: () => show("settings") },
+  { name: "update", desc: "Check for a new version of Blaze", run: () => show("settings", "updates") },
 ];
 
 let menu = { items: [], idx: 0, kind: "" };
@@ -905,7 +949,25 @@ function settingsView(el, focus) {
     const rf = h("button", "btn line", "Detect again"); rf.style.marginTop = "14px";
     rf.onclick = async () => { rf.textContent = "Detecting…"; await API().RefreshPC(); draw(); };
     g6.append(rf);
-    col.append(g1, g1b, g2, g3, g3b, g4, g5, g6);
+    const g7 = h("div", "group"); g7.id = "updates"; g7.append(h("span", "label", "09 · Updates"));
+    const ur = h("div", "s"); const us = h("div", "label weak updstatus"); us.style.marginTop = "8px";
+    const ub = h("div", "keyrow"); ub.style.marginTop = "12px";
+    const chk = h("button", "btn line", "Check for updates"); const ins = h("button", "btn accent", "Update now"); ins.style.display = "none";
+    const drawU = u => {
+      if (!u) { ur.textContent = `You have ${S.version}.`; return; }
+      if (u.error) ur.textContent = `You have ${u.current || S.version}. ${u.error}`;
+      else if (u.available) ur.textContent = `Blaze ${u.latest} is out. You have ${u.current}. ${u.method || ""}`;
+      else ur.textContent = `You're on the latest version, ${u.current}.`;
+      ins.style.display = u.available ? "" : "none";
+      ins.textContent = u.can_auto ? "Update now" : "Open release page";
+    };
+    chk.onclick = async () => { chk.disabled = true; chk.textContent = "Checking…"; drawU(await checkUpdate(false)); chk.disabled = false; chk.textContent = "Check again"; };
+    ins.onclick = () => UPD && (UPD.can_auto ? installUpdate(g7) : API().OpenURL(UPD.page));
+    const t3 = h("label", "toggle", `<input type="checkbox" ${S.prefs.no_update_check ? "" : "checked"}><span>Check for updates when Blaze opens</span>`);
+    $("input", t3).onchange = e => { API().SetUpdateCheck(e.target.checked); S.prefs.no_update_check = !e.target.checked; };
+    t3.style.marginTop = "14px"; t3.style.display = "flex";
+    ub.append(chk, ins); g7.append(ur, us, ub, t3); drawU(UPD);
+    col.append(g1, g1b, g2, g3, g3b, g4, g5, g6, g7);
     if (focus) { const f = $("#" + focus, col); if (f) f.scrollIntoView(); focus = ""; }
   };
   draw();
