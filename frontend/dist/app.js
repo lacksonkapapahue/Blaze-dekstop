@@ -132,6 +132,7 @@ async function boot() {
   hero();
   show(S.setup_done ? "work" : "setup");
   setInterval(refreshJobCount, 4000);
+  refreshConnCount(S.connected);
   if (!S.prefs.no_update_check) setTimeout(() => checkUpdate(true), 3000);
 }
 
@@ -356,12 +357,13 @@ function show(v, arg) {
   if (v === "chat") v = "work";
   view = v;
   if (v === "work" || v === "design") { tab = v; API().SetTab(v); }
-  $$(".nav").forEach(b => b.classList.toggle("on", b.dataset.view === v));
+  const navV = v === "connector" || v === "mcp" ? "connectors" : v;
+  $$(".nav").forEach(b => b.classList.toggle("on", b.dataset.view === navV));
   $$("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === v));
   $("#tabs").classList.toggle("dim", v !== "work" && v !== "design");
   if (v === "design") $("#designDot").className = "";
   const el = $("#view"); pane.remove(); el.innerHTML = ""; closeMenu(); closePop();
-  ({ work: workView, design: designView, setup: setupView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, project: projectView, newproject: newProjectView })[v](el, arg);
+  ({ work: workView, design: designView, setup: setupView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, project: projectView, newproject: newProjectView, connectors: connectorsView, connector: connectorView, mcp: mcpView })[v](el, arg);
   $$("#chats .chat").forEach(b => b.classList.remove("on"));
 }
 
@@ -680,11 +682,15 @@ on("route", r => { if (r && r.route) setModel(r.route); });
 on("model", m => { if (m) setModel(m.label, m.selection); });
 on("confirm", c => {
   thinking(false);
+  const btns = c.always
+    ? `<button class="btn accent sm yes">Allow once</button><button class="btn line sm al">Always allow</button><button class="btn ghost sm no">Don't allow</button>`
+    : `<button class="btn accent sm yes">Yes, do it</button><button class="btn line sm no">No</button>`;
   const card = h("div", "card confirm", `<div class="title"><span class="label acc">${esc(c.title)}</span></div><div class="detail">${esc(c.detail)}</div>
-    <div class="actions"><button class="btn accent sm yes">Yes, do it</button><button class="btn line sm no">No</button></div>`);
-  const done = yes => { API().Answer(c.id, yes); card.classList.add("done"); card.querySelector(".actions").innerHTML = `<span class="label">${yes ? "Approved" : "Declined"}</span>`; thinking(true); };
-  card.querySelector(".yes").onclick = () => done(true);
-  card.querySelector(".no").onclick = () => done(false);
+    <div class="actions">${btns}</div>`);
+  const done = choice => { API().AnswerChoice(c.id, choice); card.classList.add("done"); card.querySelector(".actions").innerHTML = `<span class="label">${choice === "always" ? "Always allowed" : choice === "once" ? "Approved" : "Declined"}</span>`; thinking(true); };
+  card.querySelector(".yes").onclick = () => done("once");
+  card.querySelector(".no").onclick = () => done("no");
+  if (c.always) card.querySelector(".al").onclick = () => done("always");
   (current ? current.el : $("#log .col", pane)).append(card);
   scrollDown(true);
 });
@@ -751,6 +757,7 @@ const COMMANDS = [
   { name: "usage", desc: "Tokens and cost per model", run: () => show("settings", "usage") },
   { name: "memory", desc: "What Blaze remembers about you", run: () => show("settings", "memory") },
   { name: "settings", desc: "Models, behaviour, appearance", run: () => show("settings") },
+  { name: "connectors", desc: "Accounts and MCP servers Blaze can use", run: () => show("connectors") },
   { name: "update", desc: "Check for a new version of Blaze", run: () => show("settings", "updates") },
 ];
 
@@ -1349,7 +1356,7 @@ async function buildProviderPanel(x, p, redraw) {
 const SECTIONS = [
   ["models", "Models", "layers"], ["providers", "Providers & keys", "key"], ["usage", "Usage", "chart"],
   ["behaviour", "Behaviour", "sliders"], ["appearance", "Appearance", "palette"], ["memory", "Memory", "brain"],
-  ["skills", "Skills", "book"], ["computer", "This computer", "cpu"], ["updates", "Updates", "dl"],
+  ["connectors", "Connectors", "plug"], ["skills", "Skills", "book"], ["computer", "This computer", "cpu"], ["updates", "Updates", "dl"],
 ];
 let settingsSection = "models";
 
@@ -1374,7 +1381,7 @@ function settingsView(el, focus) {
     const [, name] = SECTIONS.find(s => s[0] === settingsSection) || SECTIONS[0];
     const head = h("div", "phead", `<div class="ph"><div class="label acc">Settings</div><h1>${esc(name)}</h1></div>`);
     col.append(head);
-    await ({ models: setModels, providers: setProviders, usage: setUsage, behaviour: setBehaviour, appearance: setAppearance, memory: setMemory, skills: setSkills, computer: setComputer, updates: setUpdates })[settingsSection](col, drawSection);
+    await ({ models: setModels, providers: setProviders, usage: setUsage, behaviour: setBehaviour, appearance: setAppearance, memory: setMemory, connectors: setConnectors, skills: setSkills, computer: setComputer, updates: setUpdates })[settingsSection](col, drawSection);
   };
   drawSection();
 }
