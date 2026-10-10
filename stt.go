@@ -85,7 +85,7 @@ func whisperBin() string {
 		return found
 	}
 	for _, n := range []string{"whisper-cli", "whisper-cpp", "whisper.cpp"} {
-		if p, err := exec.LookPath(n); err == nil {
+		if p := lookCmd(n); p != "" {
 			return p
 		}
 	}
@@ -167,7 +167,25 @@ func manualNote() string {
 	return "Voice input needs whisper.cpp, which has no ready-made build for this PC. Install it with your package manager (whisper.cpp / whisper-cpp) and Blaze will find whisper-cli."
 }
 
-func haveCmd(n string) bool { _, err := exec.LookPath(n); return err == nil }
+func haveCmd(n string) bool { return lookCmd(n) != "" }
+
+// lookCmd finds a program on PATH, then where Homebrew and Linuxbrew put them
+// (apps opened from the Dock or a launcher often get a short PATH).
+func lookCmd(n string) string {
+	if p, err := exec.LookPath(n); err == nil {
+		return p
+	}
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	for _, d := range []string{"/opt/homebrew/bin", "/usr/local/bin", "/home/linuxbrew/.linuxbrew/bin"} {
+		p := filepath.Join(d, n)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+			return p
+		}
+	}
+	return ""
+}
 
 // SetSTT saves the voice model and language.
 func (a *App) SetSTT(model, lang string) STTView {
@@ -225,7 +243,7 @@ func (a *App) sttSetup() error {
 			}
 		case runtime.GOOS == "darwin" && haveCmd("brew"):
 			a.sttProgress("engine", 0, 0, "Installing whisper.cpp with Homebrew… (a minute or two)")
-			c := exec.CommandContext(ctx, "brew", "install", "whisper-cpp")
+			c := exec.CommandContext(ctx, lookCmd("brew"), "install", "whisper-cpp")
 			if out, err := c.CombinedOutput(); err != nil {
 				return fmt.Errorf("Homebrew couldn't install whisper.cpp: %s", sttLastLine(string(out)))
 			}
@@ -569,7 +587,7 @@ func (a *App) RecStart() string {
 		return ""
 	}
 	wav := filepath.Join(os.TempDir(), fmt.Sprintf("blaze-voice-%d.wav", time.Now().UnixNano()))
-	c := quiet(exec.Command(prog, recordArgs(prog, wav)...))
+	c := quiet(exec.Command(lookCmd(prog), recordArgs(prog, wav)...))
 	if err := c.Start(); err != nil {
 		return "Couldn't start the microphone: " + err.Error()
 	}
