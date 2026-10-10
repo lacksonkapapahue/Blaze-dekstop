@@ -275,6 +275,9 @@ func (a *App) SetBackground(on bool) {
 
 func (a *App) SetShowSteps(on bool) { a.prefs.ShowSteps = on; a.savePrefs() }
 
+// SetFoldCards turns answer cards (short answer + expandable detail) on or off.
+func (a *App) SetFoldCards(on bool) { a.prefs.FoldCards = &on; a.savePrefs() }
+
 // SetAutostart adds or removes the start-at-login entry. It returns "" or the error.
 func (a *App) SetAutostart(on bool) string {
 	if err := setAutostart(on); err != nil {

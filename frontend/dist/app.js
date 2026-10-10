@@ -24,7 +24,8 @@ const IC = {
   chart: '<path d="M2.5 13.5h11M4.5 11V8M8 11V4.5M11.5 11V6.5"/>', sliders: '<path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6"/><rect x="8.5" y="3" width="3" height="3"/><rect x="4.5" y="10" width="3" height="3"/>',
   palette: '<rect x="2.5" y="2.5" width="11" height="11"/><path d="M2.5 8h11M8 2.5v11"/>', brain: '<path d="M4 3.5h8v9H4z"/><path d="M6.5 6h3M6.5 8.5h3M6.5 11h1.5"/>',
   book: '<path d="M3 2.5h8.5v11H3zM5.5 2.5v11"/>', cpu: '<rect x="4" y="4" width="8" height="8"/><path d="M6 1.5v2.5M10 1.5v2.5M6 12v2.5M10 12v2.5M1.5 6H4M1.5 10H4M12 6h2.5M12 10h2.5"/>',
-  dl: '<path d="M8 2v8.5M4.5 7 8 10.5 11.5 7M2.5 13.5h11"/>', trash: '<path d="M2.5 4.5h11M6 4.5V2.5h4v2M4 4.5l.7 9h6.6l.7-9"/>', ext: '<path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5"/>',
+  dl: '<path d="M8 2v8.5M4.5 7 8 10.5 11.5 7M2.5 13.5h11"/>',
+  grow: '<path d="M9.5 2.5h4v4M13.5 2.5 9.5 6.5M6.5 13.5h-4v-4M2.5 13.5l4-4"/>', shrink: '<path d="M13.5 6.5h-4v-4M9.5 6.5l4-4M2.5 9.5h4v4M6.5 9.5l-4 4"/>', trash: '<path d="M2.5 4.5h11M6 4.5V2.5h4v2M4 4.5l.7 9h6.6l.7-9"/>', ext: '<path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5"/>',
 };
 const icon = (n, cls = "i") => `<svg class="${cls}" viewBox="0 0 16 16">${IC[n] || ""}</svg>`;
 
@@ -397,9 +398,10 @@ function loadConv(conv) {
     else if (m.role === "assistant") {
       if (!turn) { turn = blazeMsg(); turns.push(turn); col.append(turn.el); }
       (m.tool_calls || []).forEach(tc => { const s = addStep(turn, tc.id, tc.function.name, tc.function.arguments); finishStep(turn, s, results[tc.id] || ""); });
-      if (m.content && m.content !== "…") { turn.text += (turn.text ? "\n\n" : "") + m.content; turn.mdEl.innerHTML = MD.render(turn.text); }
+      if (m.content && m.content !== "…") turn.text += (turn.text ? "\n\n" : "") + m.content;
     }
   });
+  turns.forEach(t => renderAnswer(t, true));
   // Saved chats: steps collapsed behind "Worked · N steps".
   turns.forEach(t => { const n = t.order.length; finishWork(t, null, `Worked · ${n} step${n > 1 ? "s" : ""}`); });
   scrollDown(true);
@@ -443,6 +445,68 @@ function blazeMsg() {
 }
 
 const showSteps = () => !!(S && S.prefs && S.prefs.show_steps);
+
+// ---------- v0.4.1 answer cards ----------
+// Long detail folds into a card above the short answer (Settings › Behaviour › Fold long answers).
+const foldCards = () => !(S && S.prefs && S.prefs.fold_cards === false);
+const CARD_MAX = () => document.body.classList.contains("orb") ? 220 : 260;
+const cardRO = typeof ResizeObserver === "function" ? new ResizeObserver(es => es.forEach(e => fitCard(e.target.closest(".acard")))) : null;
+
+function renderAnswer(turn, final) {
+  const a = MD.answer(turn.text, { fold: foldCards(), final });
+  $$(".acard .abody", turn.mdEl).forEach(b => cardRO && cardRO.unobserve(b));
+  turn.cards = a.cards;
+  if (!a.cards.length) { turn.mdEl.classList.remove("hascards"); turn.mdEl.innerHTML = MD.render(a.rest); return; }
+  const open = turn.cardOpen || (turn.cardOpen = {});
+  turn.mdEl.classList.add("hascards");
+  turn.mdEl.innerHTML = a.cards.map((c, i) => `<div class="acard${open[i] ? " open" : ""}${c.live ? " live" : ""}" data-i="${i}">
+    <div class="ahead"><button class="atitle" aria-expanded="${!!open[i]}"><span class="amk"></span><span class="att">${MD.esc(c.title)}</span></button>
+      <button class="aico acopy" title="Copy" aria-label="Copy this card">${icon("copy", "i sm")}</button>
+      <button class="aico atog" title="${open[i] ? "Collapse" : "Expand"}" aria-label="${open[i] ? "Collapse" : "Expand"} ${MD.esc(c.title)}" aria-expanded="${!!open[i]}">${icon(open[i] ? "shrink" : "grow", "i sm")}</button></div>
+    <div class="awrap"><div class="abody md">${MD.render(c.body)}</div><div class="afade"></div></div>
+    <button class="amore" aria-label="${open[i] ? "Collapse" : "Show all of"} ${MD.esc(c.title)}" aria-expanded="${!!open[i]}">${icon("down", "i sm")}</button></div>`).join("")
+    + (a.rest ? `<div class="short md">${MD.render(a.rest)}</div>` : "");
+  $$(".acard", turn.mdEl).forEach(el => {
+    const i = +el.dataset.i;
+    el.style.setProperty("--amax", CARD_MAX() + "px");
+    fitCard(el);
+    if (cardRO) cardRO.observe($(".abody", el));
+    const tog = () => toggleCard(el, turn, i);
+    $(".atitle", el).onclick = tog; $(".atog", el).onclick = tog; $(".amore", el).onclick = tog;
+    $(".acopy", el).onclick = () => {
+      navigator.clipboard.writeText((turn.cards[i] || {}).body || "");
+      const b = $(".acopy", el); b.innerHTML = icon("check", "i sm"); setTimeout(() => b.innerHTML = icon("copy", "i sm"), 1200);
+    };
+  });
+}
+
+// A card that fits under the max height shows in full: no fade, no expand buttons.
+function fitCard(el) {
+  if (!el) return;
+  const h = $(".abody", el).scrollHeight;
+  if (!h) return;
+  const fits = h <= CARD_MAX() + 24;
+  el.classList.toggle("fits", fits); el.classList.toggle("tall", !fits);
+}
+
+function toggleCard(el, turn, i) {
+  if (!el.classList.contains("tall")) return;
+  const wrap = $(".awrap", el), body = $(".abody", el);
+  const open = !el.classList.contains("open");
+  (turn.cardOpen || (turn.cardOpen = {}))[i] = open;
+  const from = open ? CARD_MAX() : body.scrollHeight, to = open ? body.scrollHeight : CARD_MAX();
+  wrap.style.maxHeight = from + "px";
+  el.classList.toggle("open", open);
+  void wrap.offsetHeight;
+  wrap.style.maxHeight = to + "px";
+  const end = e => { if (e && e.target !== wrap) return; wrap.style.maxHeight = ""; wrap.removeEventListener("transitionend", end); };
+  wrap.addEventListener("transitionend", end); setTimeout(end, 450);
+  const label = (open ? "Collapse " : "Expand ") + $(".att", el).textContent;
+  $$(".atitle, .atog, .amore", el).forEach(b => b.setAttribute("aria-expanded", open));
+  const t = $(".atog", el); t.title = open ? "Collapse" : "Expand"; t.setAttribute("aria-label", label); t.innerHTML = icon(open ? "shrink" : "grow", "i sm");
+  $(".amore", el).setAttribute("aria-label", open ? label : "Show all of " + $(".att", el).textContent);
+  if (!open) { const r = el.getBoundingClientRect(), log = $("#log", pane); if (log && r.top < log.getBoundingClientRect().top) el.scrollIntoView({ block: "start", behavior: "smooth" }); }
+}
 const clip = (t, n = 60) => { t = String(t || "").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
 
 // The live status line: a plain-English phrase with a shimmer, crossfading when it changes.
@@ -678,7 +742,7 @@ on("delta", d => {
   if (!current) return;
   thinking(false);
   current.text += d;
-  current.mdEl.innerHTML = MD.render(current.text);
+  renderAnswer(current, false);
   scrollDown();
 });
 on("tool", t => {
@@ -719,19 +783,19 @@ on("confirm", c => {
 });
 on("done", d => {
   thinking(false);
-  if (current) { finishWork(current, d && d.seconds); routeMeta(current, d); }
+  if (current) { renderAnswer(current, true); finishWork(current, d && d.seconds); routeMeta(current, d); }
   if (d && d.route) setModel(d.route);
   current = null; setBusy(false); scrollDown(); refreshSide();
 });
 on("error", e => {
   thinking(false);
-  if (current) finishWork(current);
+  if (current) { if (current.text) renderAnswer(current, true); finishWork(current); }
   errorCard(current ? current.el : $("#log .col", pane), e);
   current = null; setBusy(false); scrollDown(true); refreshSide();
 });
 on("stopped", () => {
   thinking(false);
-  if (current) finishWork(current);
+  if (current) { if (current.text) renderAnswer(current, true); finishWork(current); }
   if (current) current.el.append(h("div", "meta", `<span class="route">Stopped</span>`));
   current = null; setBusy(false); refreshSide();
 });
@@ -1625,6 +1689,9 @@ async function setBehaviour(col, redraw) {
   const t2 = h("label", "toggle", `<input type="checkbox" ${S.prefs.show_steps ? "checked" : ""}><span><span class="tt">Show every step (power users)</span><span class="td">Off: one plain-English status line per answer; click “Worked for…” to see the steps.</span></span>`);
   $("input", t2).onchange = e => { API().SetShowSteps(e.target.checked); S.prefs.show_steps = e.target.checked; };
   bx.append(t2);
+  const t3 = h("label", "toggle", `<input type="checkbox" ${foldCards() ? "checked" : ""}><span><span class="tt">Fold long answers into cards</span><span class="td">The short answer stays in view; tables, long lists and reports go in a card you can expand.</span></span>`);
+  $("input", t3).onchange = e => { API().SetFoldCards(e.target.checked); S.prefs.fold_cards = e.target.checked; };
+  bx.append(t3);
   col.append(g1, backgroundGroup(redraw), g2, g3);
 }
 

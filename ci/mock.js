@@ -2,7 +2,7 @@
 (() => {
   const os = window.__os || "linux";
   const info = { os, os_name: "Arch Linux (Omarchy)", arch: "amd64", cpu: "AMD Ryzen 7 7840U", cores: 16, ram_gb: 32, gpu: ["AMD Radeon 780M"], shell: "bash", shell_path: "/usr/bin/bash", pkg_managers: ["pacman"], tools: { git: "2.51", python: "3.13", node: "v24.1", go: "1.25", docker: "28.1" }, home: "/home/luke", disk_free_gb: 312 };
-  const state = { version: "v0.4.0", setup_done: true, info, missing: [], installs: { node: "sudo pacman -S --noconfirm nodejs npm" }, providers: [
+  const state = { version: "v0.4.1", setup_done: true, info, missing: [], installs: { node: "sudo pacman -S --noconfirm nodejs npm" }, providers: [
     { id: "gemini", name: "Google Gemini", short: "Google Gemini", key_hint: "AIza…", key_page: "https://aistudio.google.com/apikey", quota_page: "https://aistudio.google.com/", free: true, has_key: true, keys: 2, ready: true, in_chain: true, model: "gemini-3.8-flash" },
     { id: "groq", name: "Groq", short: "Groq", key_hint: "gsk_…", key_page: "https://console.groq.com/keys", free: true, has_key: true, keys: 1, ready: true, in_chain: true, model: "openai/gpt-oss-120b" },
     { id: "cerebras", name: "Cerebras", short: "Cerebras", key_hint: "csk-…", free: true, model: "gpt-oss-120b" },
@@ -14,7 +14,7 @@
     chain: [{ provider: "gemini", model: "gemini-3.8-flash" }, { provider: "groq", model: "openai/gpt-oss-120b" }],
     selection: { auto: true, provider: "auto", label: "Auto (free routing)" },
     routing: { fallback: true, fastest_first: true, keyless: false, daily_cap: 0, today_cost: 0 },
-    prefs: { theme: window.__theme || "light", folder: "/home/luke/code/homeglow", design_mode: "ask", project: "p1", show_steps: false, autostart: false, hotkey: "" },
+    prefs: { theme: window.__theme || "light", folder: "/home/luke/code/homeglow", design_mode: "ask", project: "p1", show_steps: false, fold_cards: true, autostart: false, hotkey: "" },
     desktop: { os, tray: true, tray_note: "In the system tray", background: true, autostart: false, autostart_ok: false, hotkey: "ctrl+shift+space", hotkey_label: "Ctrl+Shift+Space", hotkey_ok: true,
       hotkey_note: "Press Ctrl+Shift+Space anywhere for quick ask", needs_access: false, wayland: false, frameless: os === "windows", orb: false,
       presets: [{ id: "ctrl+shift+space", label: "Ctrl+Shift+Space" }, { id: "alt+space", label: "Alt+Space" }, { id: "ctrl+alt+space", label: "Ctrl+Alt+Space" }, { id: "ctrl+shift+b", label: "Ctrl+Shift+B" }] }, model: "Auto · Google Gemini · gemini-3.8-flash",
@@ -27,6 +27,24 @@
     { role: "tool", tool_call_id: "t2", content: "Edited /home/luke/code/homeglow/src/price.ts (1 replacement)." },
     { role: "tool", tool_call_id: "t3", content: "exit 0 · cwd /home/luke/code/homeglow\n42 passed" },
     { role: "assistant", content: "All **42 tests pass** now.\n\n1. `price.ts` added floats directly, so `19.99` came out as `19.989999`.\n2. I round to cents with `Math.round(x * 100) / 100` before returning.\n\n```ts\nexport const total = (items: Item[]) =>\n  Math.round(items.reduce((s, i) => s + i.price * i.qty, 0) * 100) / 100;\n```\n\nWant me to commit it?" }] };
+  // v0.4.1: a long answer the model put in a card (the 1.0 roadmap table).
+  const roadmap = ["| Phase | Done | Already built | Still missing |", "| --- | --- | --- | --- |",
+    "| 0 Foundation | ~70% | Wails app, Blaze look, setup wizard, model router, installers for every OS, in-app updates | Tray/background mode, global hotkey, orb overlay |",
+    "| 1 Hands | ~30% | Files, shell, run_code, git, web search, fetch, HTTP, jobs | Screen reading, mouse/keyboard, browser driving, verify loop |",
+    "| 2 Memory | ~25% | remember/forget, write_skill/use_skill, projects | Structured memory, Show me once |",
+    "| 3 Blaze Link | ~50% | QR pairing, pinned HTTPS, ask_pc and phone_ask (phone side shipped) | Merging PR #3, an always-on phone inbox, a relay beyond Wi-Fi/Tailscale, OTP/WhatsApp tools |",
+    "| 4 Autonomy | ~20% | OS-level schedules, background jobs | Event triggers, multi-hour missions, Ember report |",
+    "| 5 Trust | ~30% | Confirm cards, auto-approve toggle, daily spend cap | Per-app tiers, undo timeline, kill switch |",
+    "| 6 Ship | ~50% | CI for win/mac/linux/arch, releases, screenshots | Code signing (SmartScreen warning), crash reports, real-PC testing, benchmark |"].join("\n");
+  window.__roadmap = roadmap;
+  window.__cardReply = "Blaze Desktop is roughly **a third of the way to 1.0**. The biggest gap is Phase 1: without screen reading and mouse control, Blaze can't drive your other apps yet.\n\n:::card Blaze Desktop v0.4.0 vs the 1.0 roadmap\n" + roadmap + "\n:::\n\nWant me to start on Phase 1?";
+  window.__cardConv = { id: "c5", title: "Where are we on the roadmap?", folder: "/home/luke/code/blaze-desktop", messages: [
+    { role: "user", content: "How far is Blaze Desktop from 1.0? Give me the roadmap table." },
+    { role: "assistant", content: window.__cardReply }] };
+  // The fallback: a long reply without card markers still folds (the steps into "Details").
+  window.__autoReply = "Docker is installed and running. Postgres 17 is up on **localhost:5432**.\n\n## How I set it up\n\n" +
+    ["Pulled `postgres:17-alpine` (82 MB).", "Created the volume `pgdata` so data survives restarts.", "Started the container `blaze-pg` with `POSTGRES_PASSWORD` from your `.env`.", "Mapped port 5432 to localhost only, not your whole network.", "Waited for `pg_isready` to answer (2.1s).", "Created the database `homeglow` and the user `app`.", "Ran your migrations in `db/migrations` (14 files).", "Seeded 40 test products from `db/seed.sql`.", "Added `DATABASE_URL` to `.env.local`.", "Checked a query: `select count(*) from products` → 40."].map((x, i) => `${i + 1}. ${x}`).join("\n") +
+    "\n\n```bash\ndocker run -d --name blaze-pg -p 127.0.0.1:5432:5432 \\\n  -v pgdata:/var/lib/postgresql/data \\\n  -e POSTGRES_PASSWORD=$POSTGRES_PASSWORD postgres:17-alpine\n```\n\nWant me to add it to `docker-compose.yml` too?";
   const A = {
     State: async () => state, Conversations: async () => [{ id: "c1", title: "Fix the failing test", updated: "Oct 9" }, { id: "c2", title: "Set up a Postgres container", updated: "Oct 8" }, { id: "c3", title: "Why is my fan so loud?", updated: "Oct 7" }],
     OpenConversation: async () => conv, Jobs: async () => "Job 1 [running 4m12s] pnpm dev\n   ready on http://localhost:5173", JobLog: async () => "", Schedules: async () => [{ name: "backup-notes", when: "daily 07:00", command: "rsync -a ~/notes /mnt/backup/" }],
@@ -47,7 +65,7 @@
     TestModel: async p => ({ name: p, ok: true, detail: "answered in 0.9s" }),
     AddProvider: async () => ({ ok: true, model: "llama-3.3-70b-versatile", where: "your system keychain" }),
     ConnectOpenRouter: async () => ({ ok: false, error: "Sign-in didn't finish." }),
-    UseFreeStack: async () => state.chain, CheckUpdate: async () => ({ current: "v0.4.0", latest: "v0.4.0", available: false }),
+    UseFreeStack: async () => state.chain, CheckUpdate: async () => ({ current: "v0.4.1", latest: "v0.4.1", available: false }),
     Files: async () => ["assets/theme.css", "design/option-a.html", "design/option-b.html", "layout/theme.liquid", "package.json", "sections/hero.liquid"],
     Design: async () => ({ base: window.__sample, target: { kind: "file", path: "index.html" }, files: ["index.html", "design/option-a.html"], versions: [{ n: 1, summary: "First pass at the landing page", when: "21:02" }, { n: 2, summary: "Warmer palette and rounded cards", when: "21:10" }, { n: 3, summary: "Bigger hero headline", when: "21:18" }] }),
     SetHotkey: async id => ({ ...state.desktop, hotkey: id }), RetryHotkey: async () => state.desktop, SetAutostart: async () => "",
