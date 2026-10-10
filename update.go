@@ -193,7 +193,7 @@ func (a *App) InstallUpdate() string {
 		if restart != nil {
 			_ = restart()
 		}
-		wr.Quit(a.ctx)
+		a.quit()
 	}()
 	return ""
 }
@@ -355,7 +355,7 @@ func installFile(file string) (func() error, error) {
 	case "setup":
 		// The running exe can't be overwritten, so a hidden helper waits for Blaze to
 		// quit, runs the installer silently and starts the new Blaze.
-		script := fmt.Sprintf(`ping -n 3 127.0.0.1 >nul & "%s" /S & start "" "%s"`, file, exe)
+		script := fmt.Sprintf(`ping -n 3 127.0.0.1 >nul & "%s" /S & start "" "%s" --relaunch`, file, exe)
 		return func() error { return detached("cmd", "/C", script).Start() }, nil
 
 	case "portable":
@@ -369,7 +369,7 @@ func installFile(file string) (func() error, error) {
 			_ = os.Rename(old, exe)
 			return nil, errors.New("Couldn't write the new Blaze.exe: " + err.Error())
 		}
-		return func() error { return detached(exe).Start() }, nil
+		return func() error { return detached(exe, "--relaunch").Start() }, nil
 
 	case "dmg":
 		return installDMG(file, exe)
@@ -434,7 +434,7 @@ func installDMG(dmg, exe string) (func() error, error) {
 		return nil, errors.New("Couldn't replace Blaze.app: " + err.Error())
 	}
 	_ = os.RemoveAll(old)
-	return func() error { return detached("sh", "-c", `sleep 1; open -n "$0"`, app).Start() }, nil
+	return func() error { return detached("sh", "-c", `sleep 1; open -n "$0" --args --relaunch`, app).Start() }, nil
 }
 
 func replaceFromTarball(tgz, exe string) error {
@@ -481,7 +481,7 @@ func replaceFromTarball(tgz, exe string) error {
 }
 
 func relaunchUnix(exe string) func() error {
-	return func() error { return detached("sh", "-c", `sleep 1; exec "$0"`, exe).Start() }
+	return func() error { return detached("sh", "-c", `sleep 1; exec "$0" --relaunch`, exe).Start() }
 }
 
 // cleanupOldBinary removes what a portable Windows update left behind.

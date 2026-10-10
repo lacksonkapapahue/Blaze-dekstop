@@ -55,6 +55,7 @@ async function boot() {
   applyTheme();
   $("#ver").textContent = S.version || "";
   pane = buildPane();
+  setupFrame();
   setFolder(S.prefs.folder);
   setModel(S.model, S.selection);
   await refreshSide();
@@ -129,7 +130,11 @@ $$("#tabs button").forEach(b => b.onclick = () => show(b.dataset.tab));
 addEventListener("keydown", e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") { e.preventDefault(); newChat(); }
   if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); show("settings"); }
-  if (e.key === "Escape") closePop();
+  if (e.key === "Escape") {
+    // In the orb, Esc hides Blaze (after closing any open menu first).
+    if (document.body.classList.contains("orb") && !popEl && !menuOpen()) { e.preventDefault(); API().HideWindow(); }
+    closePop();
+  }
 });
 
 async function newChat() {
@@ -349,11 +354,20 @@ function grow() { const i = $("#input"); if (!i) return; i.style.height = "auto"
 
 function hero() {
   const col = $("#log .col", pane); col.innerHTML = "";
+  if (document.body.classList.contains("orb")) {
+    const box = h("div", "hero orbhero");
+    const cv = h("canvas", "orbbig"); cv.width = 360; cv.height = 360;
+    box.append(cv, h("div", "big", "Ask anything"), h("p", "lead", "Blaze can act on this computer: files, commands, code, the web."));
+    col.append(box); particleOrb(cv, 180);
+    return;
+  }
   const os = S.info.os_name || "your computer";
   const where = S.project ? S.project.name : os;
   const box = h("div", "hero");
   box.innerHTML = `<div class="label acc">${esc(where)}</div><div class="big">What should we <em>get done</em>?</div>
     <p class="lead">Blaze runs commands, edits files here, writes code, uses git and the web. Visual work opens live in Design. Type <span class="kbd">/</span> for commands or <span class="kbd">@</span> to attach a file.</p>`;
+  const dk = S.desktop || {};
+  if (dk.hotkey_ok && dk.hotkey_label) box.append(h("div", "hkhint label weak", `Press <span class="kbd">${esc(dk.hotkey_label)}</span> anywhere for quick ask`));
   const sug = h("div", "suggest");
   [["Explore", "What's in this folder? Give me a short tour."],
    ["Fix", "Run the tests here and fix whatever fails."],
@@ -375,16 +389,19 @@ function loadConv(conv) {
   const col = $("#log .col", pane); col.innerHTML = "";
   if (!conv || !conv.messages || !conv.messages.length) { hero(); return; }
   let turn = null;
+  const turns = [];
   const results = {};
   conv.messages.forEach(m => { if (m.role === "tool") results[m.tool_call_id] = m.content; });
   conv.messages.forEach(m => {
     if (m.role === "user") { col.append(userMsg(m.content)); turn = null; }
     else if (m.role === "assistant") {
-      if (!turn) { turn = blazeMsg(); col.append(turn.el); }
+      if (!turn) { turn = blazeMsg(); turns.push(turn); col.append(turn.el); }
       (m.tool_calls || []).forEach(tc => { const s = addStep(turn, tc.id, tc.function.name, tc.function.arguments); finishStep(turn, s, results[tc.id] || ""); });
       if (m.content && m.content !== "…") { turn.text += (turn.text ? "\n\n" : "") + m.content; turn.mdEl.innerHTML = MD.render(turn.text); }
     }
   });
+  // Saved chats: steps collapsed behind "Worked · N steps".
+  turns.forEach(t => { const n = t.order.length; finishWork(t, null, `Worked · ${n} step${n > 1 ? "s" : ""}`); });
   scrollDown(true);
 }
 
@@ -409,10 +426,88 @@ function userMsg(content) {
 function blazeMsg() {
   const el = h("div", "msg blaze");
   el.append(h("div", "who", `<span class="mk"></span><span class="label">Blaze</span>`));
+  // One quiet status line per turn (Settings › Behaviour › Show every step turns the raw list back on).
+  const workEl = h("button", "work", `<span class="sq"></span><span class="wt"></span><svg class="i sm chev" viewBox="0 0 16 16">${IC.down}</svg>`);
+  workEl.style.display = "none";
   const stepsEl = h("div", "steps"); stepsEl.style.display = "none";
   const mdEl = h("div", "md");
-  el.append(stepsEl, mdEl);
-  return { el, stepsEl, mdEl, text: "", steps: {}, order: [] };
+  el.append(workEl, stepsEl, mdEl);
+  const turn = { el, workEl, stepsEl, mdEl, text: "", steps: {}, order: [], started: Date.now(), open: false };
+  workEl.onclick = () => {
+    if (!workEl.classList.contains("done")) return;
+    turn.open = !turn.open;
+    workEl.classList.toggle("open", turn.open);
+    stepsEl.style.display = turn.open && turn.order.length ? "" : "none";
+  };
+  return turn;
+}
+
+const showSteps = () => !!(S && S.prefs && S.prefs.show_steps);
+const clip = (t, n = 60) => { t = String(t || "").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
+
+// The live status line: a plain-English phrase with a shimmer, crossfading when it changes.
+function setStatus(turn, text) {
+  if (!turn || !text) return;
+  const w = turn.workEl, wt = $(".wt", w);
+  w.style.display = ""; w.classList.add("live"); w.classList.remove("done", "open");
+  const t = clip(text);
+  if (turn.statusText === t) return;
+  turn.statusText = t;
+  const old = $$(".phrase", wt);
+  const span = h("span", "phrase shim in", esc(t));
+  wt.append(span);
+  requestAnimationFrame(() => span.classList.remove("in"));
+  old.forEach(o => { o.classList.add("out"); setTimeout(() => o.remove(), 260); });
+  scrollDown();
+}
+
+// When the turn ends the line becomes "Worked for 12s" (or nothing if no tools ran).
+function finishWork(turn, seconds, label) {
+  if (!turn) return;
+  const w = turn.workEl;
+  turn.statusText = "";
+  if (!turn.order.length) { w.style.display = "none"; return; }
+  const secs = seconds != null ? seconds : (Date.now() - turn.started) / 1000;
+  const n = turn.order.length;
+  const txt = label || (secs >= 1 ? `Worked for ${secs >= 60 ? Math.floor(secs / 60) + "m " + Math.round(secs % 60) + "s" : Math.round(secs) + "s"}` : `Worked · ${n} step${n > 1 ? "s" : ""}`);
+  w.classList.remove("live"); w.classList.add("done");
+  $(".wt", w).innerHTML = `<span class="phrase">${esc(txt)}</span>`;
+  w.title = `${n} step${n > 1 ? "s" : ""} · click to ${showSteps() ? "hide" : "see"} them`;
+  w.style.display = showSteps() ? "none" : "";
+}
+
+// Plain-English phrase for a tool call (same phrases as the tray in friendly.go).
+function friendly(name, args) {
+  let a = {}; try { a = JSON.parse(args || "{}"); } catch (e) {}
+  const v = k => String(a[k] ?? "").split("\n")[0].trim();
+  const file = () => base(v("path")) || "a file";
+  const host = u => { try { return new URL(u).host.replace(/^www\./, ""); } catch (e) { return u; } };
+  switch (name) {
+    case "file_read": return "Reading " + file();
+    case "file_edit": return "Editing " + file();
+    case "file_write": return "Writing " + file();
+    case "file_delete": return "Deleting " + file();
+    case "file_list": return "Looking through your files";
+    case "file_search": return `Searching your files for "${v("pattern") || v("query")}"`;
+    case "web_search": return `Searching the web for "${v("query")}"`;
+    case "fetch_page": return "Reading " + (host(v("url")) || "a web page");
+    case "run_shell": return /\b(npm|pnpm|yarn|bun) (i|install|add)\b|\bpip3? install\b|\b(apt|apt-get|dnf|yum|pacman|brew|winget|choco|scoop|cargo|go) (install|-S|get)\b/i.test(v("command")) ? "Installing packages" : "Running a command";
+    case "git": return "Checking the project history";
+    case "run_code": return `Running ${v("language") || "some"} code`;
+    case "install_tool": return "Installing " + (v("name") || "a tool");
+    case "remember": return "Saving that to memory";
+    case "forget": return "Updating memory";
+    case "schedule": return "Setting up a schedule";
+    case "use_skill": return "Following a saved skill";
+    case "write_skill": return "Saving a skill";
+    case "system_info": return "Checking your computer";
+    case "http_request": return "Calling " + (host(v("url")) || "a web service");
+    case "download_file": return "Downloading " + (host(v("url")) || "a file");
+    case "open_url": return "Opening " + (host(v("target") || v("url")) || "a page");
+    case "job_log": case "job_input": return "Checking a background job";
+    case "job_stop": return "Stopping a background job";
+  }
+  return "Working on it";
 }
 
 function scrollDown(force) {
@@ -430,6 +525,13 @@ function setBusy(b) {
 
 let thinkingEl = null;
 function thinking(onOff, text) {
+  if (!showSteps()) {
+    // Hidden steps: everything feeds the one status line; it stays until the turn ends.
+    if (onOff && current) setStatus(current, text || (current.order.length ? current.statusText || "Working on it" : "Thinking"));
+    // The answer is streaming and no tools ran yet: the text is the progress, drop the line.
+    if (!onOff && current && !current.order.length) { current.workEl.style.display = "none"; current.statusText = ""; $(".wt", current.workEl).innerHTML = ""; }
+    return;
+  }
   if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; }
   if (onOff && current) {
     thinkingEl = h("div", "thinking", `<span class="sq"></span><span>${esc(text || "Thinking")}</span>`);
@@ -489,7 +591,7 @@ const describeText = (n, a) => describe(n, a).filter(Boolean).join(" ");
 
 const MAX_STEPS_SHOWN = 6;
 function addStep(turn, id, name, args) {
-  turn.stepsEl.style.display = "";
+  if (showSteps() || turn.open) turn.stepsEl.style.display = "";
   const [verb, tgt] = describe(name, args);
   const s = h("div", "step run", `<div class="head"><span class="st"></span><span class="verb">${esc(verb)}</span><span class="tgt">${esc(tgt)}</span><span class="sum"></span></div><pre></pre>`);
   s.dataset.tool = name;
@@ -584,7 +686,7 @@ on("tool", t => {
   thinking(false);
   if (current.text) current.text += "\n\n";
   addStep(current, t.id, t.name, t.args);
-  thinking(true, describeText(t.name, t.args));
+  thinking(true, showSteps() ? describeText(t.name, t.args) : friendly(t.name, t.args));
   scrollDown();
 });
 on("tool_done", t => {
@@ -595,7 +697,7 @@ on("tool_done", t => {
 });
 on("repair", r => {
   if (!current) return;
-  current.stepsEl.style.display = "";
+  if (showSteps() || current.open) current.stepsEl.style.display = "";
   const n = (r.dropped || []).length;
   let fx = $(".fixnote", current.stepsEl);
   if (!fx) { fx = h("div", "fixnote"); current.stepsEl.append(fx); }
@@ -617,17 +719,19 @@ on("confirm", c => {
 });
 on("done", d => {
   thinking(false);
-  if (current) routeMeta(current, d);
+  if (current) { finishWork(current, d && d.seconds); routeMeta(current, d); }
   if (d && d.route) setModel(d.route);
   current = null; setBusy(false); scrollDown(); refreshSide();
 });
 on("error", e => {
   thinking(false);
+  if (current) finishWork(current);
   errorCard(current ? current.el : $("#log .col", pane), e);
   current = null; setBusy(false); scrollDown(true); refreshSide();
 });
 on("stopped", () => {
   thinking(false);
+  if (current) finishWork(current);
   if (current) current.el.append(h("div", "meta", `<span class="route">Stopped</span>`));
   current = null; setBusy(false); refreshSide();
 });
@@ -645,6 +749,77 @@ on("design", d => {
   card.querySelector(".al").onclick = async () => { await API().SetDesignMode("always"); S.prefs.design_mode = "always"; card.remove(); show("design"); };
   $("#log .col", pane).append(card); scrollDown(true);
 });
+
+// ---------- orb (quick ask) and window frame ----------
+// The orb is a compact mode of the one window: no sidebar or top bar, just the chat
+// with a small bar on top. Go resizes and pins the window and emits "orb".
+function setOrb(onOff) {
+  document.body.classList.toggle("orb", !!onOff);
+  if (S && S.desktop) S.desktop.orb = !!onOff;
+  if (onOff) {
+    if (!$("#orbbar")) {
+      const bar = h("div", "", `<canvas width="44" height="44"></canvas><span class="label ink">Blaze</span><span class="grow"></span>
+        <button class="btn ghost xs" data-o="new" title="New chat">${icon("plus", "i sm")}<span>New</span></button>
+        <button class="btn ghost xs" data-o="expand" title="Open the full window">${icon("open", "i sm")}<span>Expand</span></button>
+        <button class="btn ghost xs" data-o="hide" title="Hide (Esc)">${icon("x", "i sm")}<span>Hide</span></button>`);
+      bar.id = "orbbar"; bar.style.setProperty("--wails-draggable", "drag");
+      $$("button", bar).forEach(b => b.style.setProperty("--wails-draggable", "no-drag"));
+      $("[data-o=new]", bar).onclick = () => newChat();
+      $("[data-o=expand]", bar).onclick = () => API().ExpandOrb();
+      $("[data-o=hide]", bar).onclick = () => API().HideWindow();
+      $("#main").prepend(bar);
+      particleOrb($("canvas", bar), 22);
+    }
+    if (view !== "work") show("work");
+    pane.classList.add("narrow");
+  } else {
+    const bar = $("#orbbar"); if (bar) bar.remove();
+    pane.classList.remove("narrow");
+  }
+  if ($(".hero", pane)) hero();
+  const i = $("#input"); if (i) setTimeout(() => i.focus(), 50);
+}
+on("orb", v => setOrb(v));
+
+// A sphere of square particle dots, slowly turning. Stops when its canvas leaves the page.
+function particleOrb(cv, size) {
+  const ctx = cv.getContext("2d"), dpr = cv.width / size, N = size > 60 ? 260 : 60;
+  const pts = Array.from({ length: N }, (_, i) => { const y = 1 - (i + .5) * 2 / N, r = Math.sqrt(1 - y * y), t = i * 2.39996; return [Math.cos(t) * r, y, Math.sin(t) * r]; });
+  const t0 = performance.now();
+  const frame = now => {
+    if (!cv.isConnected && now - t0 > 1000) return;
+    const css = getComputedStyle(document.documentElement);
+    const acc = css.getPropertyValue("--accent").trim() || "#1F4BD8", ink = css.getPropertyValue("--ink").trim() || "#111110";
+    const a = (now - t0) / 4000, R = size * .38 * dpr, c = size / 2 * dpr, breathe = 1 + Math.sin((now - t0) / 900) * .03;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    pts.forEach(([x, y, z], i) => {
+      const xr = x * Math.cos(a) - z * Math.sin(a), zr = x * Math.sin(a) + z * Math.cos(a);
+      const yr = y * Math.cos(.4) - zr * Math.sin(.4), zz = y * Math.sin(.4) + zr * Math.cos(.4);
+      const d = (zz + 1) / 2, s = Math.max(1, (size > 60 ? 2.6 : 1.6) * dpr * (.45 + d * .75));
+      ctx.globalAlpha = .18 + d * .82;
+      ctx.fillStyle = i % 7 === 0 ? ink : acc;
+      ctx.fillRect(c + xr * R * breathe - s / 2, c + yr * R * breathe - s / 2, s, s);
+    });
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
+// Windows runs frameless: our own minimise / maximise / close in the top bar.
+function setupFrame() {
+  const os = (S.desktop && S.desktop.os) || S.info.os;
+  document.body.classList.add("os-" + os);
+  if (!(S.desktop && S.desktop.frameless)) return;
+  const top = $("#top");
+  const ctl = h("div", "winctl", `<button data-w="min" title="Minimise"><svg class="i sm" viewBox="0 0 16 16"><path d="M3.5 8.5h9"/></svg></button><button data-w="max" title="Maximise"><svg class="i sm" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9"/></svg></button><button data-w="close" class="close" title="Close">${icon("x", "i sm")}</button>`);
+  ctl.style.setProperty("--wails-draggable", "no-drag");
+  $("[data-w=min]", ctl).onclick = () => API().Minimise();
+  $("[data-w=max]", ctl).onclick = () => API().ToggleMaximise();
+  $("[data-w=close]", ctl).onclick = () => API().CloseWindow();
+  top.append(ctl);
+  top.addEventListener("dblclick", e => { if (!e.target.closest("button")) API().ToggleMaximise(); });
+}
 
 // ---------- command menu ----------
 // /model is two levels: Auto or a provider, then that provider's models.
@@ -1447,7 +1622,42 @@ async function setBehaviour(col, redraw) {
   const ps = h("button", "btn line sm", "Save style"); ps.style.marginTop = "8px";
   ps.onclick = async () => { await API().SetPersona(pers.value); ps.textContent = "Saved"; setTimeout(() => ps.textContent = "Save style", 1200); };
   g3.append(pers, ps);
-  col.append(g1, g2, g3);
+  const t2 = h("label", "toggle", `<input type="checkbox" ${S.prefs.show_steps ? "checked" : ""}><span><span class="tt">Show every step (power users)</span><span class="td">Off: one plain-English status line per answer; click “Worked for…” to see the steps.</span></span>`);
+  $("input", t2).onchange = e => { API().SetShowSteps(e.target.checked); S.prefs.show_steps = e.target.checked; };
+  bx.append(t2);
+  col.append(g1, backgroundGroup(redraw), g2, g3);
+}
+
+// Settings › Behaviour › Background & shortcut.
+function backgroundGroup(redraw) {
+  const d = S.desktop || {};
+  const mac = d.os === "darwin";
+  const where = mac ? "menu bar" : "system tray";
+  const g = group("Background & shortcut", `Blaze can stay in the ${where} and open a small quick-ask orb from anywhere.`);
+  const bx = h("div", "box pad formgrid");
+  const tb = h("label", "toggle", `<input type="checkbox" ${d.background ? "checked" : ""}><span><span class="tt">Keep running in the background</span><span class="td">Closing the window hides Blaze in the ${where}. Quit from the ${where} menu.${d.tray ? "" : " The " + where + " isn't available here, so closing still quits."}</span></span>`);
+  $("input", tb).onchange = async e => { await API().SetBackground(e.target.checked); d.background = e.target.checked; };
+  const ta = h("label", "toggle", `<input type="checkbox" ${d.autostart ? "checked" : ""}><span><span class="tt">Start Blaze when you sign in</span><span class="td">It starts hidden, ready for the shortcut.</span></span>`);
+  $("input", ta).onchange = async e => { const err = await API().SetAutostart(e.target.checked); if (err) { e.target.checked = !e.target.checked; note.textContent = err; } else redraw(); };
+  const row = h("div", "hkrow", `<span class="tt">Quick-ask shortcut</span>`);
+  const seg = h("div", "seg");
+  const opts = (d.presets || []).concat([{ id: "off", label: "Off" }]);
+  opts.forEach(p => { const b = h("button", d.hotkey === p.id ? "on" : "", esc(p.label)); b.onclick = async () => { S.desktop = { ...d, ...(await API().SetHotkey(p.id)) }; redraw(); }; seg.append(b); });
+  row.append(seg);
+  const note = h("div", "hknote");
+  const st = h("div", "hkstatus");
+  if (d.wayland) st.innerHTML = `<span class="dot ink"></span><span>Wayland doesn't let apps grab a global shortcut. Bind one in your desktop's keyboard settings to run <span class="mono">blaze-desktop --orb</span>.</span>`;
+  else if (d.hotkey === "off") st.innerHTML = `<span class="dot off"></span><span>Shortcut off. The ${where} icon still opens quick ask.</span>`;
+  else st.innerHTML = `<span class="dot ${d.hotkey_ok ? "" : "ink"}"></span><span>${esc(d.hotkey_note || "")}</span>`;
+  if (d.needs_access) {
+    const acts = h("div", "keyrow"); acts.style.marginTop = "8px";
+    const ga = h("button", "btn accent sm", "Grant access"); ga.onclick = () => API().GrantAccess();
+    const tr = h("button", "btn line sm", "Try again"); tr.onclick = async () => { S.desktop = { ...d, ...(await API().RetryHotkey()) }; redraw(); };
+    acts.append(ga, tr); st.append(acts);
+  }
+  bx.append(tb, ta, row, st, note);
+  g.append(bx);
+  return g;
 }
 
 async function setAppearance(col, redraw) {

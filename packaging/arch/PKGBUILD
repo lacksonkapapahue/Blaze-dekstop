@@ -6,7 +6,7 @@ pkgdesc="Blaze assistant for your computer"
 arch=('x86_64')
 url="https://github.com/lacksonkapapahue/Blaze-dekstop"
 license=('custom')
-depends=('gtk3' 'webkit2gtk-4.1')
+depends=('gtk3' 'webkit2gtk-4.1' 'libx11')
 options=('!debug' '!strip')
 source=()
 package() {
