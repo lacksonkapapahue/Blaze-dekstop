@@ -135,6 +135,22 @@ with sync_playwright() as p:
         pg.wait_for_timeout(600)
         pg.screenshot(path=str(out / f"card-orb-{theme}.png"))
         pg.evaluate("fire('orb', false)"); pg.set_viewport_size({"width": 1280, "height": 820}); pg.wait_for_timeout(300)
+        # v0.5: Memory graph. Overview, the best-linked memory selected, mid-replay, sorting into categories.
+        pg.evaluate("show('memory')"); pg.wait_for_timeout(700)
+        pg.evaluate("MemoryUI.settle()"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"memory-{theme}.png"))
+        st = pg.evaluate("MemoryUI.stats()")
+        if not st or st["nodes"] < 60 or st["edges"] < 30 or st["cats"] < 6:
+            errs.append(f"memory graph is missing data: {st}")
+        pg.evaluate("MemoryUI.select(MemoryUI.live.nodes.filter(n => n.kind === 'memory').sort((a, b) => b.deg - a.deg)[0].i)"); pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"memory-selected-{theme}.png"))
+        pg.evaluate("MemoryUI.seek(0.45); MemoryUI.play(4)"); pg.wait_for_timeout(900)
+        pg.screenshot(path=str(out / f"memory-replay-{theme}.png"))
+        pg.evaluate("MemoryUI.seek(0.93)"); pg.wait_for_timeout(1500)
+        pg.screenshot(path=str(out / f"memory-sorting-{theme}.png"))
+        pg.evaluate("show('work')"); pg.wait_for_timeout(200)
+        if pg.evaluate("!!(MemoryUI.live && !MemoryUI.live.dead)"):
+            errs.append("memory graph kept running after leaving the screen")
         for v in ["settings", "doctor", "schedule", "jobs"]:
             pg.evaluate(f"show('{v}')"); pg.wait_for_timeout(400)
             pg.screenshot(path=str(out / f"{v}-{theme}.png"))

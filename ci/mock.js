@@ -75,6 +75,43 @@
   window.__autoReply = "Docker is installed and running. Postgres 17 is up on **localhost:5432**.\n\n## How I set it up\n\n" +
     ["Pulled `postgres:17-alpine` (82 MB).", "Created the volume `pgdata` so data survives restarts.", "Started the container `blaze-pg` with `POSTGRES_PASSWORD` from your `.env`.", "Mapped port 5432 to localhost only, not your whole network.", "Waited for `pg_isready` to answer (2.1s).", "Created the database `homeglow` and the user `app`.", "Ran your migrations in `db/migrations` (14 files).", "Seeded 40 test products from `db/seed.sql`.", "Added `DATABASE_URL` to `.env.local`.", "Checked a query: `select count(*) from products` → 40."].map((x, i) => `${i + 1}. ${x}`).join("\n") +
     "\n\n```bash\ndocker run -d --name blaze-pg -p 127.0.0.1:5432:5432 \\\n  -v pgdata:/var/lib/postgresql/data \\\n  -e POSTGRES_PASSWORD=$POSTGRES_PASSWORD postgres:17-alpine\n```\n\nWant me to add it to `docker-compose.yml` too?";
+
+  // v0.5: Memory graph. ~60 memories in 6 categories, plus skills and projects; links are
+  // inferred here the same cheap way Go does it (shared rare words, same chat, project mentions).
+  const memCats = {
+    "Preferences": ["Prefers short, direct answers with the code first", "Likes dark mode in every app and editor", "Wants British spelling in docs and UI copy", "Prefers square edges and no pill buttons in designs", "Hates emoji in commit messages", "Likes one blue accent, ink and paper for Blaze designs", "Wants confirm cards before anything deletes files", "Prefers pnpm scripts over long shell one-liners", "Likes answers that end with one clear next step", "Prefers Inter and Inter Tight fonts for Blaze UI"],
+    "Setup & tools": ["PC runs Arch Linux (Omarchy) with Hyprland", "Uses pnpm, not npm", "Default shell is bash at /usr/bin/bash", "Ryzen 7 7840U laptop with 32 GB RAM", "Go 1.25 installed at /usr/bin/go", "Docker 28 runs Postgres for HomeGlow", "Neovim is the main editor, VS Code for Shopify liquid", "Ollama runs gemma locally for keyless tests", "Tailscale links the phone and the PC for Blaze Link", "Hyprland ignores window size, so the orb needs a float rule", "Node v24 via pacman", "Git signs commits with an SSH key"],
+    "Projects & code": ["HomeGlow theme lives in ~/code/homeglow", "Blaze Desktop repo is lacksonkapapahue/Blaze-dekstop", "HomeGlow tests run with pnpm test (vitest)", "Blaze Desktop builds with Wails v2 and vanilla JS", "Blaze CI builds windows, macos, linux and arch", "HomeGlow deploys with shopify theme push", "Blaze.ai web app is in ~/code/blaze-ai", "Blaze Desktop shots run in CI with Playwright", "Round prices to cents in HomeGlow price.ts", "Blaze releases bump VERSION and add a docs plan", "HomeGlow hero section uses a warm palette"],
+    "Work & business": ["HomeGlow is a Shopify dropshipping store for home lighting", "Sources HomeGlow products from Zendrop", "Targets 35% margin on HomeGlow lamps", "Runs HomeGlow ads on TikTok first, then Meta", "Freelances on Upwork and Fiverr for web work", "Budget for ads is about 50 USD a week", "Blaze.ai should launch with a free tier", "Wants HomeGlow orders to ship in under 10 days", "Tracks HomeGlow sales in a Google Sheet", "Prices in USD for HomeGlow customers"],
+    "Personal": ["Lives in Lusaka, Zambia (CAT, UTC+2)", "Goes by Luke; full name Lackson Kapapa", "Born in 2008, still studying", "Works on projects late at night", "Supports football on weekends", "Studies for exams in November", "Listens to music while coding", "Wakes around 7 on school days"],
+    "People": ["Brother helps test Blaze on his Windows PC", "Cousin designs logos for HomeGlow", "Friend Chanda runs a phone shop and wants a website", "Mentor reviews the Blaze.ai pitch", "Teacher asked for a class project site", "Co-founder idea: a friend who does TikTok marketing", "Mum's laptop needs Blaze set up for school work", "Brother's PC has an Nvidia GPU for local models", "Chanda prefers WhatsApp for updates"],
+  };
+  const memList = [];
+  Object.entries(memCats).forEach(([cat, items], ci) => items.forEach((t, k) => memList.push({ t, cat })));
+  const day0 = Date.parse("2026-09-01T09:00:00");
+  const memNodes = memList.map((m, i) => {
+    const span = 40 * 86400e3, frac = ((i * 37) % memList.length) / memList.length;
+    return { id: "m" + i, kind: "memory", label: m.t.replace(/\s*\(.*?\)/g, "").split(/[,;]/)[0].split(" ").slice(0, 5).join(" ") + (m.t.split(" ").length > 5 ? "…" : ""), text: m.t, cat: m.cat, created: Math.round(day0 + frac * span + (i % 5) * 3600e3), ai: true,
+      chat: i % 9 === 0 ? "c1" : i % 11 === 0 ? "c2" : "", chat_title: i % 9 === 0 ? "Fix the failing test" : i % 11 === 0 ? "Set up a Postgres container" : "",
+      project: /homeglow/i.test(m.t) ? "p1" : /blaze/i.test(m.t) ? "p2" : "", project_name: /homeglow/i.test(m.t) ? "HomeGlow" : /blaze/i.test(m.t) ? "Blaze.ai" : "" };
+  });
+  memNodes[memNodes.length - 1].created = Date.parse("2026-10-10T19:40:00");
+  const skillNodes = [["deploy-site", "Build and push the HomeGlow theme with shopify theme push"], ["pg-docker", "Start Postgres in Docker for local apps"], ["blaze-release", "Bump VERSION, write the docs plan, merge when CI is green"], ["ad-report", "Summarise the week's TikTok and Meta ads spend for HomeGlow"], ["hyprland-float", "Make a window float on Hyprland with a windowrule"]]
+    .map(([n, d], i) => ({ id: "skill:" + n, kind: "skill", label: n, text: d, cat: "Skills", created: Date.parse("2026-09-12T10:00:00") + i * 6 * 86400e3, path: "/home/luke/.blaze/skills/" + n + "/SKILL.md" }));
+  const projNodes = [{ id: "project:p1", kind: "project", label: "HomeGlow", text: "Shopify theme. Use pnpm. Keep it fast on phones.", cat: "Projects", created: Date.parse("2026-08-30T12:00:00"), project: "p1", project_name: "HomeGlow", path: "/home/luke/code/homeglow" },
+    { id: "project:p2", kind: "project", label: "Blaze.ai", text: "Next.js app. Free tier first.", cat: "Projects", created: Date.parse("2026-08-31T12:00:00"), project: "p2", project_name: "Blaze.ai", path: "/home/luke/code/blaze-ai" }];
+  const allMem = memNodes.concat(skillNodes, projNodes);
+  const catNames = [...new Set(allMem.map(n => n.cat))];
+  const stopW = new Set("the and for are but not you all any can had was one our out has how its may new now see two way who did get got with that this from they them then than when what will your into over also just only very more most some such like want wants uses use used every first runs needs about usr bin home code luke".split(" "));
+  const tk = s => [...new Set(s.toLowerCase().split(/[^a-z0-9.+#-]+/).map(w => w.replace(/^[.-]+|[.-]+$/g, "")).filter(w => w.length > 2 && !stopW.has(w)).map(w => w.length > 4 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w))];
+  const toks = allMem.map(n => n.kind === "project" ? [] : tk(n.label + " " + n.text));
+  const df = {}; toks.forEach((ts, i) => ts.forEach(t => (df[t] = df[t] || []).push(i)));
+  const pairs = {}, N = allMem.length;
+  Object.entries(df).forEach(([t, ids]) => { if (ids.length < 2 || ids.length > 9) return; const w = Math.log((N + 1) / ids.length); for (let x = 0; x < ids.length; x++) for (let y = x + 1; y < ids.length; y++) { const k = ids[x] + "," + ids[y]; const p = pairs[k] = pairs[k] || { w: 0, why: t, bw: 0 }; p.w += w; if (w > p.bw) { p.bw = w; p.why = t; } } });
+  const deg = new Array(N).fill(0), memEdges = [];
+  Object.entries(pairs).filter(([, p]) => p.w >= 2).sort((a, b) => b[1].w - a[1].w).forEach(([k, p]) => { const [a, b] = k.split(",").map(Number); if (deg[a] >= 5 && deg[b] >= 5) return; deg[a]++; deg[b]++; memEdges.push({ a, b, w: +p.w.toFixed(2), why: "both mention “" + p.why + "”" }); });
+  allMem.forEach((n, i) => projNodes.forEach((p, pi) => { if (n.kind !== "project" && n.project === p.project) memEdges.push({ a: i, b: memNodes.length + skillNodes.length + pi, w: 1.5, why: "saved in " + p.label }); }));
+  window.__memGraph = { nodes: allMem.map(n => ({ ...n, cat: catNames.indexOf(n.cat) })), edges: memEdges, cats: catNames.map(c => ({ name: c, count: allMem.filter(n => n.cat === c).length })), ai_sort: true, can_sort: true, sorting: false, unsorted: 0 };
   const A = {
     State: async () => state, Conversations: async () => [{ id: "c1", title: "Float Rounding In Price Tests", updated: "Oct 9", source: "auto" }, { id: "c2", title: "Set up a Postgres container", updated: "Oct 8" }, { id: "c3", title: "Why is my fan so loud?", updated: "Oct 7" }, { id: "c6", title: "HomeGlow launch checklist", updated: "Oct 6", source: "manual" }],
     DefaultPersonality: async () => "PERSONALITY\nYou are Blaze. Be warm, sharp, and one step ahead: an expert who happens to be easy to talk to.\n- Answer first. Lead with the result.\n- Take a side.\n- Be specific.",
@@ -103,6 +140,9 @@
     Files: async () => ["assets/theme.css", "design/option-a.html", "design/option-b.html", "layout/theme.liquid", "package.json", "sections/hero.liquid"],
     Design: async () => ({ base: window.__sample, target: { kind: "file", path: "index.html" }, files: ["index.html", "design/option-a.html"], versions: [{ n: 1, summary: "First pass at the landing page", when: "21:02" }, { n: 2, summary: "Warmer palette and rounded cards", when: "21:10" }, { n: 3, summary: "Bigger hero headline", when: "21:18" }] }),
     SetHotkey: async id => ({ ...state.desktop, hotkey: id }), RetryHotkey: async () => state.desktop, SetAutostart: async () => "",
+    MemoryGraph: async () => window.__memEmpty ? { nodes: [], edges: [], cats: [] } : window.__memGraph,
+    EditMemory: async (id, text) => { const n = window.__memGraph.nodes.find(x => x.id === id); if (n) n.text = text; return { id }; },
+    ForgetMemory: async () => "", SortMemories: async () => "", SetMemoryAISort: async () => {},
     Doctor: async () => [{ name: "Internet", ok: true, detail: "Online" }, { name: "Google Gemini", ok: true, detail: "gemini-3.8-flash answered in 0.9s" }, { name: "Groq", ok: false, detail: "openai/gpt-oss-120b: Groq hit its free limit for now. Blaze will use another model." }, { name: "Shell", ok: true, detail: "bash · /usr/bin/bash" }, { name: "Tray", ok: true, detail: "In the system tray" }, { name: "Shortcut", ok: true, detail: "Press Ctrl+Shift+Space anywhere for quick ask" }, { name: "Start at login", ok: true, detail: "Off (Settings › Behaviour)" }],
   };
   window.go = { main: { App: new Proxy(A, { get: (t, k) => t[k] || (async () => "") }) } };

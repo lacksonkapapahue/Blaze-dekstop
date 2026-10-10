@@ -64,7 +64,9 @@ func init() {
 				return "Error: " + err.Error()
 			}
 			defer f.Close()
-			fmt.Fprintf(f, "- %s (%s)\n", strings.TrimSpace(a.s("fact")), time.Now().Format("2006-01-02"))
+			fact := strings.Join(strings.Fields(a.s("fact")), " ")
+			fmt.Fprintf(f, "- %s (%s)\n", fact, time.Now().Format("2006-01-02"))
+			noteFact(fact) // created time, project and chat for the Memory graph
 			return "Remembered."
 		})
 

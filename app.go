@@ -53,6 +53,8 @@ type Prefs struct {
 
 	OnboardStep    int  `json:"onboard_step"`    // first-run onboarding: the step to resume at
 	OnboardSkipped bool `json:"onboard_skipped"` // onboarding was skipped or finished; don't open it by itself
+
+	MemoryAISort *bool `json:"memory_ai_sort,omitempty"` // let a model sort new memories into categories (default on)
 }
 
 type App struct {
@@ -202,6 +204,8 @@ func (a *App) State() State {
 	if prefs.Personality == "" {
 		prefs.Personality = "default"
 	}
+	aiSort := a.memAISort()
+	prefs.MemoryAISort = &aiSort
 	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.RouteChain(), Prefs: prefs,
 		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: a.cfg.AllowKeyless(), Missing: a.info.Missing(),
 		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName(),
@@ -427,6 +431,7 @@ func (a *App) start() string {
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.cancel = cancel
 	a.busy = true
+	a.tagMemoryTurn()
 	go a.run(ctx)
 	return "ok"
 }
