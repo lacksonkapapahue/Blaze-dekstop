@@ -26,8 +26,8 @@ function statusLine(c) {
   const [t, cls] = STATUS[c.status] || STATUS.not_connected;
   let text = t;
   if (c.status === "connected") text = c.account ? `Connected as ${c.account}` : "Connected";
-  if (c.status === "connected" && !c.enabled) text += " · off for Blaze";
-  return `<span class="cstat"><span class="dot ${c.status === "connected" && !c.enabled ? "off" : cls}"></span><span>${esc(text)}</span></span>`;
+  if (c.status === "connected" && !c.enabled) text = "Off for Blaze" + (c.account ? ` · ${c.account}` : "");
+  return `<span class="cstat" title="${esc(text)}"><span class="dot ${c.status === "connected" && !c.enabled ? "off" : cls}"></span><span>${esc(text)}</span></span>`;
 }
 
 async function loadConnectors() { CV = await API().Connectors() || { connectors: [], mcp: [] }; return CV; }
@@ -122,7 +122,7 @@ async function drawConnectorsInto(col, redraw, compact) {
   addB.onclick = () => { formSlot.innerHTML = ""; formSlot.append(addMcpForm((ok, s) => { formSlot.innerHTML = ""; if (ok && s) show("mcp", s.id); else if (ok) redraw(); })); formSlot.style.marginBottom = "10px"; };
   g2.append(formSlot, mcpRows(CV.mcp || []));
   col.append(g1, g2);
-  if (!compact) col.append(h("div", "label weak", `Sign-ins return to ${esc(CV.loopback)} · tokens and keys stay in your system keychain`));
+  if (!compact) col.append(h("div", "note2", `Sign-ins come back to <span class="mono">${esc(CV.loopback)}</span>. Tokens and keys stay in your system keychain.`));
 }
 
 function connectorsView(el) {
@@ -151,7 +151,7 @@ const RISK = { read: "Reads", action: "Acts", write: "Sends · changes" };
 function toolRows(tools, owner, c) {
   const rows = h("div", "rows trows");
   tools.forEach(t => {
-    const r = h("div", "r", `<span class="n"></span><div class="main"><div class="t"><span class="mono small">${esc(t.name)}</span><span class="pill ${t.risk === "write" ? "ink" : ""}">${esc(RISK[t.risk] || t.risk)}</span></div><div class="s">${esc(t.desc)}</div></div>`);
+    const r = h("div", "r", `<div class="main"><div class="t"><span class="mono small">${esc(t.name)}</span><span class="pill ${t.risk === "write" ? "ink" : ""}">${esc(RISK[t.risk] || t.risk)}</span></div><div class="s">${esc(t.desc)}</div></div>`);
     const a = h("div", "acts");
     if (t.needs_grant && c) { const g = h("button", "btn line xs", "Grant access"); g.title = "Ask Google for the permission this tool needs"; g.onclick = async () => { const res = await API().ConnectorGrant(c.id, t.name); if (res && res.status === "error") toast(res.error, "error"); }; a.append(g); }
     a.append(modeSeg(t, owner));
@@ -204,8 +204,8 @@ async function connectorView(el, id) {
   }
 
   // Setup: fields, steps, console link, redirect choice.
-  const setup = c.status !== "connected" || c.auth !== "token";
-  if (setup && c.status !== "connecting") {
+  let setupG = null;
+  if (c.status !== "connecting") {
     const g = group(c.auth === "token" ? "Connect with a token" : "Your developer app", c.auth === "token" ? "" : "Blaze has no server of its own, so you make a free developer app and paste its ID. It only ever talks to " + esc(c.name) + ".");
     const steps = h("ol", "csteps"); (c.steps || []).forEach(s => steps.append(h("li", "", esc(s))));
     const consoleBtn = h("button", "btn line sm", `${icon("ext", "i sm")}Open ${esc(c.console_name || "the developer console")}`); consoleBtn.onclick = () => API().OpenURL(c.console);
@@ -242,19 +242,25 @@ async function connectorView(el, id) {
       const uri = h("span", "mono small uri", esc(c.redirect_uri));
       const cp = h("button", "btn ghost xs", `${icon("copy", "i sm")}Copy`); cp.onclick = () => { navigator.clipboard.writeText(c.redirect_uri); toast("Redirect URI copied"); };
       r2.append(uri, cp); rd.append(r2);
-      if (c.id === "google") rd.append(h("div", "label weak", "Desktop app clients accept any 127.0.0.1 port, so there's nothing to add in Google Cloud."));
+      if (c.id === "google") rd.append(h("div", "note2", "Desktop app clients accept any 127.0.0.1 port, so there's nothing to add in Google Cloud."));
       fields.append(rd);
     }
-    g.append(bx); col.append(g);
+    if (c.status === "connected" || c.status === "expired") {
+      // Already set up: keep the developer app out of the way.
+      const d = h("details", "csetupwrap");
+      d.append(h("summary", "", `${icon("chev", "i sm")}<span>${c.auth === "token" ? "Replace the token" : "Developer app and redirect URI"}</span>`), bx);
+      g.innerHTML = ""; g.append(group(c.auth === "token" ? "Token" : "Your developer app").firstChild, d);
+    } else g.append(bx);
+    setupG = g;
+    if (c.status !== "connected" && c.status !== "expired") col.append(g);
   }
-
   if (c.status === "connected" || c.status === "expired") {
     const g = group("Use with Blaze");
     const bx = h("div", "box pad formgrid");
     const tg = h("label", "toggle", `<input type="checkbox" ${c.enabled ? "checked" : ""}><span><span class="tt">Let Blaze use ${esc(c.name)}</span><span class="td">When off, its tools are hidden from Blaze; the sign-in stays.</span></span>`);
     $("input", tg).onchange = async e => { await API().ConnectorSetEnabled(c.id, e.target.checked); redraw(); };
     bx.append(tg);
-    if (c.since) bx.append(h("div", "label weak", `Connected ${esc(c.since)}${(c.granted || []).length ? " · can " + esc(c.granted.join(", ")) : ""}`));
+    if (c.since) bx.append(h("div", "note2", `Connected ${esc(c.since)}${(c.granted || []).length ? ". Blaze can " + esc(c.granted.join(", ")) + "." : "."}`));
     g.append(bx); col.append(g);
   }
 
@@ -267,6 +273,7 @@ async function connectorView(el, id) {
     tg.append(toolRows(c.tools.filter(t => t.group === gid), c.id, c));
   });
   col.append(tg);
+  if (setupG && !setupG.parentNode) col.append(setupG);
 }
 
 async function mcpView(el, id) {
@@ -292,7 +299,7 @@ async function mcpView(el, id) {
   const t1 = h("label", "toggle", `<input type="checkbox" ${s.enabled ? "checked" : ""}><span><span class="tt">Let Blaze use this server</span><span class="td">${s.transport === "stdio" ? "Blaze starts it when a tool is needed and stops it when Blaze quits." : s.has_token ? "Its token is saved in your system keychain." : "No token saved."}</span></span>`);
   $("input", t1).onchange = async e => { await API().MCPSetEnabled(id, e.target.checked); redraw(); };
   bx.append(t1);
-  if (s.checked) bx.append(h("div", "label weak", `Checked ${esc(s.checked)} · ${(s.tools || []).length} tools`));
+  if (s.checked) bx.append(h("div", "note2", `Checked ${esc(s.checked)} · ${(s.tools || []).length} tools`));
   g.append(bx); col.append(g);
   const tg = group("Tools", "Read-only tools run without asking; destructive ones always ask unless you choose Always allow.");
   if ((s.tools || []).length) tg.append(toolRows(s.tools, "mcp:" + id));
@@ -341,6 +348,7 @@ on("connector_suggest", d => {
 on("connector_reauth", d => {
   const card = chatCard(`<div class="title">${cicon(d.id)}<span class="label ink">Reconnect ${esc(d.name)}</span></div><div>Your ${esc(d.name)} connection has expired. Reconnect it before Blaze can use it for this request.</div>
     <div class="actions"><button class="btn accent sm go">${icon("retry", "i sm")}Reconnect</button></div>`);
+  card.classList.add("reauth");
   $(".go", card).onclick = async () => { const r = await API().ConnectorConnect(d.id); if (r && r.status === "error") { toast(r.error, "error"); show("connector", d.id); } else $(".actions", card).innerHTML = `<span class="label">Finish in your browser, then say “continue”</span>`; };
 });
 on("connector_consent", d => {
