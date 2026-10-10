@@ -13,6 +13,10 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Debian/Ubuntu**: `sudo apt install ./blaze-desktop_*_amd64.deb`.
 - **Other Linux**: unpack the tar.gz and run `blaze-desktop` (needs GTK 3 + WebKitGTK 4.1).
 
+## What's in v0.2.1
+1. **In-app updates**: Blaze checks GitHub for a newer release when it opens (Settings › Updates, or `/update`) and installs it in place: the setup.exe or portable exe on Windows, Blaze.app from the .dmg on macOS, and the .deb, Arch package or tar.gz on Linux, then reopens. While the repo is private, set `BLAZE_UPDATE_TOKEN` to a GitHub token that can read it.
+2. **Fix**: no more blank window on launch. The UI waits for the app to finish starting instead of failing on its first call.
+
 ## What's in v0.2.0
 1. **Command menu**: type `/` (or press `+`) for a floating list above the chat box: new, model, project, folder, design, retry, stop, skills, theme and more. `@` attaches project files.
 2. **Projects**: a folder with its own chats and standing instructions; project page with git status and recent files.
