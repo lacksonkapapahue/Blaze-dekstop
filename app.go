@@ -38,6 +38,8 @@ type Prefs struct {
 
 	NoUpdateCheck bool   `json:"no_update_check"` // don't look for updates on launch
 	SkipUpdate    string `json:"skip_update"`     // a release the user chose to skip, e.g. v0.3.0
+
+	NoParticles bool `json:"no_particles"` // turn off the drifting dots behind the chat
 }
 
 type App struct {
@@ -207,6 +209,9 @@ func (a *App) SetPersona(p string)    { a.cfg.Persona = strings.TrimSpace(p); _ 
 func (a *App) SetYolo(v bool)         { a.cfg.AutoApprove = v; a.env.Yolo = v; _ = a.cfg.Save() }
 func (a *App) SetTheme(t string)      { a.prefs.Theme = t; a.savePrefs() }
 func (a *App) SetDesignMode(m string) { a.prefs.Design = m; a.savePrefs() }
+
+// SetParticles turns the chat background particles on or off.
+func (a *App) SetParticles(on bool) { a.prefs.NoParticles = !on; a.savePrefs() }
 
 func (a *App) SetMemory(text string) {
 	_ = os.WriteFile(filepath.Join(config.Dir(), "memory.md"), []byte(strings.TrimSpace(text)+"\n"), 0o600)
