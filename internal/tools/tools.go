@@ -18,13 +18,13 @@ import (
 
 // Env is what tools need from the host: the PC profile and a way to ask the user.
 type Env struct {
-	Info     *sysinfo.Info
-	Root     string // the folder Blaze was started in (the "project")
-	Yolo     bool
-	Confirm  func(title, detail string) bool
-	Status   func(line string) // one-line progress ("Running: npm test")
-	Shell    *Shell
-	Jobs     *Jobs
+	Info    *sysinfo.Info
+	Root    string // the folder Blaze was started in (the "project")
+	Yolo    bool
+	Confirm func(title, detail string) bool
+	Status  func(line string) // one-line progress ("Running: npm test")
+	Shell   *Shell
+	Jobs    *Jobs
 }
 
 type handler func(e *Env, a args) string
@@ -175,3 +175,13 @@ func dataDir(sub string) string {
 }
 
 func isWindows() bool { return runtime.GOOS == "windows" }
+
+// Names lists every tool name (for repairing a model's tool calls).
+func Names() []string {
+	out := make([]string, 0, len(registry))
+	for n := range registry {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
