@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="polish.css">
 <link rel="stylesheet" href="accounts.css">
+<link rel="stylesheet" href="memory.css">
 </head>
 <body>
 <div id="app">
@@ -20,6 +21,7 @@
     <div class="sect"><span class="label" id="chatsLabel">Chats</span><span class="ctx" id="chatsCtx"></span></div>
     <nav id="chats"></nav>
     <div class="sidefoot">
+      <button class="nav" data-view="memory"><svg class="i" viewBox="0 0 16 16"><rect x="1.5" y="2" width="3.5" height="3.5"/><rect x="11" y="3.5" width="3.5" height="3.5"/><rect x="5.5" y="10.5" width="3.5" height="3.5"/><path d="M5 4.2 11 5.1M11.6 7 8.4 10.5M3.6 5.5l2.8 5"/></svg><span>Memory</span></button>
       <button class="nav" data-view="jobs"><svg class="i" viewBox="0 0 16 16"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h7"/></svg><span>Jobs</span><span id="jobCount" class="count"></span></button>
       <button class="nav" data-view="schedule"><svg class="i" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg><span>Schedule</span></button>
       <button class="nav" data-view="accounts"><svg class="i" viewBox="0 0 16 16"><path d="M5.5 2v3.5M10.5 2v3.5M3.5 5.5h9V8a4.5 4.5 0 0 1-9 0zM8 12.5v2"/></svg><span>Accounts</span><span id="connCount" class="count"></span></button>
@@ -46,5 +48,6 @@
 <script src="connectors.js"></script>
 <script src="accounts.js"></script>
 <script src="onboard.js"></script>
+<script src="memory.js"></script>
 </body>
 </html>

@@ -302,7 +302,7 @@ function show(v, arg) {
   if (v === "design") $("#designDot").className = "";
   const el = $("#view"); pane.remove(); el.innerHTML = ""; closeMenu(); closePop();
   // Views from other files (accounts.js, onboard.js…) register in window.VIEWS.
-  ((window.VIEWS && window.VIEWS[v]) || ({ work: workView, design: designView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, project: projectView, newproject: newProjectView })[v])(el, arg);
+  ((window.VIEWS && window.VIEWS[v]) || ({ work: workView, design: designView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, project: projectView, newproject: newProjectView, memory: (e, a) => memoryView(e, a) })[v])(el, arg);
   $$("#chats .chat").forEach(b => b.classList.remove("on"));
 }
 
@@ -925,7 +925,7 @@ const COMMANDS = [
   { name: "schedule", desc: "Scheduled jobs", run: () => show("schedule") },
   { name: "doctor", desc: "Check models, shell and tools", run: () => show("doctor") },
   { name: "usage", desc: "Tokens and cost per model", run: () => show("settings", "usage") },
-  { name: "memory", desc: "What Blaze remembers about you", run: () => show("settings", "memory") },
+  { name: "memory", desc: "Your memory graph: what Blaze remembers", run: () => show("memory") },
   { name: "settings", desc: "Models, behaviour, appearance", run: () => show("settings") },
   { name: "update", desc: "Check for a new version of Blaze", run: () => show("settings", "updates") },
 ];
@@ -1707,7 +1707,8 @@ async function setMemory(col) {
   g.id = "memory";
   const mem = h("textarea", "field"); mem.style.minHeight = "260px"; mem.value = S.memory || ""; mem.placeholder = "Nothing yet. Blaze saves lasting facts here as you work, or type your own.";
   const ms = h("button", "btn line sm", "Save"); ms.style.marginTop = "8px"; ms.onclick = async () => { await API().SetMemory(mem.value); ms.textContent = "Saved"; setTimeout(() => ms.textContent = "Save", 1200); };
-  g.append(mem, ms); col.append(g);
+  const mg = h("button", "btn ghost sm", "Open the memory graph"); mg.style.cssText = "margin:8px 0 0 6px"; mg.onclick = () => show("memory");
+  g.append(mem, ms, mg); col.append(g);
 }
 
 async function setSkills(col) {
