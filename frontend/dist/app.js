@@ -356,9 +356,10 @@ function buildPane() {
   const input = $("#input", p), yolo = $("#yolo", p);
   yolo.checked = !!S.yolo;
   yolo.onchange = () => { S.yolo = yolo.checked; API().SetYolo(yolo.checked); };
-  input.addEventListener("input", () => { grow(); onType(); });
+  input.addEventListener("input", () => { grow(); onType(); sendLabel(); });
   input.addEventListener("keydown", onKey);
-  $("#send", p).onclick = () => busy ? API().Stop() : submit();
+  // Mid-answer the button stops the answer, unless there's a message to send: that one queues.
+  $("#send", p).onclick = () => busy && !input.value.trim() ? API().Stop() : submit();
   $("#plus", p).onclick = () => menuOpen() ? closeMenu() : openMenu("root");
   return p;
 }
@@ -403,19 +404,40 @@ function loadConv(conv) {
   let turn = null;
   const turns = [];
   const results = {};
+  const anchors = {}; // agent handle -> the turn that dispatched it (its card goes right after)
   conv.messages.forEach(m => { if (m.role === "tool") results[m.tool_call_id] = m.content; });
   conv.messages.forEach(m => {
-    if (m.role === "user") { col.append(userMsg(m.content)); turn = null; }
+    if (m.role === "user" && isAgentResult(m.content)) { col.append(agentNote(m.content)); turn = null; }
+    else if (m.role === "user") { col.append(userMsg(m.content)); turn = null; }
     else if (m.role === "assistant") {
       if (!turn) { turn = blazeMsg(); turns.push(turn); col.append(turn.el); }
-      (m.tool_calls || []).forEach(tc => { const s = addStep(turn, tc.id, tc.function.name, tc.function.arguments); finishStep(turn, s, results[tc.id] || ""); });
+      (m.tool_calls || []).forEach(tc => {
+        if (Agents.isMainTool(tc.function.name)) {
+          const hm = /agent "([^"]+)"/.exec(results[tc.id] || "");
+          if (tc.function.name === "dispatch_agent" && hm) anchors[hm[1]] = turn.el;
+          return;
+        }
+        const s = addStep(turn, tc.id, tc.function.name, tc.function.arguments); finishStep(turn, s, results[tc.id] || "");
+      });
       if (m.content && m.content !== "…") turn.text += (turn.text ? "\n\n" : "") + m.content;
     }
   });
   turns.forEach(t => renderAnswer(t, true));
+  // Background agents: each card right after the turn that started it.
+  const seen = new Set();
+  Object.keys(anchors).forEach(k => { const v = (conv.agents || []).find(a => a.handle === k); if (v) { Agents.load([v], col, { [k]: anchors[k] }); seen.add(k); } });
+  Agents.load((conv.agents || []).filter(a => !seen.has(a.handle)), col);
   // Saved chats: steps collapsed behind "Worked · N steps" (no timing is saved).
   turns.forEach(t => finishWork(t, null, STEPS.workedLine(t.order.length, null)));
   scrollDown(true);
+}
+
+// Where a background agent's result came back into the chat (a platform message, not the user).
+const isAgentResult = c => String(c || "").startsWith("[Background agent result");
+function agentNote(content) {
+  const m = /^\[Background agent result · ([^·\]]+) · (\w+)/.exec(content) || [];
+  const word = { done: "finished", failed: "couldn't finish" }[(m[2] || "").trim()] || "reported back";
+  return h("div", "agnote", `<span class="label">Agent · <b>${esc((m[1] || "").trim())}</b> ${esc(word)}</span>`);
 }
 
 // User bubbles hide attached file bodies and long design-edit context.
@@ -568,10 +590,16 @@ function scrollDown(force) {
 
 function setBusy(b) {
   busy = b;
-  const send = $("#send", pane);
-  send.innerHTML = b ? `${icon("stop", "i sm")}<span>Stop</span>` : `${icon("send", "i sm")}<span>Send</span>`;
-  send.classList.toggle("accent", !b); send.classList.toggle("line", b);
-  $("#hint", pane).textContent = b ? "Working… Stop ends the task" : "/ commands · @ files · Shift+Enter new line";
+  sendLabel();
+  $("#hint", pane).textContent = b ? "Working… keep typing to queue a message · Stop ends this answer" : "/ commands · @ files · Shift+Enter new line";
+}
+function sendLabel() {
+  const send = $("#send", pane), i = $("#input", pane); if (!send) return;
+  const stop = busy && !(i && i.value.trim());
+  if (send.dataset.stop === String(stop)) return;
+  send.dataset.stop = String(stop);
+  send.innerHTML = stop ? `${icon("stop", "i sm")}<span>Stop</span>` : `${icon("send", "i sm")}<span>Send</span>`;
+  send.classList.toggle("accent", !stop); send.classList.toggle("line", stop);
 }
 
 let thinkingEl = null;
@@ -593,9 +621,9 @@ function thinking(onOff, text) {
 function submit() {
   const input = $("#input", pane);
   const text = input.value.trim();
-  if (!text || busy) return;
+  if (!text) return;
   if (/^\/\S+$/.test(text)) { const c = matchCommands(text.slice(1))[0]; if (c) { input.value = ""; runCommand(c); return; } }
-  input.value = ""; grow();
+  input.value = ""; grow(); sendLabel();
   sendText(text, attachments.slice());
   attachments = []; drawAttach();
 }
@@ -606,16 +634,37 @@ async function runCommand(c) {
 }
 
 async function sendText(text, files) {
-  if (busy) return;
   const col = $("#log .col", pane);
   const heroEl = $(".hero", col); if (heroEl) heroEl.remove();
-  col.append(userMsg(text + (files || []).map(f => `\n<attached path="${f}"></attached>`).join("")));
-  current = blazeMsg(); col.append(current.el);
+  const bubble = userMsg(text + (files || []).map(f => `\n<attached path="${f}"></attached>`).join(""));
+  col.append(bubble);
+  if (busy) {
+    // Blaze is mid-answer: the message waits its turn (Go starts it when this one ends).
+    bubble.classList.add("queued"); scrollDown(true);
+    await API().Send(text, files || []);
+    return;
+  }
+  current = blazeMsg(); current.pendingUser = true; col.append(current.el);
   setBusy(true); thinking(true);
   scrollDown(true);
   const r = await API().Send(text, files || []);
-  if (r === "busy") setBusy(true);
+  if (r === "queued" && current && current.pendingUser) { current.el.remove(); current = null; bubble.classList.add("queued"); }
 }
+
+// A main turn starts in Go: a user message (maybe queued) or a background agent's result.
+on("turn", t => {
+  if (t && t.conv) convId = t.conv;
+  const col = $("#log .col", pane); if (!col) return;
+  if (t.kind === "agent") {
+    if (current && current.pendingUser) { current.el.remove(); current = null; const q = $$(".msg.user", col).pop(); if (q) q.classList.add("queued"); }
+    if (current) return;
+    col.append(agentNote(`[Background agent result · ${t.handle} · ${(Agents.recs[t.handle] || { v: {} }).v.status || "done"}`));
+  } else if (current && current.pendingUser) { current.pendingUser = false; return; }
+  else if (current) return;
+  else { const q = $(".msg.user.queued", col); if (q) q.classList.remove("queued"); }
+  current = blazeMsg(); col.append(current.el);
+  setBusy(true); thinking(true); scrollDown();
+});
 
 // One row per tool step: plain words on the row; the exact command or tool call and its
 // output only inside the expanded row (mono).
@@ -720,6 +769,7 @@ on("delta", d => {
 });
 on("tool", t => {
   if (!current) return;
+  if (Agents.isMainTool(t.name)) { thinking(true, t.name === "dispatch_agent" ? "Handing this to a background agent" : "Checking on your agents"); return; }
   thinking(false);
   if (current.text) current.text += "\n\n";
   addStep(current, t.id, t.name, t.args)._t0 = Date.now();
@@ -745,6 +795,7 @@ on("repair", r => {
 on("route", r => { if (r && r.route) setModel(r.route); });
 on("model", m => { if (m) setModel(m.label, m.selection); });
 on("confirm", c => {
+  if (c.agent && Agents.confirm(c)) return; // a background agent's approval shows on its card
   thinking(false);
   const btns = c.always
     ? `<button class="btn accent sm yes">Allow once</button><button class="btn line sm al">Always allow</button><button class="btn ghost sm no">Don't allow</button>`
@@ -810,6 +861,7 @@ function setOrb(onOff) {
       $("[data-o=hide]", bar).onclick = () => API().HideWindow();
       $("#main").prepend(bar);
       particleOrb($("canvas", bar), 22);
+      Agents.orbBadge();
     }
     if (view !== "work") show("work");
     pane.classList.add("narrow");
@@ -1626,7 +1678,20 @@ async function setBehaviour(col, redraw) {
   const t4 = h("label", "toggle", `<input type="checkbox" ${S.prefs.auto_titles !== false ? "checked" : ""}><span><span class="tt">Name chats by their topic</span><span class="td">A tiny call on your cheapest model titles each chat by what it's mostly about, and updates it as the chat moves on. Double-click a chat to rename it yourself.</span></span>`);
   $("input", t4).onchange = e => { API().SetAutoTitles(e.target.checked); S.prefs.auto_titles = e.target.checked; };
   bx.append(t4);
-  col.append(g1, backgroundGroup(redraw), g2, Polish.personalityGroup(redraw), g3);
+  col.append(g1, backgroundGroup(redraw), agentsGroup(redraw), g2, Polish.personalityGroup(redraw), g3);
+}
+
+// Settings › Behaviour › Background agents: how many run at once.
+function agentsGroup(redraw) {
+  const g = group("Background agents", "Blaze hands long jobs to background agents so you can keep chatting. More at once finishes sooner but works your computer harder.");
+  const row = h("div", "hkrow", `<span class="tt">Run at most</span>`);
+  const seg = h("div", "seg");
+  const cur = S.prefs.max_agents || (S.info && S.info.cores && S.info.cores <= 2 ? 1 : 3);
+  [1, 2, 3, 4, 6].forEach(n => { const b = h("button", cur === n ? "on" : "", `${n} at once`); b.onclick = async () => { S.prefs.max_agents = await API().SetMaxAgents(n); redraw(); }; seg.append(b); });
+  row.append(seg);
+  const bx = h("div", "box pad formgrid"); bx.append(row, h("div", "hknote", "Extra agents wait in a queue and start when one finishes."));
+  g.append(bx);
+  return g;
 }
 
 // Settings › Behaviour › Background & shortcut.
