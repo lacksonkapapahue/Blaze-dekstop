@@ -153,9 +153,14 @@ document.addEventListener("click", e => {
   const c = e.target.closest(".copy");
   if (c) { navigator.clipboard.writeText(c.closest(".code").querySelector("pre").textContent); c.textContent = "Copied"; setTimeout(() => c.textContent = "Copy", 1200); }
   const st = e.target.closest(".step .head");
-  if (st) st.parentElement.classList.toggle("open");
+  if (st) st.setAttribute("aria-expanded", st.parentElement.classList.toggle("open"));
   if (!e.target.closest("#menu") && !e.target.closest("#plus")) closeMenu();
   if (!e.target.closest(".pop") && !e.target.closest("#route") && !e.target.closest("[data-pop]")) closePop();
+});
+
+document.addEventListener("keydown", e => {
+  const st = (e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest(".step .head");
+  if (st) { e.preventDefault(); st.click(); }
 });
 
 // ---------- popovers ----------
@@ -408,8 +413,8 @@ function loadConv(conv) {
     }
   });
   turns.forEach(t => renderAnswer(t, true));
-  // Saved chats: steps collapsed behind "Worked · N steps".
-  turns.forEach(t => { const n = t.order.length; finishWork(t, null, `Worked · ${n} step${n > 1 ? "s" : ""}`); });
+  // Saved chats: steps collapsed behind "Worked · N steps" (no timing is saved).
+  turns.forEach(t => finishWork(t, null, STEPS.workedLine(t.order.length, null)));
   scrollDown(true);
 }
 
@@ -432,6 +437,9 @@ function userMsg(content) {
 }
 
 function blazeMsg() {
+  // A new answer starts while the previous one is still live (autopilot's autoreply, retry):
+  // close the previous one's working line so it never shimmers forever.
+  if (current && current.workEl && !current.finished) finishWork(current);
   const el = h("div", "msg blaze");
   el.append(h("div", "who", `<span class="mk"></span><span class="label">Blaze</span>`));
   // One quiet status line per turn (Settings › Behaviour › Show every step turns the raw list back on).
@@ -446,6 +454,7 @@ function blazeMsg() {
     turn.open = !turn.open;
     workEl.classList.toggle("open", turn.open);
     stepsEl.style.display = turn.open && turn.order.length ? "" : "none";
+    workEl.setAttribute("aria-expanded", turn.open);
   };
   return turn;
 }
@@ -531,54 +540,26 @@ function setStatus(turn, text) {
   scrollDown();
 }
 
-// When the turn ends the line becomes "Worked for 12s" (or nothing if no tools ran).
+// When the turn ends the working line collapses to "Worked · 6 steps · 14s" (or nothing if
+// no tools ran). Safe to call twice: the first call wins.
 function finishWork(turn, seconds, label) {
-  if (!turn) return;
+  if (!turn || turn.finished) return;
+  turn.finished = true;
   const w = turn.workEl;
   turn.statusText = "";
-  if (!turn.order.length) { w.style.display = "none"; return; }
+  if (!turn.order.length) { w.style.display = "none"; w.classList.remove("live"); $(".wt", w).innerHTML = ""; return; }
   const secs = seconds != null ? seconds : (Date.now() - turn.started) / 1000;
   const n = turn.order.length;
-  const txt = label || (secs >= 1 ? `Worked for ${secs >= 60 ? Math.floor(secs / 60) + "m " + Math.round(secs % 60) + "s" : Math.round(secs) + "s"}` : `Worked · ${n} step${n > 1 ? "s" : ""}`);
+  const txt = label || STEPS.workedLine(n, secs);
   w.classList.remove("live"); w.classList.add("done");
   $(".wt", w).innerHTML = `<span class="phrase">${esc(txt)}</span>`;
-  w.title = `${n} step${n > 1 ? "s" : ""} · click to ${showSteps() ? "hide" : "see"} them`;
+  w.title = `Click to ${turn.open ? "hide" : "see"} each step and its exact command`;
+  w.setAttribute("aria-expanded", turn.open);
   w.style.display = showSteps() ? "none" : "";
 }
 
-// Plain-English phrase for a tool call (same phrases as the tray in friendly.go).
-function friendly(name, args) {
-  let a = {}; try { a = JSON.parse(args || "{}"); } catch (e) {}
-  const v = k => String(a[k] ?? "").split("\n")[0].trim();
-  const file = () => base(v("path")) || "a file";
-  const host = u => { try { return new URL(u).host.replace(/^www\./, ""); } catch (e) { return u; } };
-  switch (name) {
-    case "file_read": return "Reading " + file();
-    case "file_edit": return "Editing " + file();
-    case "file_write": return "Writing " + file();
-    case "file_delete": return "Deleting " + file();
-    case "file_list": return "Looking through your files";
-    case "file_search": return `Searching your files for "${v("pattern") || v("query")}"`;
-    case "web_search": return `Searching the web for "${v("query")}"`;
-    case "fetch_page": return "Reading " + (host(v("url")) || "a web page");
-    case "run_shell": return /\b(npm|pnpm|yarn|bun) (i|install|add)\b|\bpip3? install\b|\b(apt|apt-get|dnf|yum|pacman|brew|winget|choco|scoop|cargo|go) (install|-S|get)\b/i.test(v("command")) ? "Installing packages" : "Running a command";
-    case "git": return "Checking the project history";
-    case "run_code": return `Running ${v("language") || "some"} code`;
-    case "install_tool": return "Installing " + (v("name") || "a tool");
-    case "remember": return "Saving that to memory";
-    case "forget": return "Updating memory";
-    case "schedule": return "Setting up a schedule";
-    case "use_skill": return "Following a saved skill";
-    case "write_skill": return "Saving a skill";
-    case "system_info": return "Checking your computer";
-    case "http_request": return "Calling " + (host(v("url")) || "a web service");
-    case "download_file": return "Downloading " + (host(v("url")) || "a file");
-    case "open_url": return "Opening " + (host(v("target") || v("url")) || "a page");
-    case "job_log": case "job_input": return "Checking a background job";
-    case "job_stop": return "Stopping a background job";
-  }
-  return "Working on it";
-}
+// Plain words for a tool call: steps.js (no commands, paths or JSON while working).
+const friendly = (name, args) => STEPS.describe(name, args);
 
 function scrollDown(force) {
   const log = $("#log", pane); if (!log) return;
@@ -636,34 +617,14 @@ async function sendText(text, files) {
   if (r === "busy") setBusy(true);
 }
 
-// One line per tool step: a verb and its target.
-function describe(name, args) {
-  let a = {}; try { a = JSON.parse(args || "{}"); } catch (e) {}
-  const v = k => String(a[k] ?? "").split("\n")[0].slice(0, 120);
-  switch (name) {
-    case "run_shell": return ["run", v("command")];
-    case "git": return ["git", v("args")];
-    case "web_search": return ["search", v("query")];
-    case "fetch_page": return ["read", v("url")];
-    case "run_code": return ["run", v("language") + " code"];
-    case "file_read": return ["read", v("path")];
-    case "file_write": return ["write", v("path")];
-    case "file_edit": return ["edit", v("path")];
-    case "file_delete": return ["delete", v("path")];
-    case "file_list": return ["list", v("path") || "."];
-    case "file_search": return ["search", v("pattern")];
-    case "open_url": return ["open", v("target") || v("url")];
-    case "install_tool": return ["install", v("name")];
-  }
-  return [name.replace(/_/g, " "), ""];
-}
-const describeText = (n, a) => describe(n, a).filter(Boolean).join(" ");
-
+// One row per tool step: plain words on the row; the exact command or tool call and its
+// output only inside the expanded row (mono).
 const MAX_STEPS_SHOWN = 6;
 function addStep(turn, id, name, args) {
   if (showSteps() || turn.open) turn.stepsEl.style.display = "";
-  const [verb, tgt] = describe(name, args);
-  const s = h("div", "step run", `<div class="head"><span class="st"></span><span class="verb">${esc(verb)}</span><span class="tgt">${esc(tgt)}</span><span class="sum"></span></div><pre></pre>`);
+  const s = h("div", "step run", `<div class="head" role="button" tabindex="0" aria-expanded="false"><span class="st"></span><span class="ph">${esc(friendly(name, args))}</span><span class="sum"></span><span class="dur"></span><svg class="i sm chev" viewBox="0 0 16 16">${IC.down}</svg></div>
+    <div class="body"><div class="blk"><span class="label">${esc(STEPS.detailLabel(name))}</span><pre class="cmd"></pre></div><div class="blk out"><span class="label">Output</span><pre class="res"></pre></div></div>`);
+  $(".cmd", s).textContent = STEPS.detail(name, args);
   s.dataset.tool = name;
   turn.stepsEl.append(s); turn.steps[id] = s; turn.order.push(s);
   foldSteps(turn);
@@ -681,7 +642,7 @@ function foldSteps(turn) {
   more.textContent = `${hidden.length} earlier step${hidden.length > 1 ? "s" : ""} · show`;
 }
 
-const isBad = r => /^Error|^exit [1-9]|did NOT approve|^Refused|^Blaze couldn't/.test(r || "");
+const isBad = r => /^Error|^exit [1-9]|did NOT approve|^Refused|^Blaze couldn't|^Tool error/.test(r || "");
 function summary(result) {
   const lines = String(result || "").split("\n").map(x => x.trim()).filter(Boolean);
   let first = lines[0] || "";
@@ -692,17 +653,21 @@ function summary(result) {
 function finishStep(turn, s, result) {
   if (!s) return;
   const bad = isBad(result);
+  const declined = /did NOT approve|declined/i.test(result || "");
   s.classList.remove("run"); s.classList.add(bad ? "bad" : "ok");
   const sum = summary(result);
-  s.querySelector(".sum").textContent = sum;
-  s.querySelector("pre").textContent = result;
-  // The same error again collapses into the previous line with a ×N count.
+  s.dataset.err = bad ? sum : "";
+  // A failed step says so in plain words; what went wrong is inside the expanded row.
+  s.querySelector(".sum").textContent = bad ? (declined ? "Declined" : "Failed") : "";
+  if (s._t0) { const d = (Date.now() - s._t0) / 1000; s.querySelector(".dur").textContent = d < 1 ? "<1s" : d < 60 ? d.toFixed(d < 10 ? 1 : 0) + "s" : Math.floor(d / 60) + "m " + Math.round(d % 60) + "s"; }
+  s.querySelector(".res").textContent = String(result || "").trim() || "(no output)";
+  // The same error again collapses into the previous row with a ×N count.
   if (bad && turn) {
     const i = turn.order.indexOf(s), prev = turn.order.slice(0, i).reverse().find(x => !x.dataset.dup);
-    if (prev && prev.classList.contains("bad") && prev.dataset.tool === s.dataset.tool && prev.querySelector(".sum").textContent === sum) {
+    if (prev && prev.classList.contains("bad") && prev.dataset.tool === s.dataset.tool && prev.dataset.err === sum) {
       s.dataset.dup = "1"; s.classList.add("hide");
       const n = (+prev.dataset.n || 1) + 1; prev.dataset.n = n;
-      let rep = $(".rep", prev); if (!rep) { rep = h("span", "rep"); prev.querySelector(".head").append(rep); }
+      let rep = $(".rep", prev); if (!rep) { rep = h("span", "rep"); prev.querySelector(".sum").after(rep); }
       rep.textContent = "×" + n;
       foldSteps(turn);
     }
@@ -743,7 +708,8 @@ function errorCard(target, e) {
 
 // ---------- events from Go ----------
 on("thinking", () => { if (current) thinking(true); });
-on("status", t => { if (current) thinking(true, t); });
+// Backend progress lines can carry raw commands ("Running: cat …"): only plain words reach the line.
+on("status", t => { const p = STEPS.plainStatus(t); if (current && p) thinking(true, p); });
 on("delta", d => {
   if (!current) return;
   thinking(false);
@@ -755,8 +721,8 @@ on("tool", t => {
   if (!current) return;
   thinking(false);
   if (current.text) current.text += "\n\n";
-  addStep(current, t.id, t.name, t.args);
-  thinking(true, showSteps() ? describeText(t.name, t.args) : friendly(t.name, t.args));
+  addStep(current, t.id, t.name, t.args)._t0 = Date.now();
+  thinking(true, friendly(t.name, t.args));
   scrollDown();
 });
 on("tool_done", t => {
@@ -1650,7 +1616,7 @@ async function setBehaviour(col, redraw) {
   const ps = h("button", "btn line sm", "Save style"); ps.style.marginTop = "8px";
   ps.onclick = async () => { await API().SetPersona(pers.value); ps.textContent = "Saved"; setTimeout(() => ps.textContent = "Save style", 1200); };
   g3.append(pers, ps);
-  const t2 = h("label", "toggle", `<input type="checkbox" ${S.prefs.show_steps ? "checked" : ""}><span><span class="tt">Show every step (power users)</span><span class="td">Off: one plain-English status line per answer; click “Worked for…” to see the steps.</span></span>`);
+  const t2 = h("label", "toggle", `<input type="checkbox" ${S.prefs.show_steps ? "checked" : ""}><span><span class="tt">Show every step (power users)</span><span class="td">Off: one plain-English status line per answer; click “Worked · N steps” to see each step and its exact command.</span></span>`);
   $("input", t2).onchange = e => { API().SetShowSteps(e.target.checked); S.prefs.show_steps = e.target.checked; };
   bx.append(t2);
   const t3 = h("label", "toggle", `<input type="checkbox" ${foldCards() ? "checked" : ""}><span><span class="tt">Fold long answers into cards</span><span class="td">The short answer stays in view; tables, long lists and reports go in a card you can expand.</span></span>`);

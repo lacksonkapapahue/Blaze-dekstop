@@ -76,6 +76,15 @@
     ["Pulled `postgres:17-alpine` (82 MB).", "Created the volume `pgdata` so data survives restarts.", "Started the container `blaze-pg` with `POSTGRES_PASSWORD` from your `.env`.", "Mapped port 5432 to localhost only, not your whole network.", "Waited for `pg_isready` to answer (2.1s).", "Created the database `homeglow` and the user `app`.", "Ran your migrations in `db/migrations` (14 files).", "Seeded 40 test products from `db/seed.sql`.", "Added `DATABASE_URL` to `.env.local`.", "Checked a query: `select count(*) from products` → 40."].map((x, i) => `${i + 1}. ${x}`).join("\n") +
     "\n\n```bash\ndocker run -d --name blaze-pg -p 127.0.0.1:5432:5432 \\\n  -v pgdata:/var/lib/postgresql/data \\\n  -e POSTGRES_PASSWORD=$POSTGRES_PASSWORD postgres:17-alpine\n```\n\nWant me to add it to `docker-compose.yml` too?";
 
+  // v0.4.6: plain-words steps. A turn whose raw commands must never reach the live line.
+  window.__stepsTurn = [
+    { name: "run_shell", args: { command: "cat ~/Projects/blaze/package.json; echo ===; ls ~/Projects/blaze" }, result: "exit 0 · cwd /home/luke/Projects/blaze\n{\n  \"name\": \"blaze\",\n  \"scripts\": { \"build\": \"vite build\", \"test\": \"vitest run\" }\n}\n===\nREADME.md  index.html  package.json  src  vite.config.ts" },
+    { name: "file_search", args: { pattern: "sourcemap" }, result: "vite.config.ts:12:    sourcemap: true," },
+    { name: "web_search", args: { query: "vite production sourcemap slow build" }, result: "5 results\n1. Build Options | Vite: build.sourcemap…" },
+    { name: "file_edit", args: { path: "/home/luke/Projects/blaze/vite.config.ts" }, result: "Edited /home/luke/Projects/blaze/vite.config.ts (1 replacement)." },
+    { name: "run_shell", args: { command: "cd ~/Projects/blaze && pnpm test 2>&1 | tail -20" }, result: "exit 1 · cwd /home/luke/Projects/blaze\nFAIL src/price.test.ts > total rounds to cents\n  expected 19.99, got 19.989999" },
+    { name: "run_shell", args: { command: "pnpm build 2>&1 | tail -5" }, result: "exit 0 · cwd /home/luke/Projects/blaze\nvite v6.2.0 building for production...\n✓ 412 modules transformed.\n✓ built in 9.8s" }];
+
   // v0.5: Memory graph. ~60 memories in 6 categories, plus skills and projects; links are
   // inferred here the same cheap way Go does it (shared rare words, same chat, project mentions).
   const memCats = {

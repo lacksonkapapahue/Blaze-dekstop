@@ -222,21 +222,30 @@ select.field { appearance: none; padding-right: 30px; background-image: linear-g
 .steps .more:hover { color: var(--ink); background: var(--faint); }
 .step + .step { border-top: 1px solid var(--hair); }
 .step.hide { display: none; }
-.step .head { display: flex; gap: 9px; align-items: center; height: 30px; padding: 0 10px; cursor: pointer; font: 12px var(--mono); color: var(--body); min-width: 0; }
+.step .head { display: flex; gap: 9px; align-items: center; height: 30px; padding: 0 10px; cursor: pointer; font-size: 12.5px; color: var(--body); min-width: 0; }
 .step .head:hover { background: var(--faint); }
 .step .st { width: 14px; height: 14px; flex: none; display: grid; place-items: center; }
 .step .st::before { content: ""; width: 7px; height: 7px; border: 1.5px solid var(--weak); }
 .step.run .st::before { border-color: var(--accent); animation: pulse 1s infinite; }
 .step.ok .st::before { background: var(--accent); border-color: var(--accent); }
 .step.bad .st::before { width: 9px; height: 9px; border: 0; background: linear-gradient(45deg, transparent 42%, var(--ink) 42%, var(--ink) 58%, transparent 58%), linear-gradient(-45deg, transparent 42%, var(--ink) 42%, var(--ink) 58%, transparent 58%); }
-.step .verb { color: var(--sub); flex: none; }
-.step .tgt { color: var(--ink); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
-.step .sum { color: var(--weak); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex: 1; text-align: right; min-width: 40px; }
-.step.bad .sum { color: var(--ink); }
+.step .ph { color: var(--ink); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
+.step.run .ph { color: var(--sub); }
+.step .sum { flex: none; font: 500 10px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink); }
+.step .sum:empty { display: none; }
+.step .dur { flex: none; font: 11px var(--mono); color: var(--weak); min-width: 34px; text-align: right; }
+.step .chev { flex: none; color: var(--weak); transform: rotate(-90deg); transition: transform .15s; }
+.step.open .chev { transform: none; color: var(--ink); }
 .step .rep { font: 500 10px var(--mono); color: var(--paper); background: var(--sub); padding: 1px 5px; flex: none; }
-.step pre { display: none; margin: 0; padding: 10px 12px 10px 33px; max-height: 300px; overflow: auto; font: 11.5px/1.55 var(--mono); background: var(--faint); color: var(--body); white-space: pre-wrap; word-break: break-word; border-top: 1px solid var(--hair); }
-.step.open pre { display: block; }
+.step .body { display: none; padding: 8px 12px 10px 33px; background: var(--faint); border-top: 1px solid var(--hair); }
+.step.open .body { display: block; }
 .step.open .head { background: var(--faint); }
+.step .blk + .blk { margin-top: 8px; }
+.step .blk .label { display: block; margin-bottom: 3px; color: var(--weak); font-size: 9.5px; }
+.step .body pre { margin: 0; max-height: 300px; overflow: auto; font: 11.5px/1.55 var(--mono); color: var(--body); white-space: pre-wrap; word-break: break-word; }
+.step .body pre.cmd { color: var(--ink); max-height: 160px; }
+.step.run .blk.out { display: none; }
+.step.bad .body pre.res { color: var(--ink); }
 .fixnote { padding: 5px 10px 5px 33px; font-size: 12px; color: var(--sub); border-top: 1px solid var(--hair); }
 .thinking { display: flex; gap: 10px; align-items: center; color: var(--sub); font-size: 12.5px; margin: 6px 0; }
 .thinking .sq { width: 8px; height: 8px; background: var(--accent); animation: pulse .9s infinite; }
