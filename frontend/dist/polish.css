@@ -1,0 +1,23 @@
+/* v0.4.2 polish: AI chat titles + mini particle-orb marks (polish.js) */
+
+/* ---- chat titles ---- */
+.chat .t { transition: opacity .2s ease, filter .2s ease; }
+.chat .t.tfade { opacity: 0; filter: blur(2px); }
+.chat .t.typing::after { content: ""; display: inline-block; width: 6px; height: 11px; margin-left: 2px; vertical-align: -1px; background: var(--accent); animation: tcaret .7s steps(1) infinite; }
+@keyframes tcaret { 50% { opacity: 0; } }
+.chat.editing { background: var(--raised); box-shadow: inset 0 0 0 1px var(--accent); }
+.chat .rename { flex: 1; min-width: 0; height: 22px; padding: 0 6px; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; }
+.chat.editing .when, .chat.editing .x { display: none !important; }
+
+/* ---- mini orbs replace the small square marks ---- */
+.morb { display: block; flex: none; image-rendering: pixelated; }
+.msg.blaze .who .mk.has-orb { width: 10px; height: 10px; background: none; }
+.msg.blaze .work .sq.has-orb, .msg.blaze .work.done .sq.has-orb { width: 10px; height: 10px; background: none; animation: none; }
+.msg.blaze .work.done .sq.has-orb .morb { opacity: .55; transition: opacity .15s; }
+.msg.blaze .work.done:hover .sq.has-orb .morb { opacity: 1; }
+.thinking .sq.has-orb { width: 10px; height: 10px; background: none; animation: none; }
+.acard .amk.has-orb { width: 8px; height: 8px; background: none; animation: none; }
+.step:not(.bad) .st.has-orb::before { display: none; }
+.step.bad .st .morb { display: none; }
+.step.ok .st .morb { opacity: .9; }
+@media (prefers-reduced-motion: reduce) { .chat .t.typing::after { animation: none; } }

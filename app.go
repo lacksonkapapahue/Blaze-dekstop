@@ -44,6 +44,8 @@ type Prefs struct {
 	Hotkey     string `json:"hotkey"`               // global shortcut preset; "" = default, "off"
 	ShowSteps  bool   `json:"show_steps"`           // show every tool step instead of one status line
 	FoldCards  *bool  `json:"fold_cards,omitempty"` // fold long answers into expandable cards (default on)
+
+	AutoTitles *bool `json:"auto_titles,omitempty"` // AI chat titles from the chat's dominant theme (default on, titles.go)
 }
 
 type App struct {
@@ -197,6 +199,8 @@ func (a *App) State() State {
 	prefs := a.prefs
 	fold := a.foldCards()
 	prefs.FoldCards = &fold // always explicit for the UI
+	autoT := a.autoTitlesOn()
+	prefs.AutoTitles = &autoT
 	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.RouteChain(), Prefs: prefs,
 		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: a.cfg.AllowKeyless(), Missing: a.info.Missing(),
 		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName(),
@@ -282,12 +286,16 @@ type Conv struct {
 	Folder   string        `json:"folder"`
 	Updated  time.Time     `json:"updated"`
 	Messages []llm.Message `json:"messages"`
+
+	TitleSource string `json:"title_source,omitempty"` // auto (AI, titles.go) or manual (renamed); "" = first prompt
+	TitleTurns  int    `json:"title_turns,omitempty"`  // user turns when the auto title was last evaluated
 }
 
 type ConvItem struct {
 	ID      string `json:"id"`
 	Title   string `json:"title"`
 	Updated string `json:"updated"`
+	Source  string `json:"source,omitempty"` // title_source
 }
 
 func convDir() string {
@@ -301,7 +309,7 @@ func (a *App) Conversations(project string) []ConvItem {
 	var out []ConvItem
 	for _, c := range a.allConvs() {
 		if c.Project == project {
-			out = append(out, ConvItem{c.ID, c.Title, c.Updated.Format("Jan 2")})
+			out = append(out, ConvItem{ID: c.ID, Title: c.Title, Updated: c.Updated.Format("Jan 2"), Source: c.TitleSource})
 		}
 	}
 	return out
@@ -330,6 +338,7 @@ func (a *App) OpenConversation(id string) Conv {
 	if err == nil {
 		_ = json.Unmarshal(b, &c)
 	}
+	rememberTitle(c)
 	a.mu.Lock()
 	a.convID = c.ID
 	a.history = c.Messages
@@ -352,6 +361,9 @@ func (a *App) NewConversation() {
 }
 
 func (a *App) DeleteConversation(id string) {
+	titles.Lock()
+	delete(titles.m, id)
+	titles.Unlock()
 	_ = os.Remove(filepath.Join(convDir(), id+".json"))
 	a.mu.Lock()
 	if a.convID == id {
@@ -366,18 +378,14 @@ func (a *App) saveConv() {
 	if a.convID == "" {
 		a.convID = time.Now().Format("20060102-150405") + "-" + newID()[:4]
 	}
-	title := "New chat"
-	for _, m := range a.history {
-		if m.Role == "user" {
-			title = strings.TrimSpace(strings.SplitN(stripAttached(m.Content), "\n", 2)[0])
-			title = strings.TrimPrefix(title, "[Design edit] ")
-			if len(title) > 60 {
-				title = title[:60] + "…"
-			}
-			break
-		}
+	title, src, turns := promptTitle(a.history), "", 0
+	if m, ok := getTitle(a.convID); ok && m.Title != "" {
+		title, src, turns = m.Title, m.Source, m.Turns
 	}
-	c := Conv{ID: a.convID, Project: a.prefs.Project, Title: title, Folder: a.prefs.Folder, Updated: time.Now(), Messages: a.history}
+	c := Conv{ID: a.convID, Project: a.prefs.Project, Title: title, Folder: a.prefs.Folder, Updated: time.Now(), Messages: a.history,
+		TitleSource: src, TitleTurns: turns}
+	convWriteMu.Lock()
+	defer convWriteMu.Unlock()
 	b, _ := json.Marshal(c)
 	_ = os.WriteFile(filepath.Join(convDir(), a.convID+".json"), b, 0o600)
 }
@@ -487,6 +495,10 @@ func (a *App) run(ctx context.Context) {
 		a.busy, a.cancel = false, nil
 		a.mu.Unlock()
 		a.saveConv()
+		a.mu.Lock()
+		id, hist := a.convID, append([]llm.Message(nil), a.history...)
+		a.mu.Unlock()
+		a.maybeRetitle(id, hist) // background, never blocks the turn
 	}()
 	all := tools.All()
 	known := tools.Names()
@@ -757,6 +769,9 @@ func (a *App) Doctor() []Check {
 		add("Scheduler", err == nil, map[bool]string{true: "cron", false: "crontab missing: scheduled jobs won't run"}[err == nil])
 	} else {
 		add("Scheduler", true, "Task Scheduler")
+	}
+	if ok, note := tilingCheck(); note != "" {
+		add("Window manager", ok, note)
 	}
 	d := a.desktopView()
 	add("Tray", d.Tray, map[bool]string{true: d.TrayNote, false: "Not running: " + orStr(d.TrayNote, "the tray didn't start") + ". Closing the window quits Blaze."}[d.Tray])

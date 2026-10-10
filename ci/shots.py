@@ -59,6 +59,35 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"worked-{theme}.png"))
         pg.evaluate("document.querySelector('.work.done').click()"); pg.wait_for_timeout(300)
         pg.screenshot(path=str(out / f"worked-open-{theme}.png"))
+        # v0.4.2: AI chat titles. Mid-typewriter, then settled; rename on double-click.
+        pg.evaluate("fire('title', {id: 'c2', title: 'Postgres Container For HomeGlow', source: 'auto'})"); pg.wait_for_timeout(560)
+        pg.screenshot(path=str(out / f"titles-typing-{theme}.png"))
+        pg.evaluate("fire('title', {id: 'c3', title: 'Laptop Fan Noise And Heat', source: 'auto'})"); pg.wait_for_timeout(2000)
+        pg.screenshot(path=str(out / f"titles-{theme}.png"))
+        t2 = pg.evaluate("document.querySelector('#chats .chat[data-id=c2] .t').textContent")
+        if t2 != "Postgres Container For HomeGlow":
+            errs.append("title event did not update the sidebar: " + repr(t2))
+        pg.dblclick("#chats .chat[data-id=c3] .t"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"rename-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('#chats input.rename')"):
+            errs.append("double-click did not start renaming")
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(100)
+        # v0.4.2: mini particle-orb marks, zoomed 3x: a saved reply (frozen) and a live turn.
+        zp = b.new_page(viewport={"width": 860, "height": 560}, device_scale_factor=3)
+        zp.add_init_script(f"window.__theme='{theme}';window.__sample='{sample}';" + mock)
+        zp.on("pageerror", lambda e: errs.append(str(e)))
+        zp.goto(url); zp.wait_for_timeout(600)
+        zp.evaluate("loadConv(window.__conv); show('work')"); zp.wait_for_timeout(300)
+        zp.evaluate("document.querySelector('.work.done').click(); document.querySelector('#log').scrollTop = 0"); zp.wait_for_timeout(300)
+        zp.locator(".msg.blaze").first.screenshot(path=str(out / f"marks-{theme}.png"))
+        if zp.evaluate("document.querySelectorAll('.msg.blaze canvas.morb').length") < 3:
+            errs.append("mini orb marks missing")
+        zp.evaluate("""newChat().then(() => { sendText('Remember that my name is Luke', []);
+          fire('tool', {id: 'm1', name: 'remember', args: '{"fact":"Name is Luke"}'}); fire('tool_done', {id: 'm1', result: 'Remembered.'});
+          fire('tool', {id: 'm2', name: 'file_read', args: '{"path":"notes.md"}'}); document.querySelector('.work').click(); })""")
+        zp.wait_for_timeout(700)
+        zp.locator(".msg.blaze").first.screenshot(path=str(out / f"marks-live-{theme}.png"))
+        zp.close()
         # v0.4.1: answer cards. A saved chat whose long table sits in a collapsed card above the short answer.
         pg.evaluate("loadConv(window.__cardConv); show('work')"); pg.wait_for_timeout(500)
         pg.evaluate("document.querySelector('#log').scrollTop = 0"); pg.wait_for_timeout(200)

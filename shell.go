@@ -188,6 +188,7 @@ func (a *App) ShowOrb() {
 	a.sh.mu.Lock()
 	a.sh.visible = true
 	a.sh.mu.Unlock()
+	tilingFloat(ow, oh) // Hyprland / sway ignore WindowSetSize (tiling_linux.go)
 	wr.EventsEmit(a.ctx, "orb", true)
 }
 
@@ -201,6 +202,7 @@ func (a *App) ExpandOrb() {
 	a.sh.orb, a.sh.saved = false, false
 	a.sh.mu.Unlock()
 	wr.WindowSetAlwaysOnTop(a.ctx, false)
+	tilingRestore()
 	wr.WindowSetMinSize(a.ctx, 760, 520)
 	if saved {
 		wr.WindowSetSize(a.ctx, w, h)
