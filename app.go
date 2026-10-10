@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -54,6 +55,7 @@ type App struct {
 	history []llm.Message
 	pv      *preview
 	ready   chan struct{} // closed when startup has finished
+	tab     string        // work or design
 }
 
 func NewApp() *App { return &App{pending: map[string]chan bool{}, ready: make(chan struct{})} }
@@ -157,16 +159,6 @@ func newID() string {
 
 // ---------------- state for the UI ----------------
 
-type ProviderView struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	KeyHint string `json:"key_hint"`
-	KeyPage string `json:"key_page"`
-	Free    bool   `json:"free"`
-	HasKey  bool   `json:"has_key"`
-	Keyless bool   `json:"keyless"`
-}
-
 type State struct {
 	Version   string            `json:"version"`
 	SetupDone bool              `json:"setup_done"`
@@ -183,18 +175,18 @@ type State struct {
 	Memory    string            `json:"memory"`
 	Project   *Project          `json:"project"`
 	Model     string            `json:"model"`
+	Selection Selection         `json:"selection"`
+	Routing   RoutingView       `json:"routing"`
 }
 
 func (a *App) State() State {
 	a.waitReady()
-	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.Chain, Prefs: a.prefs,
-		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: !a.cfg.NoKeyless, Missing: a.info.Missing(),
-		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName()}
+	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.RouteChain(), Prefs: a.prefs,
+		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: a.cfg.AllowKeyless(), Missing: a.info.Missing(),
+		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName(),
+		Selection: a.selection(), Routing: a.routing(), Providers: a.providerViews()}
 	for _, m := range s.Missing {
 		s.Installs[m] = a.info.InstallCommand(m)
-	}
-	for _, p := range config.Providers {
-		s.Providers = append(s.Providers, ProviderView{p.ID, p.Name, p.KeyHint, p.KeyPage, p.Free, a.cfg.Key(p.ID) != "", config.Keyless(p.ID)})
 	}
 	for _, sk := range tools.Skills() {
 		s.Skills = append(s.Skills, sk.Name+": "+sk.Desc)
@@ -203,80 +195,6 @@ func (a *App) State() State {
 }
 
 // ---------------- setup & settings ----------------
-
-type KeyResult struct {
-	OK    bool   `json:"ok"`
-	Model string `json:"model"`
-	Where string `json:"where"`
-	Error string `json:"error"`
-}
-
-// AddProvider tests a key (empty for keyless/local), saves it in the keychain and adds it to the chain.
-func (a *App) AddProvider(id, key string) KeyResult {
-	p, ok := config.ProviderByID(id)
-	if !ok {
-		return KeyResult{Error: "unknown provider"}
-	}
-	key = strings.TrimSpace(key)
-	if key == "" {
-		key = a.cfg.Key(id)
-	}
-	if key == "" && !config.Keyless(id) {
-		return KeyResult{Error: "Paste a key first."}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-	defer cancel()
-	ids, err := llm.Models(ctx, p, key)
-	if err != nil {
-		if id == "ollama" {
-			return KeyResult{Error: "Ollama isn't running. Start it, then try again."}
-		}
-		if id != "pollinations" {
-			return KeyResult{Error: "That key didn't work: " + err.Error()}
-		}
-	}
-	model := p.DefaultModel
-	if model == "" || (len(ids) > 0 && !contains(ids, model)) {
-		model = llm.PickModel(ids)
-	}
-	if model == "" {
-		return KeyResult{Error: "No usable model found on " + p.Name + "."}
-	}
-	where := "no key needed"
-	if !config.Keyless(id) {
-		if where, err = a.cfg.SetKey(id, key); err != nil {
-			return KeyResult{Error: "Couldn't save the key: " + err.Error()}
-		}
-	}
-	var chain []config.Entry
-	for _, e := range a.cfg.Chain {
-		if e.Provider != id {
-			chain = append(chain, e)
-		}
-	}
-	a.cfg.Chain = append(chain, config.Entry{Provider: id, Model: model})
-	a.cfg.SetupDone = true
-	_ = a.cfg.Save()
-	return KeyResult{OK: true, Model: model, Where: where}
-}
-
-func (a *App) RemoveProvider(id string) {
-	var chain []config.Entry
-	for _, e := range a.cfg.Chain {
-		if e.Provider != id {
-			chain = append(chain, e)
-		}
-	}
-	a.cfg.Chain = chain
-	a.cfg.DeleteKey(id)
-	_ = a.cfg.Save()
-}
-
-// SetChain reorders models (the first healthy one answers).
-func (a *App) SetChain(chain []config.Entry) {
-	a.cfg.Chain = chain
-	_ = a.cfg.Save()
-}
 
 func (a *App) FinishSetup() {
 	a.cfg.SetupDone = true
@@ -287,64 +205,8 @@ func (a *App) FinishSetup() {
 
 func (a *App) SetPersona(p string)    { a.cfg.Persona = strings.TrimSpace(p); _ = a.cfg.Save() }
 func (a *App) SetYolo(v bool)         { a.cfg.AutoApprove = v; a.env.Yolo = v; _ = a.cfg.Save() }
-func (a *App) SetKeyless(v bool)      { a.cfg.NoKeyless = !v; _ = a.cfg.Save() }
 func (a *App) SetTheme(t string)      { a.prefs.Theme = t; a.savePrefs() }
 func (a *App) SetDesignMode(m string) { a.prefs.Design = m; a.savePrefs() }
-
-// modelName is the provider and model first in line.
-func (a *App) modelName() string {
-	for _, e := range a.cfg.RouteChain() {
-		if p, ok := config.ProviderByID(e.Provider); ok {
-			m := e.Model
-			if m == "" {
-				m = p.DefaultModel
-			}
-			return p.Name + " · " + m
-		}
-	}
-	return ""
-}
-
-type ModelItem struct {
-	Provider string `json:"provider"`
-	Name     string `json:"name"`
-	Model    string `json:"model"`
-}
-
-// Models lists the route chain in order, keyless fallback included.
-func (a *App) Models() []ModelItem {
-	var out []ModelItem
-	for _, e := range a.cfg.RouteChain() {
-		if p, ok := config.ProviderByID(e.Provider); ok {
-			m := e.Model
-			if m == "" {
-				m = p.DefaultModel
-			}
-			out = append(out, ModelItem{p.ID, p.Name, m})
-		}
-	}
-	return out
-}
-
-// UseModel moves a provider to the front of the chain.
-func (a *App) UseModel(provider string) string {
-	var first *config.Entry
-	var rest []config.Entry
-	for _, e := range a.cfg.Chain {
-		e := e
-		if e.Provider == provider && first == nil {
-			first = &e
-		} else {
-			rest = append(rest, e)
-		}
-	}
-	if first == nil {
-		return "Add " + provider + " in Settings first."
-	}
-	a.cfg.Chain = append([]config.Entry{*first}, rest...)
-	_ = a.cfg.Save()
-	return a.modelName()
-}
 
 func (a *App) SetMemory(text string) {
 	_ = os.WriteFile(filepath.Join(config.Dir(), "memory.md"), []byte(strings.TrimSpace(text)+"\n"), 0o600)
@@ -609,33 +471,71 @@ func (a *App) run(ctx context.Context) {
 		a.saveConv()
 	}()
 	all := tools.All()
+	known := tools.Names()
 	steps := a.cfg.MaxSteps
 	if steps <= 0 {
 		steps = 40
 	}
+	a.mu.Lock()
+	design := a.tab == "design"
+	a.mu.Unlock()
+	a.mu.Lock()
+	for i := len(a.history) - 1; i >= 0; i-- {
+		if a.history[i].Role == "user" {
+			design = design || strings.HasPrefix(a.history[i].Content, "[Design edit]")
+			break
+		}
+	}
+	a.mu.Unlock()
+	note, retries := "", 0
 	for step := 0; step < steps; step++ {
 		a.mu.Lock()
 		hist := trim(a.history)
 		a.mu.Unlock()
-		msgs := append([]llm.Message{{Role: "system", Content: a.system()}}, hist...)
+		sys := a.system()
+		if note != "" {
+			sys += "\nABOUT YOUR LAST REPLY\n" + note + "\n"
+		}
+		msgs := append([]llm.Message{{Role: "system", Content: sys}}, hist...)
 		wr.EventsEmit(a.ctx, "thinking", step)
-		r, err := llm.Complete(ctx, a.cfg, msgs, all, func(s string) { wr.EventsEmit(a.ctx, "delta", s) })
+		r, err := llm.CompleteWith(ctx, a.cfg, msgs, all, llm.Opts{
+			OnText:   func(s string) { wr.EventsEmit(a.ctx, "delta", s) },
+			OnStatus: func(s string) { wr.EventsEmit(a.ctx, "status", s) },
+			// Keyless may answer plain chat in Work when nothing that can use tools is set up.
+			// Never in Design: a design turn without tools can't change anything.
+			PlainFallback: !design,
+		})
 		if err != nil {
 			if ctx.Err() != nil {
 				wr.EventsEmit(a.ctx, "stopped", nil)
 			} else {
-				wr.EventsEmit(a.ctx, "error", err.Error())
+				wr.EventsEmit(a.ctx, "error", turnError(err))
 			}
 			return
 		}
-		a.mu.Lock()
-		a.history = append(a.history, llm.Message{Role: "assistant", Content: r.Text, ToolCalls: r.ToolCalls})
-		a.mu.Unlock()
-		if len(r.ToolCalls) == 0 {
-			wr.EventsEmit(a.ctx, "done", map[string]any{"route": r.Route, "seconds": time.Since(started).Seconds()})
+		wr.EventsEmit(a.ctx, "route", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless})
+		// The gatekeeper: repair what can be repaired; never save a call with no name or
+		// unreadable arguments (the provider would refuse every later request with a 400).
+		n := llm.NormalizeCalls(r.ToolCalls, known)
+		if strings.TrimSpace(r.Text) != "" || len(n.Calls) > 0 {
+			a.mu.Lock()
+			a.history = append(a.history, llm.Message{Role: "assistant", Content: r.Text, ToolCalls: n.Calls})
+			a.mu.Unlock()
+		}
+		note = ""
+		if len(n.Dropped) > 0 {
+			note = "Blaze couldn't run " + strings.Join(n.Dropped, "; ") + ". Call the tool again with its exact name and a complete JSON object for the arguments."
+			wr.EventsEmit(a.ctx, "repair", map[string]any{"dropped": n.Dropped, "repairs": n.Repairs})
+		}
+		if len(n.Calls) == 0 {
+			if len(n.Dropped) > 0 && retries < 2 {
+				retries++
+				continue
+			}
+			wr.EventsEmit(a.ctx, "done", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless, "seconds": time.Since(started).Seconds()})
 			return
 		}
-		for _, tc := range r.ToolCalls {
+		for _, tc := range n.Calls {
 			if ctx.Err() != nil {
 				wr.EventsEmit(a.ctx, "stopped", nil)
 				return
@@ -649,7 +549,29 @@ func (a *App) run(ctx context.Context) {
 			a.mu.Unlock()
 		}
 	}
-	wr.EventsEmit(a.ctx, "error", fmt.Sprintf("Stopped after %d steps without finishing. Say \"continue\" to keep going.", steps))
+	wr.EventsEmit(a.ctx, "error", map[string]any{"message": fmt.Sprintf("Stopped after %d steps without finishing. Say \"continue\" to keep going.", steps), "kind": "steps"})
+}
+
+// turnError is what the chat's error card shows: a plain sentence, the raw details,
+// and whether switching model would help.
+func turnError(err error) map[string]any {
+	out := map[string]any{"message": llm.Plain(err), "detail": err.Error(), "kind": "model"}
+	var re *llm.RouteError
+	if errors.As(err, &re) {
+		out["failures"] = re.Failures
+		out["resting"] = re.Resting
+		if re.NoModels || re.NoTools {
+			out["kind"] = "setup"
+		}
+	}
+	return out
+}
+
+// SetTab tells the backend which tab the chat is in (work or design).
+func (a *App) SetTab(t string) {
+	a.mu.Lock()
+	a.tab = t
+	a.mu.Unlock()
 }
 
 func trim(h []llm.Message) []llm.Message {
@@ -681,7 +603,7 @@ RULES
 		b.WriteString("\nSTYLE\n" + a.cfg.Persona + "\n")
 	}
 	if m := a.modelName(); m != "" {
-		b.WriteString("\nYOU RUN ON free models through Blaze's router, first in line: " + m + " (the router may fall back to another). If asked what model you are, say that. Never claim to be GPT-4 or any model you are not.\n")
+		b.WriteString("\nYOU RUN ON " + m + " through Blaze's model router (it may fall back to another model when one is busy). If asked what model you are, say that. Never claim to be GPT-4 or any model you are not.\n")
 	}
 	b.WriteString(`
 DESIGN TAB
@@ -763,33 +685,19 @@ func (a *App) Doctor() []Check {
 		resp.Body.Close()
 	}
 	add("Internet", online, map[bool]string{true: "Online", false: "Can't reach the internet"}[online])
-	for _, e := range a.cfg.RouteChain() {
-		p, ok := config.ProviderByID(e.Provider)
-		if !ok {
-			continue
+	targets := llm.Targets(a.cfg, false)
+	if len(targets) == 0 {
+		add("Models", false, "No model is set up. Add a free Gemini or Groq key in Settings › Models.")
+	}
+	for _, t := range targets {
+		c := a.TestModel(t.Provider, t.Model)
+		if t.Fixed {
+			c.Detail = "Default · " + c.Detail
 		}
-		key := a.cfg.Key(p.ID)
-		if key == "" && !config.Keyless(p.ID) {
-			add(p.Name, false, "No key saved")
-			continue
-		}
-		m := e.Model
-		if m == "" {
-			m = p.DefaultModel
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		t0 := time.Now()
-		_, err := llm.Chat(ctx, p, key, m, []llm.Message{{Role: "user", Content: "Reply with OK."}}, nil, nil)
-		cancel()
-		if err != nil {
-			msg := err.Error()
-			if len(msg) > 120 {
-				msg = msg[:120] + "…"
-			}
-			add(p.Name, false, m+": "+msg)
-		} else {
-			add(p.Name, true, fmt.Sprintf("%s answered in %.1fs", m, time.Since(t0).Seconds()))
-		}
+		out = append(out, c)
+	}
+	if len(targets) > 0 && len(llm.Targets(a.cfg, true)) == 0 {
+		add("Tools", false, "None of your models can use tools, so Blaze can't act. Add a Gemini, Groq or Cerebras key.")
 	}
 	sh := tools.NewShell(a.info.Shell, a.info.ShellPath, a.info.Home)
 	add("Shell", strings.Contains(sh.Run("echo blaze-ok", 20*time.Second), "blaze-ok"), a.info.Shell+" · "+a.info.ShellPath)
