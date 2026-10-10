@@ -44,6 +44,11 @@ type Prefs struct {
 	Hotkey     string `json:"hotkey"`               // global shortcut preset; "" = default, "off"
 	ShowSteps  bool   `json:"show_steps"`           // show every tool step instead of one status line
 	FoldCards  *bool  `json:"fold_cards,omitempty"` // fold long answers into expandable cards (default on)
+
+	AutoTitles *bool `json:"auto_titles,omitempty"` // AI chat titles from the chat's dominant theme (default on, titles.go)
+
+	Personality       string `json:"personality"`        // "" / default, plain (no block), custom
+	PersonalityCustom string `json:"personality_custom"` // the user's own personality text (custom)
 }
 
 type App struct {
@@ -197,6 +202,11 @@ func (a *App) State() State {
 	prefs := a.prefs
 	fold := a.foldCards()
 	prefs.FoldCards = &fold // always explicit for the UI
+	autoT := a.autoTitlesOn()
+	prefs.AutoTitles = &autoT
+	if prefs.Personality == "" {
+		prefs.Personality = "default"
+	}
 	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.RouteChain(), Prefs: prefs,
 		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: a.cfg.AllowKeyless(), Missing: a.info.Missing(),
 		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName(),
@@ -282,12 +292,16 @@ type Conv struct {
 	Folder   string        `json:"folder"`
 	Updated  time.Time     `json:"updated"`
 	Messages []llm.Message `json:"messages"`
+
+	TitleSource string `json:"title_source,omitempty"` // auto (AI, titles.go) or manual (renamed); "" = first prompt
+	TitleTurns  int    `json:"title_turns,omitempty"`  // user turns when the auto title was last evaluated
 }
 
 type ConvItem struct {
 	ID      string `json:"id"`
 	Title   string `json:"title"`
 	Updated string `json:"updated"`
+	Source  string `json:"source,omitempty"` // title_source
 }
 
 func convDir() string {
@@ -301,7 +315,7 @@ func (a *App) Conversations(project string) []ConvItem {
 	var out []ConvItem
 	for _, c := range a.allConvs() {
 		if c.Project == project {
-			out = append(out, ConvItem{c.ID, c.Title, c.Updated.Format("Jan 2")})
+			out = append(out, ConvItem{ID: c.ID, Title: c.Title, Updated: c.Updated.Format("Jan 2"), Source: c.TitleSource})
 		}
 	}
 	return out
@@ -330,6 +344,7 @@ func (a *App) OpenConversation(id string) Conv {
 	if err == nil {
 		_ = json.Unmarshal(b, &c)
 	}
+	rememberTitle(c)
 	a.mu.Lock()
 	a.convID = c.ID
 	a.history = c.Messages
@@ -352,6 +367,9 @@ func (a *App) NewConversation() {
 }
 
 func (a *App) DeleteConversation(id string) {
+	titles.Lock()
+	delete(titles.m, id)
+	titles.Unlock()
 	_ = os.Remove(filepath.Join(convDir(), id+".json"))
 	a.mu.Lock()
 	if a.convID == id {
@@ -366,18 +384,14 @@ func (a *App) saveConv() {
 	if a.convID == "" {
 		a.convID = time.Now().Format("20060102-150405") + "-" + newID()[:4]
 	}
-	title := "New chat"
-	for _, m := range a.history {
-		if m.Role == "user" {
-			title = strings.TrimSpace(strings.SplitN(stripAttached(m.Content), "\n", 2)[0])
-			title = strings.TrimPrefix(title, "[Design edit] ")
-			if len(title) > 60 {
-				title = title[:60] + "…"
-			}
-			break
-		}
+	title, src, turns := promptTitle(a.history), "", 0
+	if m, ok := getTitle(a.convID); ok && m.Title != "" {
+		title, src, turns = m.Title, m.Source, m.Turns
 	}
-	c := Conv{ID: a.convID, Project: a.prefs.Project, Title: title, Folder: a.prefs.Folder, Updated: time.Now(), Messages: a.history}
+	c := Conv{ID: a.convID, Project: a.prefs.Project, Title: title, Folder: a.prefs.Folder, Updated: time.Now(), Messages: a.history,
+		TitleSource: src, TitleTurns: turns}
+	convWriteMu.Lock()
+	defer convWriteMu.Unlock()
 	b, _ := json.Marshal(c)
 	_ = os.WriteFile(filepath.Join(convDir(), a.convID+".json"), b, 0o600)
 }
@@ -487,6 +501,10 @@ func (a *App) run(ctx context.Context) {
 		a.busy, a.cancel = false, nil
 		a.mu.Unlock()
 		a.saveConv()
+		a.mu.Lock()
+		id, hist := a.convID, append([]llm.Message(nil), a.history...)
+		a.mu.Unlock()
+		a.maybeRetitle(id, hist) // background, never blocks the turn
 	}()
 	all := tools.All()
 	known := tools.Names()
@@ -624,6 +642,46 @@ ANSWER SHAPE
 `
 }
 
+// defaultPersonality is Blaze's voice in chat turns (Settings › Behaviour › Personality).
+const defaultPersonality = `PERSONALITY
+You are Blaze. Be warm, sharp, and one step ahead: an expert who happens to be easy to talk to.
+- Answer first. Lead with the result or the most useful true thing; skip preamble and filler ("Great question", "I'd be happy to").
+- Take a side. When there are options, recommend one and say why in a sentence; give one backup only if it earns it.
+- Be specific. Real names, numbers, file paths and commands beat adjectives. Never invent facts; say plainly when you're unsure.
+- Read the room. Match the user's energy: brief when they're brief, steady and kind when something's gone wrong. Light humour is fine; forced cheer isn't.
+- Talk like a person texting a friend who's good at this: contractions, short sentences, plain words.
+- Bad news first, with a small cushion, then the way forward. If you made a mistake, fix it first, then own it in a few words.
+- Do the work instead of describing it. Finish with the natural next step only when it's theirs to take.
+- Be honest about what you are: a capable assistant on their computer, not a person.
+`
+
+// personality is the PERSONALITY block for chat turns (scheduled jobs don't use system()).
+// Default: Blaze's voice. Plain: none. Custom: the user's text (empty falls back to none).
+func (a *App) personality() string {
+	switch a.prefs.Personality {
+	case "plain":
+		return ""
+	case "custom":
+		if t := strings.TrimSpace(a.prefs.PersonalityCustom); t != "" {
+			return "\nPERSONALITY\n" + t + "\n"
+		}
+		return ""
+	}
+	return "\n" + defaultPersonality
+}
+
+// SetPersonality saves the personality mode (default, plain, custom) and the custom text.
+func (a *App) SetPersonality(mode, custom string) {
+	if mode != "plain" && mode != "custom" {
+		mode = "default"
+	}
+	a.prefs.Personality, a.prefs.PersonalityCustom = mode, strings.TrimSpace(custom)
+	a.savePrefs()
+}
+
+// DefaultPersonality is shown in Settings so the user can start a custom one from it.
+func (a *App) DefaultPersonality() string { return defaultPersonality }
+
 func (a *App) system() string {
 	var b strings.Builder
 	b.WriteString(`You are Blaze, a capable assistant in a desktop app on the user's own computer. You act, not just advise: use your tools to run commands, read and edit files, write and run code, use git, search the web and install what's missing.
@@ -637,6 +695,7 @@ RULES
 - Be honest about failures. Never claim something worked without checking.
 - Answers: short, direct, Markdown. Lead with the result.
 `)
+	b.WriteString(a.personality())
 	b.WriteString(answerShape(a.foldCards()))
 	if a.cfg.Persona != "" {
 		b.WriteString("\nSTYLE\n" + a.cfg.Persona + "\n")
@@ -757,6 +816,9 @@ func (a *App) Doctor() []Check {
 		add("Scheduler", err == nil, map[bool]string{true: "cron", false: "crontab missing: scheduled jobs won't run"}[err == nil])
 	} else {
 		add("Scheduler", true, "Task Scheduler")
+	}
+	if ok, note := tilingCheck(); note != "" {
+		add("Window manager", ok, note)
 	}
 	d := a.desktopView()
 	add("Tray", d.Tray, map[bool]string{true: d.TrayNote, false: "Not running: " + orStr(d.TrayNote, "the tray didn't start") + ". Closing the window quits Blaze."}[d.Tray])

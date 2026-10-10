@@ -263,10 +263,12 @@ async function refreshSide() {
   list.forEach(c => {
     const b = h("button", "chat" + (c.id === convId && (view === "work" || view === "design") ? " on" : ""), `<span class="t">${esc(c.title)}</span><span class="when">${esc(c.updated || "")}</span><span class="x" title="Delete">${icon("x", "i sm")}</span>`);
     b.onclick = async e => {
+      if (e.target.closest("input")) return; // renaming
       if (e.target.closest(".x")) { await API().DeleteConversation(c.id); if (c.id === convId) { convId = ""; hero(); } refreshSide(); return; }
-      if (busy) return;
+      if (busy || (c.id === convId && b.classList.contains("on"))) return;
       openChat(c.id);
     };
+    if (window.Polish) Polish.decorate(b, c); // AI titles: animate, double-click to rename (polish.js)
     nav.append(b);
   });
 }
@@ -1692,7 +1694,10 @@ async function setBehaviour(col, redraw) {
   const t3 = h("label", "toggle", `<input type="checkbox" ${foldCards() ? "checked" : ""}><span><span class="tt">Fold long answers into cards</span><span class="td">The short answer stays in view; tables, long lists and reports go in a card you can expand.</span></span>`);
   $("input", t3).onchange = e => { API().SetFoldCards(e.target.checked); S.prefs.fold_cards = e.target.checked; };
   bx.append(t3);
-  col.append(g1, backgroundGroup(redraw), g2, g3);
+  const t4 = h("label", "toggle", `<input type="checkbox" ${S.prefs.auto_titles !== false ? "checked" : ""}><span><span class="tt">Name chats by their topic</span><span class="td">A tiny call on your cheapest model titles each chat by what it's mostly about, and updates it as the chat moves on. Double-click a chat to rename it yourself.</span></span>`);
+  $("input", t4).onchange = e => { API().SetAutoTitles(e.target.checked); S.prefs.auto_titles = e.target.checked; };
+  bx.append(t4);
+  col.append(g1, backgroundGroup(redraw), g2, Polish.personalityGroup(redraw), g3);
 }
 
 // Settings › Behaviour › Background & shortcut.

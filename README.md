@@ -18,7 +18,7 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 
 ## What's in v0.4.0
 1. **Lives in the background.** A tray icon (menu-bar icon on macOS) with Quick ask, Open Blaze, what Blaze is doing, and Quit. Closing the window hides Blaze instead of quitting (Settings › Behaviour), and it can start hidden when you sign in.
-2. **Quick ask from anywhere.** Press **Ctrl+Shift+Space** (Option+Space on a Mac) for the orb: a small always-on-top Blaze in the corner. Expand opens the full window, Esc hides it. macOS asks for Accessibility permission once; on Wayland, bind a system shortcut to `blaze-desktop --orb`.
+2. **Quick ask from anywhere.** Press **Ctrl+Shift+Space** (Option+Space on a Mac) for the orb: a small always-on-top Blaze in the corner. Expand opens the full window, Esc hides it. macOS asks for Accessibility permission once; on Wayland, bind a system shortcut to `blaze-desktop --orb`. On Hyprland (e.g. Omarchy) and sway Blaze floats the orb itself via `hyprctl` / `swaymsg`; on other tiling window managers add a rule that floats the app id `blaze`.
 3. **One Blaze at a time.** Opening it again brings the running one forward; `--orb` opens quick ask, `--background` starts hidden.
 4. **Calmer answers.** Instead of raw commands, each answer shows one plain-English status line ("Reading index.html", "Searching the web for …") that becomes "Worked for 12s"; click it to see every step. Power users can turn the full list back on.
 5. Windows gets Blaze's own title bar. Doctor checks the tray, shortcut and start-at-login.
