@@ -47,10 +47,18 @@ func main() {
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		Bind:             []interface{}{app},
-		Windows:          &windows.Options{Theme: windows.SystemDefault},
+		// One Blaze at a time: a second launch (e.g. a blaze:// sign-in link) is
+		// handed to the running window instead.
+		SingleInstanceLock: &options.SingleInstanceLock{UniqueId: "c0f7e1d2-blaze-desktop", OnSecondInstanceLaunch: func(d options.SecondInstanceData) {
+			app.onSecondInstance(d.Args, d.WorkingDirectory)
+		}},
+		Windows: &windows.Options{Theme: windows.SystemDefault},
 		Mac: &mac.Options{
 			TitleBar: mac.TitleBarHiddenInset(),
 			About:    &mac.AboutInfo{Title: "Blaze", Message: "Blaze " + version, Icon: icon},
+			OnUrlOpen: func(u string) {
+				go func() { app.waitReady(); app.routeURL(u) }()
+			},
 		},
 		Linux: &linux.Options{Icon: icon, ProgramName: "blaze"},
 	})
