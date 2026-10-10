@@ -43,7 +43,7 @@ let pane = null;       // the chat pane (log + composer), moved between Work and
 // Colours follow the theme; ~12 fps idle, ~30 fps busy; paused when hidden or reduced motion.
 const Particles = (() => {
   let cv = null, ctx = null, on = true, target = 0, energy = 0, time = 0, last = 0, raf = 0;
-  let ink = [17, 17, 16], acc = [31, 75, 216], w = 0, h0 = 0, dpr = 1;
+  let ink = [17, 17, 16], acc = [31, 75, 216], w = 0, h0 = 0, dpr = 1, boost = 1;
   const reduce = matchMedia("(prefers-reduced-motion: reduce)");
   let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const dots = Array.from({ length: 44 }, () => ({ x: rnd(), y: rnd(), r: 0.8 + rnd() * 0.9, vx: (rnd() - 0.5) * 2, vy: -0.6 - rnd() * 1.4 }));
@@ -51,6 +51,8 @@ const Particles = (() => {
   function recolor() {
     const cs = getComputedStyle(document.documentElement);
     ink = rgb(cs.getPropertyValue("--ink").trim()) || ink; acc = rgb(cs.getPropertyValue("--accent").trim()) || acc;
+    // Dark ink dots read fainter on near-white paper, so lift them in the light theme.
+    boost = document.documentElement.dataset.theme === "dark" ? 1 : 1.7;
     draw();
   }
   function size() {
@@ -67,10 +69,11 @@ const Particles = (() => {
     dots.forEach((d, i) => {
       const px = (((d.x + d.vx * time * speed) % 1) + 1) % 1, py = (((d.y + d.vy * time * speed) % 1) + 1) % 1;
       const spark = i % 9 === 0 && energy > 0.1;
-      const a = spark ? 0.5 * energy : 0.10 + 0.12 * energy + (i % 7 === 0 ? 0.08 : 0);
+      const a = spark ? 0.5 * energy : (0.10 + 0.12 * energy + (i % 7 === 0 ? 0.08 : 0)) * boost;
+      const r = boost > 1 ? d.r * 1.15 : d.r;
       const c = spark ? acc : ink;
       ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${a})`;
-      ctx.beginPath(); ctx.arc(px * w, py * h0, d.r, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px * w, py * h0, r, 0, Math.PI * 2); ctx.fill();
     });
   }
   function loop(now) {
