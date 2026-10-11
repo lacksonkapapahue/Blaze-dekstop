@@ -107,6 +107,7 @@ func (a *App) startAgents() {
 		Describe: friendlyTool,
 		MaxSteps: steps,
 		Guard:    a.agentGuard,
+		Parallel: func(name string) bool { return tools.ParallelSafe(name) },
 	}, agentsDir(), a.agentCap())
 	a.agents.SetIsolationDir(worktreesDir())
 	a.agents.OnChange = func(v agents.View) {
