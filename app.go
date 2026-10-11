@@ -844,6 +844,7 @@ RULES
 - Servers, watchers and long builds go in run_shell background=true; then job_log. open_url shows a local server or file to the user.
 - Missing program? install_tool (the user approves it).
 - Only your core tools are loaded each turn. MORE TOOLS below lists the rest by name: call find_tools(query) to turn them on (or call one by its exact name). Memories and skills are also picked per turn: recall(query) and load_skill(name) reach the rest. Never use sudo or admin rights without asking.
+- Skills combine. When a task falls between skills (a hand-drawn poster, a game with pixel sprites and music, a 3D walk-through of a floor plan), load every skill it touches and use each one for its own part. No single skill covers it and it is likely to come up again: after it works, save the combination with write_skill as a new skill that names the skills it builds on and holds only the glue (which part comes from which skill, in what order, and what was learned). Tell the user in one line.
 - Be honest about failures. Never claim something worked without checking.
 - Answers: short, direct, Markdown. Lead with the result.
 `)

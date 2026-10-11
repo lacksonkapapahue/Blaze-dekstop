@@ -225,9 +225,9 @@ func SkillsFor(query string) string {
 	}
 	var b strings.Builder
 	if len(pick) < len(all) {
-		fmt.Fprintf(&b, "\nSKILLS (%d of %d shown, matched to this conversation; load_skill(name) reads one before you do that kind of task; find_tools or load_skill with a guess finds others)\n", len(pick), len(all))
+		fmt.Fprintf(&b, "\nSKILLS (%d of %d shown, matched to this conversation; load_skill(name) reads one before you do that kind of task, several when a task spans them; find_tools or load_skill with a guess finds others)\n", len(pick), len(all))
 	} else {
-		b.WriteString("\nSKILLS (load_skill(name) reads one before you do that kind of task)\n")
+		b.WriteString("\nSKILLS (load_skill(name) reads one before you do that kind of task, several when a task spans them)\n")
 	}
 	for _, s := range pick {
 		b.WriteString("- " + s.Name + ": " + s.Desc + "\n")
