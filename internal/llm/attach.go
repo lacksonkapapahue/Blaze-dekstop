@@ -23,6 +23,10 @@ type Attach struct {
 	Send  string `json:"send,omitempty"`  // a downscaled copy that is sent instead of Path
 	Thumb string `json:"thumb,omitempty"` // small data URL for the chat chip
 	Note  string `json:"note,omitempty"`  // e.g. "inlined", "path only"
+	// Private vision: the image stays on this computer. Desc is what was read from it
+	// there (OCR text, size, colours); cloud models get Desc instead of the picture.
+	Private bool   `json:"private,omitempty"`
+	Desc    string `json:"desc,omitempty"`
 }
 
 // wireMsg is a Message as providers see it (no attachment bookkeeping).
@@ -152,7 +156,9 @@ func MimeOf(p string) string {
 
 // wire turns messages into what a provider receives. Images become image_url parts
 // for models that can see; for the rest they become a one-line note with the path.
-func wire(msgs []Message, vision bool) []wireMsg {
+// local says the provider runs on this computer: a Private image's pixels only ever
+// go to a local model, and every other model gets the local description instead.
+func wire(msgs []Message, vision, local bool) []wireMsg {
 	out := make([]wireMsg, 0, len(msgs))
 	for _, m := range msgs {
 		w := wireMsg{Role: m.Role, Content: m.Content, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID, Name: m.Name}
@@ -161,6 +167,14 @@ func wire(msgs []Message, vision bool) []wireMsg {
 			var parts []map[string]any
 			for _, a := range m.Attach {
 				if a.Kind != "image" {
+					continue
+				}
+				if a.Private && !(vision && local) {
+					desc := strings.TrimSpace(a.Desc)
+					if desc == "" {
+						desc = "(no description)"
+					}
+					notes = append(notes, "[Image attached: "+a.Path+". Private vision is on, so the picture stayed on the user's computer and you can't see it. What was read from it there:\n"+desc+"\nWork from this text; if the task needs the picture itself, say so and suggest turning Private vision off for it.]")
 					continue
 				}
 				if !vision {

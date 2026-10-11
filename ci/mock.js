@@ -203,6 +203,8 @@
     NotifyHistory: async () => nhist, ClearNotifyHistory: async () => { nhist.length = 0; }, SuggestionAction: async () => {},
     CheckSuggestionNow: async () => "Checked 10:58 · nothing worth interrupting",
     VisionStatus: async () => vview(), SetVisionPrefs: async p => { Object.keys(vprefs).forEach(k => delete vprefs[k]); Object.assign(vprefs, p); return vview(); },
+    PrivateVision: async () => ({ on: !!state.pv, engine: os === "darwin" ? "macOS Vision" : "Tesseract", note: os === "darwin" ? "Apple's on-device text recognition" : "Tesseract OCR, on this computer" }),
+    SetPrivateVision: async on => { state.pv = on; return A.PrivateVision(); },
     TryReadScreen: async () => "Read Firefox — \"Pull request #12\": 142 items in 138 ms via AT-SPI.", GrantScreen: async () => {}, GrantScreenText: async () => {},
   });
   const doctor0 = A.Doctor;

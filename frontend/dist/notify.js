@@ -154,7 +154,17 @@ window.SETTINGS_FNS.notifications = async (col, redraw) => {
   const tb = h("button", "btn line sm", "Read the front window"); const tout = h("span", "small sub tout", v.last ? `Last read: ${esc(v.last)}` : "");
   tb.onclick = async () => { tb.disabled = true; tout.textContent = "Reading…"; tout.textContent = await API().TryReadScreen(); tb.disabled = false; };
   tr.append(tb, tout);
-  g3.append(bx3, rows, tr);
+  // Private vision: pictures are read on this computer (the OS's own OCR, sizes and
+  // colours) and models get only that text. Covers attachments, screenshots, Copy window.
+  const pvb = h("div", "box pad formgrid pvbox"); pvb.style.marginTop = "12px";
+  const pvs = h("div", "small sub pvnote");
+  const drawPV = pv => {
+    pvb.innerHTML = "";
+    pvb.append(tg(!!pv.on, "Private vision", "Pictures never leave this computer. Blaze reads them here (text with the OCR built into your OS, plus size and colours) and sends models only that text. Text, code, errors and UI come through well; photos and visual detail don't.", async x => drawPV(await API().SetPrivateVision(x))), pvs);
+    pvs.textContent = pv.engine ? `On-device OCR: ${pv.engine} · ${pv.note}` : (pv.note || "No on-device OCR found");
+  };
+  if (API().PrivateVision) API().PrivateVision().then(drawPV).catch(() => {});
+  g3.append(bx3, pvb, rows, tr);
 
   // 04 history
   const clr = h("button", "btn ghost xs", "Clear");

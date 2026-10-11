@@ -2,6 +2,12 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.8.3 (Private vision)
+- **Settings › Notifications › Screen vision › Private vision**: pictures never leave the computer. Attachments, see_screen screenshots and Copy window images are read on this computer, with the OCR built into the OS (Windows.Media.Ocr, macOS Vision, Tesseract on Linux when installed) plus a size, brightness and main-colours readout, and models get only that text. A model running on this computer (Ollama, or a custom service on localhost) may still get the picture.
+- No model download and no cloud fallback: with no OCR available, the text says so instead of sending the image.
+- Shared with Blaze CLI as `private_vision` in `~/.blaze/config.json`. Doctor shows the engine in use.
+- New `internal/ocr` package, tested on every OS in CI (Linux CI installs tesseract).
+
 ## v0.8.2 (Specialists strip tucks away when done)
 - When every specialist in a round has finished and nothing awaits review, the strip shows the outcome for 6 seconds, then hides; an open row keeps it up while you read. **Clear** in its header hides a finished round at once.
 - A new round shows only its own specialists, not the finished ones from before; a reopened chat shows only specialists that still need something.

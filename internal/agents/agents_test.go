@@ -288,6 +288,12 @@ func TestRestartMarksInterrupted(t *testing.T) {
 	h.m.HandleMainTool("dispatch_agent", `{"handle":"finished","task":"Quick job"}`, "c9", "/work")
 	close(h.f.gate("Quick job"))
 	waitFor(t, "quick done", func() bool { return status(h.m, "finished") == Done })
+	// The finish is saved just after the status flips; wait for it to reach disk.
+	waitFor(t, "quick saved", func() bool {
+		b, _ := os.ReadFile(filepath.Join(dir, "finished.json"))
+		var a Agent
+		return json.Unmarshal(b, &a) == nil && a.Status == Done
+	})
 	h.m.StopAll() // the app quits mid-run
 	close(h.execGate)
 

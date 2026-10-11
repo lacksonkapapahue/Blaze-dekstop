@@ -1,4 +1,4 @@
-// jsdom test for the Specialists strip: a finished round tucks away instead of staying
+// jsdom test for the Specialists strip (and the Private vision setting): a finished round tucks away instead of staying
 // on "3 done" forever; work still running or awaiting review keeps it up.
 // Run: npm i jsdom (anywhere on NODE_PATH), then node ci/specs.test.js
 const fs = require("fs"), path = require("path");
@@ -35,6 +35,14 @@ const ok = (cond, msg) => { n++; if (!cond) { fails++; console.log("FAIL " + msg
   for (let i = 0; i < 100 && !d.querySelector("#input"); i++) await tick(30);
   if (!d.querySelector("#input")) { console.log(errs.slice(0,5).join("\n")); w.eval("show(\"work\")"); await tick(100); }
   ok(!!d.querySelector("#input"), "page: composer is up");
+  // Settings › Notifications › Private vision renders and toggles.
+  const col = d.createElement("div"); d.body.append(col);
+  await w.SETTINGS_FNS.notifications(col, () => {}); await tick(60);
+  const pvIn = col.querySelector(".pvbox input");
+  ok(!!pvIn && !pvIn.checked && /OCR/.test(col.querySelector(".pvnote").textContent), "private vision: toggle shows, off, with the OCR engine named");
+  pvIn.checked = true; pvIn.dispatchEvent(new w.Event("change")); await tick(60);
+  ok(col.querySelector(".pvbox input").checked && (await w.go.main.App.PrivateVision()).on, "private vision: turning it on saves");
+
   const S = w.eval("Specs"), conv = w.eval("convId") || "c-test";
   if (!w.eval("convId")) w.eval("convId = 'c-test'");
   const strip = () => d.querySelector("#specs");

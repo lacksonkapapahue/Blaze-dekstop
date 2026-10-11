@@ -326,7 +326,11 @@ func complete(ctx context.Context, cfg *config.Config, msgs []Message, tools []T
 		}
 		return nil, &RouteError{NoModels: true}
 	}
-	if HasImages(msgs) {
+	if cfg.PrivateVision && HasImages(msgs) {
+		// Private vision: each image is read on this computer (OCR, size, colours) and
+		// cloud models get only that text; the picture never leaves.
+		msgs = PrepareImages(ctx, msgs, o.OnStatus)
+	} else if HasImages(msgs) {
 		// Images: models that can see go first. When none can, the image travels as a path.
 		var canSee bool
 		if list, canSee = visionFirst(list); !canSee && o.OnStatus != nil && !waited && !shrunk {

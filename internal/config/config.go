@@ -105,7 +105,12 @@ type Config struct {
 	DailyCap   float64           `json:"daily_cap,omitempty"`   // USD; past it a paid default switches to Auto
 	CustomBase string            `json:"custom_base,omitempty"` // base URL of the custom provider
 	CustomName string            `json:"custom_name,omitempty"` // label for it
-	path       string
+
+	// Private vision (desktop v0.8.3, shared with Blaze CLI): pictures never leave the
+	// computer. The OS's own OCR and a local colour/size readout turn each image into
+	// text, and only that text goes to cloud models.
+	PrivateVision bool `json:"private_vision,omitempty"`
+	path          string
 }
 
 // Auto is the provider id that means "free routing".

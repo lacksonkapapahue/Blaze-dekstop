@@ -18,6 +18,7 @@ import (
 
 	wr "github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/lacksonkapapahue/blaze-desktop/internal/ocr"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/screen"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/tools"
 )
@@ -246,6 +247,28 @@ func (a *App) SetVisionPrefs(p VisionPrefs) VisionView {
 	return a.visionView(false)
 }
 
+// PrivateVisionView is Settings › Screen vision › Private vision.
+type PrivateVisionView struct {
+	On     bool   `json:"on"`
+	Engine string `json:"engine"` // the on-device OCR ("" = none)
+	Note   string `json:"note"`
+}
+
+func (a *App) privateVisionView() PrivateVisionView {
+	name, note := ocr.Engine()
+	return PrivateVisionView{On: a.cfg.PrivateVision, Engine: name, Note: note}
+}
+
+// PrivateVision reports the Private vision switch and the OCR it would use.
+func (a *App) PrivateVision() PrivateVisionView { a.waitReady(); return a.privateVisionView() }
+
+// SetPrivateVision turns Private vision on or off (shared with Blaze CLI in config.json).
+func (a *App) SetPrivateVision(on bool) PrivateVisionView {
+	a.cfg.PrivateVision = on
+	_ = a.cfg.Save()
+	return a.privateVisionView()
+}
+
 // GrantScreen opens the OS permission for screenshots (macOS Screen Recording).
 func (a *App) GrantScreen() {
 	screen.AskScreenRecording()
@@ -282,6 +305,18 @@ func (a *App) visionChecks() []Check {
 		return []Check{{Name: "Screen reading", OK: true, Detail: "Off (Settings › Notifications)"}, a.watchCheck()}
 	}
 	c := a.visionCaps(true)
+	if a.cfg.PrivateVision {
+		pv := a.privateVisionView()
+		chk := Check{Name: "Private vision", OK: pv.Engine != "", Detail: "On: images are read on this computer with " + orStr(pv.Engine, "no OCR") + "; only text goes to models"}
+		if pv.Engine == "" {
+			chk.Detail = "On, but " + pv.Note
+		}
+		return append(a.visionChecksBase(c), chk)
+	}
+	return a.visionChecksBase(c)
+}
+
+func (a *App) visionChecksBase(c screen.Caps) []Check {
 	text := Check{Name: "Screen reading", OK: c.Text, Detail: c.TextVia}
 	if c.TextNote != "" {
 		text.Detail += " · " + c.TextNote
