@@ -113,10 +113,10 @@ func TestAutopilotAutoReply(t *testing.T) {
 		t.Fatalf("autopilot run: on=%v steps=%d", ap.on, steps)
 	}
 	q := "I found two config files.\n\nShould I update both, or only `vite.config.ts`?"
-	if !a.autoReply(&ap, q) {
+	if !a.autoReply(a.cur, &ap, q) {
 		t.Fatal("Autopilot didn't answer a question")
 	}
-	last := a.history[len(a.history)-1]
+	last := a.cur.hist[len(a.cur.hist)-1]
 	if last.Role != "user" || !strings.Contains(last.Content, "The user is away") || !strings.Contains(last.Content, "pragmatically") || !strings.Contains(last.Content, "best practice") {
 		t.Fatalf("auto-reply message: %+v", last)
 	}
@@ -124,13 +124,13 @@ func TestAutopilotAutoReply(t *testing.T) {
 		t.Fatalf("auto-reply should be marked for the chat view: %q", last.Content)
 	}
 	// A plain final answer is not a question: the run ends normally.
-	if a.autoReply(&ap, "Done. All 42 tests pass and the build takes 9.8s.") {
+	if a.autoReply(a.cur, &ap, "Done. All 42 tests pass and the build takes 9.8s.") {
 		t.Fatal("Autopilot replied to a statement")
 	}
 	// Bounded: at most 8 automatic replies per run.
 	n := 1
 	for i := 0; i < 20; i++ {
-		if a.autoReply(&ap, "Which one do you want?") {
+		if a.autoReply(a.cur, &ap, "Which one do you want?") {
 			n++
 		}
 	}
@@ -145,11 +145,11 @@ func TestAutoModeDoesNotAutoReply(t *testing.T) {
 	if ap.on || steps != 40 {
 		t.Fatalf("auto run: on=%v steps=%d", ap.on, steps)
 	}
-	if a.autoReply(&ap, "Should I commit it?") {
+	if a.autoReply(a.cur, &ap, "Should I commit it?") {
 		t.Fatal("Auto mode answered for the user")
 	}
-	if len(a.history) != 0 {
-		t.Fatalf("history changed: %+v", a.history)
+	if len(a.cur.hist) != 0 {
+		t.Fatalf("history changed: %+v", a.cur.hist)
 	}
 }
 
