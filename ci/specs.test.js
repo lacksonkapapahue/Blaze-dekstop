@@ -65,6 +65,29 @@ const ok = (cond, msg) => { n++; if (!cond) { fails++; console.log("FAIL " + msg
     A.SendWith = sw; A.Send = s1;
   }
 
+  // v0.9.2 no queue: a message sent mid-answer is sent at once (Go interrupts), never shown as queued.
+  {
+    const sent = []; const A = w.go.main.App, sw = A.SendWith;
+    A.SendWith = async t => { sent.push(t); return "ok"; };
+    if (typeof w.show === "function") { w.show("work"); await tick(60); }
+    await w.eval('sendText("first", [], [])'); await tick(30);
+    w.fire("turn", { kind: "user" }); w.fire("delta", "Working on it");
+    await w.eval('sendText("second", [], [])'); await tick(30);
+    const users = [...d.querySelectorAll(".msg.user")]; const last = users[users.length - 1];
+    ok(sent[sent.length - 1] === "second" && last && !last.classList.contains("queued"), "no queue: a mid-answer message goes straight out");
+    w.fire("stopped", { resumable: true }); w.fire("turn", { kind: "user" }); await tick(30);
+    const blz = [...d.querySelectorAll(".msg.blaze")];
+    ok(blz.length >= 2 && blz[blz.length - 1].compareDocumentPosition(last) & 2, "no queue: the interrupting message gets its own answer right after it");
+    w.fire("done", { route: "x" }); await tick(20);
+    A.SendWith = sw;
+    const g = w.agentsGroup(() => {}); d.body.append(g);
+    const lw = g.querySelector("#leadWorks");
+    ok(lw && !lw.checked && /specialist/.test(g.textContent), "lead mode: Settings shows 'Blaze does tasks itself', off by default");
+    lw.checked = true; lw.dispatchEvent(new w.Event("change")); await tick(20);
+    ok(w.eval("S.prefs.lead_works") === true, "lead mode: the toggle saves");
+    g.remove();
+  }
+
   // v0.9 New design: a scratch artboard, drawn at its real size scaled to fit, with Export.
   if (typeof w.show === "function") { w.show("design"); await tick(150); }
   const nb = d.querySelector("#dnew");
