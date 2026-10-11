@@ -6,6 +6,7 @@ out = root / "shots"; out.mkdir(exist_ok=True)
 mock = (root / "ci" / "mock.js").read_text()
 url = (root / "frontend" / "dist" / "index.html").as_uri()
 sample = (root / "ci" / "sample").as_uri()
+allerrs = []
 with sync_playwright() as p:
     b = p.chromium.launch()
     for theme in ["light", "dark"]:
@@ -317,7 +318,7 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"onboard-04-perms-mac-{theme}.png"))
         pg.evaluate("window.go.main.App.State().then(s => { s.desktop = s.__d; Onboard.close(); show('work'); })"); pg.wait_for_timeout(300)
         if errs:
-            print("JS errors:", errs); sys.exit(1)
+            print("JS errors:", errs); allerrs.extend(f"{theme}: {e}" for e in errs)
     # Windows runs frameless with its own title-bar buttons.
     pg = b.new_page(viewport={"width": 1280, "height": 820}, device_scale_factor=1)
     pg.add_init_script(f"window.__theme='light';window.__os='windows';window.__sample='{sample}';" + mock)
@@ -326,6 +327,9 @@ with sync_playwright() as p:
     pg.goto(url); pg.wait_for_timeout(600)
     pg.screenshot(path=str(out / "home-windows-light.png"))
     if errs:
-        print("JS errors:", errs); sys.exit(1)
+        print("JS errors:", errs); allerrs.extend("windows: " + e for e in errs)
     b.close()
+# Shots still get pushed when something broke; ERRORS.txt says what (the job then fails).
+if allerrs:
+    (out / "ERRORS.txt").write_text("\n".join(allerrs) + "\n"); sys.exit(1)
 print("ok")

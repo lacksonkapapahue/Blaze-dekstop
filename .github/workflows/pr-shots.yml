@@ -19,6 +19,7 @@ jobs:
           pip install -q playwright && python -m playwright install --with-deps chromium
           python ci/shots.py
       - name: Push screenshots to the shots-pr branch
+        if: always()
         run: |
           cd shots
           git init -q && git checkout -q -b shots-pr
