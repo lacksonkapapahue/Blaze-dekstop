@@ -127,7 +127,7 @@ func SchemaVersion() int { return len(migrations) }
 // migration under the write lock and re-read user_version there, then check the tables.
 func (d *DB) migrate() error {
 	var v int
-	if err := d.sql.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+	if err := retryBusy(func() error { return d.sql.QueryRow(`PRAGMA user_version`).Scan(&v) }); err != nil {
 		return err
 	}
 	if v > len(migrations) {
@@ -135,14 +135,16 @@ func (d *DB) migrate() error {
 	}
 	// WAL lets Desktop read while the CLI writes. Switched on only after the version
 	// check, so a newer file we refuse is left byte-for-byte as it was.
-	if _, err := d.sql.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+	// Changing the journal mode skips SQLite's busy handler, so another opener
+	// creating the file at the same moment can fail it at once: retry it ourselves.
+	if err := retryBusy(func() error { _, err := d.sql.Exec(`PRAGMA journal_mode=WAL`); return err }); err != nil {
 		return err
 	}
 	for v < len(migrations) {
 		// BEGIN IMMEDIATE (via _txlock) holds the write lock; re-read the version
 		// under it in case the CLI migrated while we waited.
-		tx, err := d.sql.Begin()
-		if err != nil {
+		var tx *sql.Tx
+		if err := retryBusy(func() (e error) { tx, e = d.sql.Begin(); return }); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
@@ -169,7 +171,7 @@ func (d *DB) migrate() error {
 	if v > len(migrations) {
 		return fmt.Errorf("%w (schema v%d, this build knows v%d)", ErrNewerSchema, v, len(migrations))
 	}
-	if err := d.checkTables(); err != nil {
+	if err := retryBusy(d.checkTables); err != nil {
 		return err
 	}
 	// Forget tool activations of chats nobody touched for a month.
@@ -251,3 +253,26 @@ func ftsQuery(q string, max int) string {
 func Tokens(s string) int { return (len(s) + 3) / 4 }
 
 var ErrNotFound = errors.New("That memory changed or was removed. Reopen the graph.")
+
+// retryBusy runs f again while SQLite answers SQLITE_BUSY or SQLITE_LOCKED, for up to
+// about 5 s. Some statements (journal_mode, the first read of a file being created)
+// return busy without waiting on busy_timeout.
+func retryBusy(f func() error) error {
+	deadline := time.Now().Add(5 * time.Second)
+	wait := 5 * time.Millisecond
+	for {
+		err := f()
+		if err == nil || !isBusy(err) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(wait)
+		if wait < 200*time.Millisecond {
+			wait *= 2
+		}
+	}
+}
+
+func isBusy(err error) bool {
+	m := err.Error()
+	return strings.Contains(m, "SQLITE_BUSY") || strings.Contains(m, "database is locked") || strings.Contains(m, "SQLITE_LOCKED")
+}
