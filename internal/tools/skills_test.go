@@ -22,7 +22,7 @@ func testPack() fstest.MapFS {
 
 func TestSeedSkillsIntoFolderAndIndex(t *testing.T) {
 	d := t.TempDir()
-	t.Setenv("BLAZE_HOME", d)
+	testHome(t, d)
 	r, err := SeedSkills(testPack())
 	if err != nil || len(r.Added) != 2 {
 		t.Fatalf("seed: %+v %v", r, err)
@@ -67,7 +67,7 @@ func TestSeedSkillsIntoFolderAndIndex(t *testing.T) {
 
 func TestWriteSkillEventsAndProtection(t *testing.T) {
 	d := t.TempDir()
-	t.Setenv("BLAZE_HOME", d)
+	testHome(t, d)
 	var evs []LearnEvent
 	SetOnLearn(func(e LearnEvent) { evs = append(evs, e) })
 	defer SetOnLearn(nil)
@@ -99,7 +99,7 @@ func TestWriteSkillEventsAndProtection(t *testing.T) {
 }
 
 func TestRememberReplacesAndNudges(t *testing.T) {
-	t.Setenv("BLAZE_HOME", t.TempDir())
+	testHome(t, t.TempDir())
 	var evs []LearnEvent
 	SetOnLearn(func(e LearnEvent) { evs = append(evs, e) })
 	defer SetOnLearn(nil)
