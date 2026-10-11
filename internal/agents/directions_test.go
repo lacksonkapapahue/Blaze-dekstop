@@ -23,6 +23,7 @@ func TestCarryDirtyThenApply(t *testing.T) {
 		}
 	}
 	run(src, "init", "-q")
+	run(src, "config", "core.autocrlf", "false") // LF fixtures on Windows too
 	_ = os.WriteFile(filepath.Join(src, "README.md"), []byte("hi\n"), 0o644)
 	run(src, "add", "-A")
 	run(src, "commit", "-qm", "init")
