@@ -1,0 +1,186 @@
+// Small helpers: encoding, hashing, passwords, validation and JSON responses.
+
+export interface Env {
+  KV: KVNamespace;
+  BASE_URL: string;
+  ALLOWED_ORIGINS?: string;
+  PBKDF2_ITERATIONS?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  SPOTIFY_CLIENT_ID?: string;
+  SPOTIFY_CLIENT_SECRET?: string;
+  NOTION_CLIENT_ID?: string;
+  NOTION_CLIENT_SECRET?: string;
+  SLACK_CLIENT_ID?: string;
+  SLACK_CLIENT_SECRET?: string;
+}
+
+const enc = new TextEncoder();
+
+export function b64url(bytes: ArrayBuffer | Uint8Array): string {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let s = "";
+  for (const x of b) s += String.fromCharCode(x);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+export function fromB64url(s: string): Uint8Array {
+  const p = s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4);
+  const bin = atob(p);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+export function randomToken(bytes = 32): string {
+  const b = new Uint8Array(bytes);
+  crypto.getRandomValues(b);
+  return b64url(b);
+}
+
+export async function sha256(s: string): Promise<string> {
+  return b64url(await crypto.subtle.digest("SHA-256", enc.encode(s)));
+}
+
+/** Constant-time string compare (both sides are ours or fixed-length hashes). */
+export function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
+/** PKCE S256: BASE64URL(SHA256(verifier)). */
+export async function pkceChallenge(verifier: string): Promise<string> {
+  return sha256(verifier);
+}
+
+// ---------------- passwords (PBKDF2-SHA256 via WebCrypto) ----------------
+
+const MAX_ITER = 100000; // the Workers runtime refuses more
+
+export function iterations(env: Env): number {
+  const n = parseInt(env.PBKDF2_ITERATIONS || "", 10);
+  return Number.isFinite(n) && n >= 10000 ? Math.min(n, MAX_ITER) : MAX_ITER;
+}
+
+async function pbkdf2(password: string, salt: Uint8Array, iter: number): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: iter }, key, 256);
+  return new Uint8Array(bits);
+}
+
+/** "pbkdf2$sha256$<iter>$<salt>$<hash>" */
+export async function hashPassword(password: string, iter: number): Promise<string> {
+  const salt = new Uint8Array(16);
+  crypto.getRandomValues(salt);
+  const h = await pbkdf2(password, salt, iter);
+  return `pbkdf2$sha256$${iter}$${b64url(salt)}$${b64url(h)}`;
+}
+
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const p = stored.split("$");
+  if (p.length !== 5 || p[0] !== "pbkdf2" || p[1] !== "sha256") return false;
+  const iter = parseInt(p[2] || "", 10);
+  if (!Number.isFinite(iter) || iter < 1 || iter > MAX_ITER) return false;
+  const h = await pbkdf2(password, fromB64url(p[3] || ""), iter);
+  return safeEqual(b64url(h), p[4] || "");
+}
+
+// ---------------- validation ----------------
+
+const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+
+export function normEmail(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const e = v.trim().toLowerCase();
+  return e.length <= 254 && EMAIL_RE.test(e) ? e : null;
+}
+
+export function validPassword(v: unknown): v is string {
+  return typeof v === "string" && v.length >= 8 && v.length <= 256;
+}
+
+export function cleanName(v: unknown): string {
+  if (typeof v !== "string") return "";
+  return v.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80);
+}
+
+/** Only http://127.0.0.1:<port>/... or http://[::1]:<port>/... may receive a code. */
+export function loopbackRedirect(v: string | null): string | null {
+  if (!v || v.length > 200) return null;
+  let u: URL;
+  try {
+    u = new URL(v);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "http:" || u.username || u.password || u.hash || u.search) return null;
+  if (u.hostname !== "127.0.0.1" && u.hostname !== "[::1]") return null;
+  const port = parseInt(u.port, 10);
+  if (!Number.isFinite(port) || port < 1024 || port > 65535) return null;
+  return u.toString();
+}
+
+export const STATE_RE = /^[A-Za-z0-9_-]{16,128}$/;
+export const CHALLENGE_RE = /^[A-Za-z0-9_-]{43}$/;
+export const VERIFIER_RE = /^[A-Za-z0-9._~-]{43,128}$/;
+export const CODE_RE = /^[A-Za-z0-9_-]{20,128}$/;
+
+// ---------------- HTTP ----------------
+
+export class HttpError extends Error {
+  constructor(public status: number, public code: string, public extra: Record<string, unknown> = {}) {
+    super(code);
+  }
+}
+
+const BASE_HEADERS: Record<string, string> = {
+  "Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "X-Frame-Options": "DENY",
+};
+
+export function json(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...BASE_HEADERS, "Content-Type": "application/json; charset=utf-8", ...headers },
+  });
+}
+
+export function redirect(to: string): Response {
+  return new Response(null, { status: 302, headers: { ...BASE_HEADERS, Location: to } });
+}
+
+export function html(body: string, status = 200): Response {
+  return new Response(body, {
+    status,
+    headers: { ...BASE_HEADERS, "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'" },
+  });
+}
+
+export function esc(s: string): string {
+  return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
+}
+
+export async function readJSON(req: Request): Promise<Record<string, unknown>> {
+  const len = parseInt(req.headers.get("Content-Length") || "0", 10);
+  if (len > 16384) throw new HttpError(413, "too_large");
+  const text = await req.text();
+  if (text.length > 16384) throw new HttpError(413, "too_large");
+  if (!text) return {};
+  try {
+    const v = JSON.parse(text);
+    if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
+  } catch {
+    /* fallthrough */
+  }
+  throw new HttpError(400, "invalid_json");
+}
+
+export function clientIP(req: Request): string {
+  return req.headers.get("CF-Connecting-IP") || "0.0.0.0";
+}
