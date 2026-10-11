@@ -8,6 +8,7 @@ const SelfUpdate = (() => {
 
   function message() {
     const col = $("#log .col", pane);
+    const hero = col && $(".hero", col); if (hero) hero.remove();
     const el = h("div", "msg blaze selfupd");
     el.append(h("div", "who", `<span class="mk"></span><span class="label">Blaze</span>`));
     const workEl = h("div", "work", `<span class="sq"></span><span class="wt"></span>`);

@@ -8,7 +8,7 @@ url = (root / "frontend" / "dist" / "index.html").as_uri()
 sample = (root / "ci" / "sample").as_uri()
 allerrs = []
 with sync_playwright() as p:
-    b = p.chromium.launch()
+    b = p.chromium.launch(**({"executable_path": __import__("os").environ["CHROME"]} if __import__("os").environ.get("CHROME") else {}))
     for theme in ["light", "dark"]:
         pg = b.new_page(viewport={"width": 1280, "height": 820}, device_scale_factor=1)
         pg.add_init_script(f"window.__theme='{theme}';window.__sample='{sample}';" + mock)
@@ -109,7 +109,7 @@ with sync_playwright() as p:
           fire('agent', {handle: 'fix-build', conv: 'c7', status: 'running', now: 'Editing hero.liquid', n: 4, started: Date.now() - 42000, seconds: 42});
           sendText('While that runs: give me three punchier headlines for the hero.', []);
           fire('turn', {kind: 'user', conv: 'c7'});
-          fire('delta', '1. **Light that feels like home.**\n2. **Warm corners, every evening.**\n3. **Glow, without the glare.**\n\nI like the first: short, and it says what you sell.');
+          fire('delta', '1. **Light that feels like home.**\\n2. **Warm corners, every evening.**\\n3. **Glow, without the glare.**\\n\\nI like the first: short, and it says what you sell.');
           fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 2.1});""")
         pg.wait_for_timeout(500)
         pg.screenshot(path=str(out / f"agent-running-{theme}.png"))
@@ -127,7 +127,7 @@ with sync_playwright() as p:
         pg.evaluate("document.querySelector('.agcard .ag-q .yes').click()")
         # It finishes: the card collapses and its result wakes the main agent.
         pg.evaluate("""fire('agent', {handle: 'fix-build', conv: 'c7', status: 'done', now: '', n: 6, steps: window.__agentSteps, started: Date.now() - 95000, ended: Date.now(), seconds: 95,
-            result: 'The build broke because `sections/hero.liquid` imported `./hero.css`, but the file is `assets/Hero.css` (capital H). Linux is case-sensitive, so the build failed there.\n\n- Fixed the import in `sections/hero.liquid`.\n- `pnpm build` passes (9.8s).\n- `pnpm test`: **42 passed**.'});
+            result: 'The build broke because `sections/hero.liquid` imported `./hero.css`, but the file is `assets/Hero.css` (capital H). Linux is case-sensitive, so the build failed there.\\n\\n- Fixed the import in `sections/hero.liquid`.\\n- `pnpm build` passes (9.8s).\\n- `pnpm test`: **42 passed**.'});
           fire('turn', {kind: 'agent', handle: 'fix-build', conv: 'c7'});
           fire('delta', 'The build is **green again**. The hero imported `./hero.css` but the file is `Hero.css`, and Linux cares about the capital. Fixed, and all **42 tests pass**.');
           fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 1.9});""")
