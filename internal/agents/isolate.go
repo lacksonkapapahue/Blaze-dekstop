@@ -162,6 +162,66 @@ func worktree(src, top, dest, branch string) (*Isolation, error) {
 	return &Isolation{Kind: "worktree", Source: top, Sub: filepath.ToSlash(sub), Path: dest, Branch: b, Base: strings.TrimSpace(base), Dirty: dirty}, nil
 }
 
+// CarryDirty copies the source's uncommitted changes (modified and untracked files, not
+// ignored ones) into a fresh worktree and commits them there as its new base, so the
+// copy starts from what the user sees, and the changes made on top of it still apply
+// cleanly back to the source. Directions branches use it: the page being redesigned
+// is often not committed yet.
+func (iso *Isolation) CarryDirty() error {
+	if iso.Kind != "worktree" || !iso.Dirty {
+		return nil
+	}
+	out, err := git(iso.Source, "status", "--porcelain", "-z", "--untracked-files=all")
+	if err != nil {
+		return err
+	}
+	n := 0
+	recs := strings.Split(out, "\x00")
+	for i := 0; i < len(recs); i++ {
+		r := recs[i]
+		if len(r) < 4 {
+			continue
+		}
+		code, path := r[:2], r[3:]
+		if code[0] == 'R' || code[0] == 'C' {
+			i++ // the old name follows a rename
+		}
+		from := filepath.Join(iso.Source, filepath.FromSlash(path))
+		to := filepath.Join(iso.Path, filepath.FromSlash(path))
+		if strings.Contains(code, "D") {
+			_ = os.Remove(to)
+			n++
+			continue
+		}
+		st, err := os.Stat(from)
+		if err != nil || st.IsDir() || st.Size() > 50<<20 {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+			return err
+		}
+		if _, err := copyFile(from, to); err != nil {
+			return err
+		}
+		n++
+	}
+	if n == 0 {
+		return nil
+	}
+	if _, err := git(iso.Path, "add", "-A"); err != nil {
+		return err
+	}
+	if _, err := git(iso.Path, "-c", "user.name=Blaze", "-c", "user.email=blaze@localhost", "commit", "-q", "--no-verify", "-m", "Uncommitted work at the start"); err != nil {
+		return err
+	}
+	base, err := git(iso.Path, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	iso.Base, iso.Dirty = strings.TrimSpace(base), false
+	return nil
+}
+
 func evalPath(p string) string {
 	if r, err := filepath.EvalSymlinks(p); err == nil {
 		return r
