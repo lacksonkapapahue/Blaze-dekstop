@@ -2,6 +2,11 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.9.3 (switch chats while Blaze works)
+- **Chats run on their own**: you can open another chat, start a new one or switch projects while Blaze is answering. The answer keeps going in the background, in its own folder and project, and saves into its own chat. The sidebar shows a pulsing dot on chats that are still working. Open one again and you pick up the live answer. When it finishes in a chat you left, you get a notification.
+- Each chat has its own turn runner, so a chat never waits on another. Stop and new messages only affect the chat on screen. Background agents' results go to their own chat even while it's running in the background.
+- Tests: background turns save into their own chat, Stop in another chat leaves them alone, and the switch, live dot and pick-up work in the UI.
+
 ## v0.9.2 (Blaze stays free: specialists do the work, Stop is instant)
 - **Lead mode (on by default)**: Blaze does no work itself. Every task, small or large, goes to a specialist that Blaze briefs, monitors (check_specialist), steers (message_specialist) and stops (cancel_specialist), then reports back. Blaze is always free to chat. New `direct` specialists work on the real computer with no copy, for questions, system checks, installs, apps, research and commands; `build` specialists still work in their own copy for code you review. Design edits are still done directly. Turn it off in Settings › Behaviour › "Blaze does tasks itself".
 - **No more queue**: a message sent while Blaze is answering interrupts that answer (its text so far is kept) and gets answered at once.
