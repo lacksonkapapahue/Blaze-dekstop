@@ -70,7 +70,9 @@ function addMcpForm(onDone) {
       <div class="fg"><label class="label">Header <span class="weak">optional</span></label><input class="field mono hdr" placeholder="Authorization"></div></div>
     <div class="fg local" style="display:none"><label class="label">Command</label><input class="field mono cmd" placeholder="npx"></div>
     <div class="fg local" style="display:none"><label class="label">Arguments</label><input class="field mono args" placeholder="-y @modelcontextprotocol/server-filesystem ~/Documents"></div>
-    <div class="label weak note">Blaze lists the server's tools now. Each tool asks before it runs unless the server marks it read-only.</div>
+    <div class="fg local" style="display:none"><label class="label">Environment <span class="weak">optional · KEY=value per line, \${VAR} reads yours</span></label><textarea class="field mono env" rows="2" placeholder="GITHUB_TOKEN=\${GITHUB_TOKEN}"></textarea></div>
+    <div class="fg remote"><label class="label">More headers <span class="weak">optional · Name: value per line</span></label><textarea class="field mono hdrs" rows="2" placeholder="X-Workspace: blaze"></textarea></div>
+    <div class="label weak note">Blaze lists the server's tools now. Each tool asks before it runs until you set it to Always allow. Servers are shared with Blaze CLI in ~/.blaze/mcp.json; a token stays in your system keychain.</div>
     <div class="keyrow"><button class="btn accent sm add">${icon("plus", "i sm")}Add server</button><button class="btn ghost sm cancel">Cancel</button><span class="out small"></span></div>`;
   $$(".trs button", box).forEach(b => b.onclick = () => {
     tr = b.dataset.t; $$(".trs button", box).forEach(x => x.classList.toggle("on", x === b));
@@ -81,7 +83,7 @@ function addMcpForm(onDone) {
   $(".add", box).onclick = async () => {
     const out = $(".out", box), add = $(".add", box);
     add.disabled = true; out.className = "out small sub"; out.textContent = "Connecting and listing tools…";
-    const r = await API().MCPAdd({ name: $(".nm", box).value, transport: tr, url: $(".url", box).value, token: $(".tok", box).value, header: $(".hdr", box).value, command: $(".cmd", box).value, args: $(".args", box).value });
+    const r = await API().MCPAdd({ name: $(".nm", box).value, transport: tr, url: $(".url", box).value, token: $(".tok", box).value, header: $(".hdr", box).value, command: $(".cmd", box).value, args: $(".args", box).value, env: $(".env", box).value, headers: $(".hdrs", box).value });
     add.disabled = false;
     if (r && r.error && !(r.server && r.server.id)) { out.className = "out small bad"; out.textContent = r.error; return; }
     onDone(true, r && r.server);
@@ -340,3 +342,31 @@ COMMANDS.splice(COMMANDS.findIndex(c => c.name === "jobs"), 0, { name: "connect"
 } });
 
 // Tool steps for connector and MCP tools get their plain words from steps.js.
+
+// v0.8.1: Settings › MCP servers. The same servers as Accounts, shared with Blaze CLI
+// through ~/.blaze/mcp.json: add, open (tools, approval per tool), turn on or off.
+SECTIONS.splice(SECTIONS.findIndex(s => s[0] === "skills"), 0, ["mcp", "MCP servers", "layers"]);
+window.SETTINGS_FNS = window.SETTINGS_FNS || {};
+window.SETTINGS_FNS.mcp = async (col, redraw) => {
+  await loadConnectors();
+  const list = CV.mcp || [];
+  const g = group("MCP servers", `Tools from Model Context Protocol servers, as <span class="mono">mcp__server__tool</span>. Shared with Blaze CLI in <span class="mono">${esc(CV.mcp_file || "~/.blaze/mcp.json")}</span>: edit either and both see it.`);
+  if (CV.mcp_error) g.append(h("div", "pnote bad", esc(CV.mcp_error)));
+  const rows = mcpRows(list);
+  $$(".r", rows).forEach((r, i) => {
+    const s = list[i]; if (!s) return;
+    const sw = h("label", "toggle", `<input type="checkbox"${s.enabled ? " checked" : ""}>`);
+    sw.title = s.enabled ? "On for Blaze" : "Off for Blaze";
+    sw.onclick = e => e.stopPropagation();
+    $("input", sw).onchange = async e => { const err = await API().MCPSetEnabled(s.id, e.target.checked); if (err) toast(err, "error"); redraw(); };
+    r.append(sw);
+  });
+  g.append(rows);
+  const acts = h("div", "keyrow"); acts.style.marginTop = "10px";
+  const add = h("button", "btn line sm", `${icon("plus", "i sm")}Add server`);
+  add.onclick = () => { acts.replaceWith(addMcpForm(ok => redraw())); };
+  const rf = h("button", "btn ghost sm", `${icon("retry", "i sm")}Check all`);
+  rf.onclick = async () => { rf.disabled = true; rf.textContent = "Checking…"; for (const s of list.filter(x => x.enabled)) await API().MCPRefresh(s.id); redraw(); };
+  acts.append(add, rf); g.append(acts);
+  col.append(g);
+};
