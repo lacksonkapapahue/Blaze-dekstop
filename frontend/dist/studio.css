@@ -111,3 +111,14 @@
 .sl .sq { width: 8px; height: 8px; background: var(--accent); animation: pulse .9s infinite; flex: none; margin-top: 5px; }
 .sl.error { color: var(--ink); } .sl.done svg { color: var(--accent); }
 .shiplog .btn { justify-self: start; margin-top: 4px; }
+
+/* v0.9.0 artboards */
+.dstage.artboard .frames { align-items: center; }
+.fbox.abox { align-items: center; justify-content: center; }
+.abholder { position: relative; overflow: hidden; flex: none; box-shadow: var(--shadow); border: 1px solid var(--hair2); background: #fff; }
+.abholder .pframe { position: absolute; top: 0; left: 0; border: 0; box-shadow: none; }
+.dstage.artboard { position: relative; }
+.abscale { position: absolute; left: 18px; bottom: 6px; color: var(--weak); pointer-events: none; }
+.abfmt { align-items: center; }
+.abshape { flex: none; width: 22px; max-height: 26px; border: 1.5px solid var(--weak); align-self: center; margin-right: 2px; }
+.abname { width: 100%; margin: 0 0 6px; }

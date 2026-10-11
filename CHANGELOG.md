@@ -2,6 +2,12 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.9.0 (Design anything: artboards and export)
+- **New design** in the Design toolbar (and on the empty stage): a social post (1080×1350), story (1080×1920), slide (1920×1080), poster (A4 or A3), phone screen (390×844), email (600 wide), icon or logo (1024×1024) or banner (1500×500). No project folder needed: each design is its own folder under `~/.blaze/designs/`, with versions, Directions, brand kit and the chat working as they do for web pages. Your brand kit carries over.
+- **Artboards**: a page marked `<meta name="blaze-artboard" content="…">` is drawn at its real size, scaled to fit the stage (the zoom shows under it), and the model gets that format's rules: one idea per slide, print bleed and 300-dpi safe type for posters, table-free-safe 600px email, a mark that still reads at 32px for icons.
+- **Export** (shows on artboards): PNG at 2× or PDF, rendered with the Chrome, Edge, Chromium or Brave already on the computer, saved in the design's `exports/` folder named by version, and shown in Explorer or Finder.
+- CI: Go tests for formats, templates and export (export runs where a browser exists), jsdom checks for New design, the scaled artboard and Export.
+
 ## v0.8.3 (Private vision)
 - **Settings › Notifications › Screen vision › Private vision**: pictures never leave the computer. Attachments, see_screen screenshots and Copy window images are read on this computer, with the OCR built into the OS (Windows.Media.Ocr, macOS Vision, Tesseract on Linux when installed) plus a size, brightness and main-colours readout, and models get only that text. A model running on this computer (Ollama, or a custom service on localhost) may still get the picture.
 - No model download and no cloud fallback: with no OCR available, the text says so instead of sending the image.
