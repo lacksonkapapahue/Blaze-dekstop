@@ -13,126 +13,18 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Debian/Ubuntu**: `sudo apt install ./blaze-desktop_*_amd64.deb`.
 - **Other Linux**: unpack the tar.gz and run `blaze-desktop` (needs GTK 3 + WebKitGTK 4.1).
 
-## What's in v0.8.1 (MCP servers shared with Blaze CLI)
+## What it does
+- **Chat that works on your computer**: streaming answers with plain-English steps, Plan and Build modes, Auto or Autopilot approvals, and a daily spend cap.
+- **Any model**: pick a provider and model or use Auto, a free model router with live health, several keys per provider, and usage per model.
+- **Design studio**: live preview at phone, tablet and desktop widths, edits that write back to your source, Directions as live branches, brand kit, the critic, visual history, phone preview, and one-click ship to Cloudflare or GitHub Pages.
+- **Specialists**: big tasks split across parallel agents, each on its own git worktree, reviewed before anything lands.
+- **Lives in the background**: tray icon, quick ask from anywhere (Ctrl+Shift+Space, Option+Space on a Mac), native notifications, and optional proactive suggestions.
+- **Sees and hears**: reads the front window, attaches images, files and folders, and turns speech into text with Whisper on your own PC.
+- **Memory and skills**: learns facts and workflows as you go, with 19 bundled skills you can edit or turn off.
+- **Connected**: one-click Google, GitHub, Spotify, Notion and Slack, MCP servers shared with Blaze CLI (`~/.blaze/mcp.json`), and keys that sync through your Blaze account.
+- **Updates itself** from GitHub releases.
 
-- **One MCP list for both apps**: servers live in `~/.blaze/mcp.json` in the standard shape (`{"mcpServers": {name: {command, args, env} | {url, headers}}}`, plus `"type": "sse"` and `"disabled": true`). Blaze CLI reads and writes the same file; Desktop picks up edits made there (or by hand) on the next look, and keeps keys and fields it doesn't own. Servers Desktop had before move into the file once.
-- **Transports**: local commands over stdio (with `env`), Streamable HTTP and the older HTTP+SSE (with `headers`). `${VAR}` in env values and headers reads your environment, so the file can name a secret without holding it; a token typed into Desktop stays in the system keychain.
-- **Tools as `mcp__<server>__<tool>`**, the name Blaze CLI and other MCP hosts use.
-- **Approvals**: every MCP tool asks first until you set it to Always allow (a server's own read-only hint no longer skips the card); Off hides it.
-- **Settings › MCP servers**: add (remote URL with token and headers, or a local command with environment), turn on or off, check all, open a server for its tools and per-tool approval.
-
-## What's in v0.8.0 (the Design studio)
-- **Edits that write back.** Double-click text to retype it, drag the MOVE tab or the corner to move or resize, use the
-  style controls or **Swap colour › Everywhere**: Blaze changes the real file (HTML, Vue, Svelte, Astro templates and
-  JSX/TSX `style={{…}}`) as a small diff, saves a version, and shows the diff with **Undo**. Anything too involved to
-  edit by hand (a style built from variables, text spread across tags) goes to the model as before.
-- **Directions as live branches.** Directions sends 3 specialists out on their own git worktrees (or copies), carrying
-  your uncommitted page with them, and shows the three side by side as they work. **Pick** one, or **Mix**: "header
-  from B, colours from C".
-- **Brand kit and taste memory.** Pull colours, fonts, radius and logo from a URL or a logo image; every design prompt
-  follows it. Blaze also learns the fonts, colours, radii and spacing you keep and the ones you undo
-  (`~/.blaze/desktop/taste.json`, Brand › Forget).
-- **Copy any window.** Rebuild the window behind Blaze, or a dropped or pasted screenshot, as code in your stack.
-- **The critic.** Each new version is audited at 390, 820 and 1280 px (contrast, alt text, labels, tap targets,
-  sideways scroll, DOM size, image weight, load time) and scored; below 85 Blaze fixes it once on its own (turn off in
-  the score card).
-- **Talk while you point.** Select an element, hold **Hold to talk**, say what to change.
-- **States board.** Default, hover, focus, pressed, empty, loading, error and dark mode in one grid.
-- **Visual history.** A branching timeline (restoring an old version starts a new branch), a before/after slider in
-  Compare, and **Restore this element from vNN**.
-- **Phone preview.** A QR code opens the live preview on your phone over Wi-Fi behind a secret link, with hot reload and
-  long-press comments that show up in Blaze.
-- **One-click ship.** Cloudflare Pages (wrangler via npx) or GitHub Pages (a `gh-pages` push), free tiers, with an
-  optional comment widget so friends can pin comments on the shared page (blaze-auth Worker 0.7.0:
-  `/v1/comments.js`, `/v1/comments/<site>`).
-- Fixes the flaky first-run SQLite lock (`TestConcurrentFirstRunInit`) that stopped the v0.7.7 Linux build.
-
-## What's in v0.8.0 (the Design studio)
-
-- **Edits that write back**: retype text in the preview (double-click), drag to move, drag the corner to resize, change colours and spacing with the controls, or swap a colour everywhere. Each edit lands in the real source (HTML, Vue, Svelte, JSX/TSX) as a small diff with Undo, without a model call. Anything too involved for a hand edit goes to Blaze.
-- **Directions as live branches**: three specialists redesign the page on their own git worktrees (or copies, carrying your uncommitted work), side by side. Pick one, or mix them: "header from B, colours from C".
-- **Brand kit and taste**: pull colours, fonts, radius and logo from a site or a logo. Blaze also learns the fonts, colours and spacing you keep and the ones you undo, and follows both.
-- **Copy any window**: rebuild the window behind Blaze, or a dropped or pasted screenshot, as editable code in the project's stack.
-- **The critic**: every version is checked at phone, tablet and desktop widths (contrast, alt text, labels, tap targets, overflow, weight, load time) and scored. Below 85 it fixes itself once (Settings: Fix automatically).
-- **Talk while you point**: hold the mic in the selection bar and say what to change.
-- **States board**: hover, focus, pressed, empty, loading, error and dark mode at once.
-- **Visual history**: a branching timeline, a before/after slider when comparing, and "restore just this element" from any version.
-- **Preview on your phone**: scan a QR code on the same Wi-Fi; it hot-reloads and a long press leaves a comment pinned to that spot.
-- **One-click ship**: Cloudflare Pages or GitHub Pages, free tiers, with optional pinned comments on the shared link (Worker 0.7.0: `/v1/comments`).
-- Fixed the flaky Linux CI test (`blaze.db: database is locked` when several openers create it at once).
-
-## What's in v0.7.7 (keys shared with Blaze CLI and your phone)
-- **One key store with Blaze CLI** (`internal/keystore`, the same file in both repos): OS keychain service `blaze-cli`
-  (`<provider>`, `<provider>#extra` for extra keys) or, with no keychain, `~/.blaze/keys.json` (0600) read fresh on
-  every use, so the two apps never overwrite each other's keys. Keys older versions kept under `"keys"` in
-  `config.json` are copied over once and kept for older Blaze versions; `config.json` saves keep every field they
-  don't own.
-- **Keys follow your Blaze account** to Blaze on your phone and other computers (Settings › Account › Model keys,
-  **Sync now**): after sign-in, whenever you add or remove a key, and at start (at most hourly). The apps encrypt the
-  keys with AES-256-GCM before upload; the service stores only the blob. Newest change per provider wins; keys saved
-  before syncing existed are merged, not replaced. Connector tokens and your session never sync.
-- **blaze-auth Worker 0.6.0**: `GET/POST /v1/keys` (one encrypted blob per account, revision check, deleted with the
-  account). Until it's deployed, keys just stay shared on this computer.
-
-## What's in v0.7.6 (a tidier Preview picker)
-- **Current, Other, All.** The Design tab's Preview picker opens on **Current**: the pages this task changed, plus the one you're previewing (or, before anything changed, the pages next to it). **Other** holds the rest of the folder and **All** shows everything, each with a count; search works inside the tab.
-- **Collapses when you click away.** Clicking anywhere outside the picker closes it, including inside the live preview itself (the preview tells Blaze about the press, and focus moving into the frame counts too).
-
-## What's in v0.7.0 (skill library and proactive memory)
-- **Bundled skill library**: 19 skills ship inside Blaze (`skills/` in this repo) and are seeded into `~/.blaze/skills` on start: web design in the Team of Keys and classic Blaze styles, landing pages, slide decks, documents, deep research with sources, code review, debugging, git/PR, tests, refactoring, data analysis, shell/sysadmin (Windows, macOS, Linux, Arch), email drafting, planning, images/assets, web audits, API integrations and a skill-creator guide. Upgrades are version-aware and never overwrite a skill you edited; turn any skill off, delete it or restore it in **Settings › Skills**.
-- **Learns as you go**: Blaze now saves lasting facts and preferences on its own, replaces memories that changed instead of piling up duplicates, forgets on request, and writes or improves a skill when a workflow repeats or you teach it a method. A cheap end-of-turn check (skipped for small talk, capped by your spend limit) catches what the turn missed. A small mark under the answer shows what it learned. **Settings › Behaviour › Learning** turns it off.
-
-## What's in v0.6.0 (a lead with specialists)
-1. **Big tasks split across specialists.** For work with independent parts (a frontend and a backend change, tests for several packages, research on separate questions) the main chat acts as the lead: it briefs specialists with `dispatch_specialist`, they run in parallel (3 at a time by default, Settings › Behaviour › *Background agents & specialists*, extras queue), and each result comes back to the lead automatically. Small or step-by-step tasks it still does itself.
-2. **Each specialist gets its own copy.** A Build specialist works in its own **git worktree** on a `blaze/<name>` branch (or a copy of the folder when it isn't a repo, skipping `node_modules` and other caches), so specialists never collide and nothing reaches your folder until the lead has reviewed the diff (`check_specialist` with `diff: true`) and called `apply_specialist`. Applied work lands as uncommitted changes for you to commit; a copy never overwrites a file you changed meanwhile.
-3. **Never more than the lead.** Specialists inherit Plan/Build (in Plan they only scout and plan), Auto/Autopilot approvals, the step budget and the daily spend cap. The lead can check, steer (`message_specialist`) or stop (`cancel_specialist`) any of them.
-4. **A compact Specialists strip** above the composer: one row per specialist with a mini particle orb, its task, mode, state and time, Stop, and on expand its plan, log, report and the files it changed (with Apply / Discard if you'd rather decide yourself). See `docs/plan-v0.6.0.md`.
-
-## What's in v0.5.0 (Blaze accounts and one-click connectors)
-1. **Connect in one click.** Google (Gmail, Calendar, Drive), GitHub, Spotify, Notion and Slack connect with a browser sign-in through `blaze-auth`, a small Cloudflare Worker on the free tier (`cloud/`), so you no longer need your own developer app. "Use your own key/developer app instead" stays under *Advanced* on each connector page; providers the Worker isn't set up for yet say "One-click Connect is coming soon" and keep manual setup open.
-2. **Blaze account (optional).** Settings › Account or `/account`: sign in with Google, GitHub or email and password, sign out, or delete the account. A card at the top of Accounts shows who's signed in.
-3. **Private by design.** Client secrets live only on the Worker; provider tokens are never stored there beyond a 5-minute one-time code. The desktop side uses a loopback callback with PKCE and opens your system browser. Override the server with `BLAZE_CLOUD_URL` or `cloud_url` in `~/.blaze/desktop/cloud.json`. See `cloud/README.md` and `docs/plan-v0.5.0.md`.
-
-## What's in v0.4.9 (notifications, screen vision and composer modes, with background agents)
-1. **Native notifications.** Blaze works out once per computer how to notify you (Windows toast, macOS Notification Center, or D-Bus on Linux, which covers GNOME, KDE, and mako/dunst/swaync on Hyprland or sway), caches it in `~/.blaze/notify.json`, and falls back to `notify-send`, `osascript` or a PowerShell toast. It tells you when a long answer or background job finishes while Blaze is hidden, and when a scheduled job runs (failures always; successes wait out quiet hours). The model gets a `notify` tool with just a title and a body. Settings › Notifications shows the method, a test button and recent notifications; clicking one opens Blaze on its chat.
-2. **Proactive suggestions (opt-in).** A frugal watcher glances at the front window at most every 10 minutes, only while you're at the computer, never in full screen or quiet hours (22:00–08:00 by default), at most 3 an hour and 8 a day, and backs off when you ignore it. It sleeps between checks instead of polling and speaks only when it can genuinely help (an error, a failing build, a confusing form).
-3. **Screen vision.** `read_screen` reads the front window's accessibility tree (UI Automation, AX, AT-SPI) as compact text; `see_screen` falls back to a downscaled screenshot (GDI, screencapture, grim on Hyprland/sway, the desktop portal on GNOME/KDE, X11) for a vision model. Reads are cached by window and picture hash, password fields are never read and are blurred in screenshots, and a bar at the top shows whenever the screen is being read, with a one-click off switch. Doctor checks notifications, screen reading, screenshots and suggestions, with Fix buttons for the macOS permissions.
-4. **Attach anything.** The composer's **+** attaches images, files and folders; you can also drag them onto the window or paste a screenshot. Each shows as a chip you can remove. Images go to models that can see (Gemini first); with no vision model Blaze says so and sends the path instead. Text files travel in the message, folders as a short tree.
-5. **Talk instead of typing.** The mic (or **Ctrl+Shift+M**) turns speech into text with Whisper on your own PC: free, offline after a one-time download you agree to (whisper.cpp ~10 MB plus a 75–466 MB model, base by default, with progress). Windows and Linux download the official whisper.cpp build; macOS uses Homebrew. If it can't run, Blaze says why.
-6. **Two modes instead of AUTO-APPROVE**, shown in the composer and remembered:
-   - **Work mode** (**Ctrl+Tab**): **Plan** reads and scouts only and ends with a plan. It's enforced in Go: tools that can change things are not offered and are refused if called. **Build** has every tool.
-   - **Approval** (**Shift+Tab**): **Auto** asks before risky commands, deletes and installs. **Autopilot** works until done: when Blaze asks you something, it's told you're away and decides by best practice. Disk-wiping commands stay blocked, and a run stops at 150 steps, 45 minutes or your daily spend cap.
-
-## What's in v0.4.1
-**Answer cards.** Blaze answers in a sentence or four, and long detail (tables, step lists, reports, long code) folds into a card above it: clipped with a fade, one click (or the chevron) to read it all, a copy button for its Markdown. Short cards just show in full. Works while streaming, in saved chats and in the orb. Turn it off in Settings › Behaviour › *Fold long answers into cards*.
-
-## What's in v0.4.0
-1. **Lives in the background.** A tray icon (menu-bar icon on macOS) with Quick ask, Open Blaze, what Blaze is doing, and Quit. Closing the window hides Blaze instead of quitting (Settings › Behaviour), and it can start hidden when you sign in.
-2. **Quick ask from anywhere.** Press **Ctrl+Shift+Space** (Option+Space on a Mac) for the orb: a small always-on-top Blaze in the corner. Expand opens the full window, Esc hides it. macOS asks for Accessibility permission once; on Wayland, bind a system shortcut to `blaze-desktop --orb`. On Hyprland (e.g. Omarchy) and sway Blaze floats the orb itself via `hyprctl` / `swaymsg`; on other tiling window managers add a rule that floats the app id `blaze`.
-3. **One Blaze at a time.** Opening it again brings the running one forward; `--orb` opens quick ask, `--background` starts hidden.
-4. **Calmer answers.** Instead of raw commands, each answer shows one plain-English status line ("Reading index.html", "Searching the web for …") that becomes "Worked for 12s"; click it to see every step. Power users can turn the full list back on.
-5. Windows gets Blaze's own title bar. Doctor checks the tray, shortcut and start-at-login.
-
-## What's in v0.3.0
-1. **Fixed: Design turns breaking on Gemini.** Tool calls streamed by Gemini (whole calls per chunk, repeated index 0, arguments as an object) were glued together or lost their name, then saved into the chat, so every later request got `HTTP 400: Request contains an invalid argument`. The stream reader now splits calls correctly, keeps Gemini's thought signatures, a gatekeeper repairs or drops malformed calls before they are run or saved, and the history is cleaned before every request (with one flattened retry if a provider still refuses it).
-2. **Pick any provider and model.** The model chip and `/model` switch provider *and* model, or Auto. Settings › Models has a clear default (Auto or one model), the Auto chain with live health (speed, resting, failing) that you can reorder, a "use my free stack" preset, fallback, fastest-first and a daily spend cap.
-3. **Models from the mobile app**: a built-in catalog per provider (tools, vision, context size, free tier), the provider's live model list, a "check my plan" probe, OpenRouter's best free tool models picked daily, several keys per provider (when one runs out the next carries on), a token meter that skips a model before it hits its rate limit, plan & quota per provider, usage and cost per model, and plain-English errors. New providers: Cerebras and any OpenAI-compatible service. One-click OpenRouter sign-in.
-4. **Keyless is never used for actions.** Pollinations can't call tools, so it is never the default, never in the chain, and never used for Work actions or Design; at most it answers plain chat when nothing else is set up, and only if you allow it.
-5. **Redesigned app**: calmer sidebar with icons, segmented Work/Design tabs, a model switcher popover, compact one-line tool steps (repeated errors fold into ×N, older steps fold away), an error card with Retry / Switch model / Details, a proper Design toolbar (labelled preview picker, icon toggles for device and theme, versions as a slim collapsible strip, resizable preview/chat split), and Settings with a left sub-nav. Light and dark both tuned.
-
-## What's in v0.2.1
-1. **In-app updates**: Blaze checks GitHub for a newer release when it opens (Settings › Updates, or `/update`) and installs it in place: the setup.exe or portable exe on Windows, Blaze.app from the .dmg on macOS, and the .deb, Arch package or tar.gz on Linux, then reopens. While the repo is private, set `BLAZE_UPDATE_TOKEN` to a GitHub token that can read it.
-2. **Fix**: no more blank window on launch. The UI waits for the app to finish starting instead of failing on its first call.
-
-## What's in v0.2.0
-1. **Command menu**: type `/` (or press `+`) for a floating list above the chat box: new, model, project, folder, design, retry, stop, skills, theme and more. `@` attaches project files.
-2. **Projects**: a folder with its own chats and standing instructions; project page with git status and recent files.
-3. **Work / Design tabs**: visual work (HTML/CSS/SVG or a running dev server) opens in Design, by asking first, always or never.
-4. **Live preview** at desktop, tablet and phone widths; every change is a numbered version you can view, compare and restore; "Directions" asks for 3 options.
-5. **Point to edit**: Select mode, click (Shift-click for more) and Change, Remove, Restyle, Replace text or Ask; live colour/size/spacing tweaks, then Apply writes them into the code.
-6. Blaze names the real model it runs on.
-
-Earlier (v0.1.0): first-run PC detection and setup, streaming chat with tool steps, confirm cards, jobs, schedule, doctor, settings.
+What changed in each version: [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Build
 Go 1.26 + `go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0`, then `wails build`
