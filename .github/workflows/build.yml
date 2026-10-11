@@ -64,8 +64,8 @@ jobs:
         if: failure() && github.event_name == 'pull_request'
         shell: bash
         run: |
-          grep -E -- '--- FAIL|^FAIL|panic:|_test.go:[0-9]+:|cannot|undefined' build.log | head -n 10 | while IFS= read -r l; do echo "::error::$l"; done
-          echo "::error::$(tail -n 15 build.log | tr '\n' '|' )"
+          echo "::error::$(grep -E -B1 -A4 -- '--- FAIL|panic:' build.log | head -n 60 | tr '\n' '|')"
+          echo "::error::$(tail -n 15 build.log | tr '\n' '|')"
       - uses: actions/upload-artifact@v4
         with: { name: windows, path: dist/ }
 
