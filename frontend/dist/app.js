@@ -435,7 +435,8 @@ const isAgentResult = c => String(c || "").startsWith("[Background agent result"
 function agentNote(content) {
   const m = /^\[Background agent result · ([^·\]]+) · (\w+)/.exec(content) || [];
   const word = { done: "finished", failed: "couldn't finish" }[(m[2] || "").trim()] || "reported back";
-  return h("div", "agnote", `<span class="label">Agent · <b>${esc((m[1] || "").trim())}</b> ${esc(word)}</span>`);
+  const who = typeof Specs !== "undefined" && Specs.has((m[1] || "").trim()) ? "Specialist" : "Agent";
+  return h("div", "agnote", `<span class="label">${who} · <b>${esc((m[1] || "").trim())}</b> ${esc(word)}</span>`);
 }
 
 // User bubbles hide attached file bodies and long design-edit context.
@@ -770,7 +771,7 @@ on("delta", d => {
 });
 on("tool", t => {
   if (!current) return;
-  if (Agents.isMainTool(t.name)) { thinking(true, t.name === "dispatch_agent" ? "Handing this to a background agent" : "Checking on your agents"); return; }
+  if (Agents.isMainTool(t.name)) { thinking(true, t.name === "dispatch_agent" ? "Handing this to a background agent" : t.name === "dispatch_specialist" ? "Briefing a specialist" : t.name === "apply_specialist" ? "Applying a specialist's changes" : /specialist/.test(t.name) ? "Checking on the specialists" : "Checking on your agents"); return; }
   thinking(false);
   if (current.text) current.text += "\n\n";
   addStep(current, t.id, t.name, t.args)._t0 = Date.now();
@@ -1721,13 +1722,13 @@ function voiceGroup(redraw) {
 
 // Settings › Behaviour › Background agents: how many run at once.
 function agentsGroup(redraw) {
-  const g = group("Background agents", "Blaze hands long jobs to background agents so you can keep chatting. More at once finishes sooner but works your computer harder.");
+  const g = group("Background agents & specialists", "Blaze hands long jobs to background agents, and splits big tasks across specialists that work in parallel. More at once finishes sooner but works your computer harder.");
   const row = h("div", "hkrow", `<span class="tt">Run at most</span>`);
   const seg = h("div", "seg");
   const cur = S.prefs.max_agents || (S.info && S.info.cores && S.info.cores <= 2 ? 1 : 3);
   [1, 2, 3, 4, 6].forEach(n => { const b = h("button", cur === n ? "on" : "", `${n} at once`); b.onclick = async () => { S.prefs.max_agents = await API().SetMaxAgents(n); redraw(); }; seg.append(b); });
   row.append(seg);
-  const bx = h("div", "box pad formgrid"); bx.append(row, h("div", "hknote", "Extra agents wait in a queue and start when one finishes."));
+  const bx = h("div", "box pad formgrid"); bx.append(row, h("div", "hknote", "Extra agents and specialists wait in a queue and start when one finishes. Specialists that change code each work in their own git worktree (or a copy of the folder) until Blaze reviews and applies their changes."));
   g.append(bx);
   return g;
 }

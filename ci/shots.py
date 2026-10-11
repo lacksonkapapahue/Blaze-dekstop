@@ -145,6 +145,55 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"agent-interrupted-{theme}.png"))
         if not pg.evaluate("!!document.querySelector('.agcard.interrupted .ag-acts .btn.accent')"):
             errs.append("interrupted agent card has no Resume button")
+        # v0.6.0: orchestrator + specialists. The lead splits the task; a compact strip
+        # above the composer shows each specialist (two run, one queues at the cap of 2 here).
+        pg.evaluate("newChat()"); pg.wait_for_timeout(300)
+        pg.evaluate("""sendText('Add dark mode to HomeGlow: a toggle in the header, CSS variables for every colour, and contrast tests for both themes.', []);
+          fire('turn', {kind: 'user', conv: 'c10'});
+          fire('route', {route: 'Google Gemini · gemini-3.8-flash'});
+          window.__specs.forEach((s, i) => {
+            fire('tool', {id: 'sp' + i, name: 'dispatch_specialist', args: JSON.stringify({name: s.handle, brief: s.task})});
+            fire('agent', {...s, status: i < 2 ? 'running' : 'queued', queue: i < 2 ? 0 : 1, now: 'Starting', n: 0, started: i < 2 ? Date.now() - (80 - i * 25) * 1000 : 0, seconds: i < 2 ? 80 - i * 25 : 0});
+            fire('tool_done', {id: 'sp' + i, result: 'started: specialist "' + s.handle + '" (build).'});
+          });
+          fire('delta', "This splits cleanly, so I've briefed **three specialists**: the toggle, the colour variables and the contrast tests. Each works in its own worktree; I'll review their changes before anything touches your folder.");
+          fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 2.3, handoff: true});
+          window.__agentSteps.slice(0, 2).forEach(s => fire('agent_step', {handle: 'theme-toggle', step: s}));
+          fire('agent_step', {handle: 'theme-toggle', step: {id: 'tt3', name: 'file_edit', args: '{"path":"sections/header.liquid"}', plain: 'Editing header.liquid', done: false, at: 'x'}});
+          fire('agent_step', {handle: 'css-vars', step: {id: 'cv1', name: 'file_search', args: '{"pattern":"#[0-9a-f]{6}"}', plain: 'Searching your files', done: false, at: 'y'}});""")
+        pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"orch-running-{theme}.png"))
+        if pg.evaluate("document.querySelectorAll('#specs .sprow').length") != 3:
+            errs.append("specialists strip does not list 3 specialists")
+        if pg.evaluate("document.querySelectorAll('#specs .sprow.live').length") != 2:
+            errs.append("specialists strip does not show 2 running")
+        if not pg.evaluate("!!document.querySelector('#specs .sprow.live .sp-mk .morb')"):
+            errs.append("specialist rows have no mini orb")
+        # Expand one: its plan, where it works, and its log so far.
+        pg.evaluate("document.querySelector('#specs .sprow .sp-line').click()"); pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"orch-expanded-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('#specs .sprow.open .sp-plan')"):
+            errs.append("expanded specialist does not show its plan")
+        pg.evaluate("document.querySelector('#specs .sprow.open .sp-line').click()")
+        # css-vars finishes: its result wakes the lead, which reviews before applying.
+        pg.evaluate("""fire('agent', {handle: 'css-vars', kind: 'specialist', conv: 'c10', status: 'done', review: 'pending', changes: window.__specChanges, now: '', n: 9,
+            steps: window.__agentSteps.slice(0, 4), started: Date.now() - 140000, ended: Date.now(), seconds: 140,
+            result: 'Moved **31 hard-coded colours** in 3 files to variables on `:root`, with a `[data-theme=dark]` set in the new `assets/theme-dark.css`.\n\n- `pnpm build` passes (9.4s).\n- Left `header.liquid` alone as briefed.'});
+          fire('agent', {handle: 'contrast-tests', kind: 'specialist', conv: 'c10', status: 'running', queue: 0, now: 'Starting', started: Date.now() - 2000, seconds: 2});
+          fire('turn', {kind: 'agent', handle: 'css-vars', conv: 'c10'});
+          fire('tool', {id: 'rv1', name: 'check_specialist', args: '{"name":"css-vars","diff":true}'});
+          fire('tool_done', {id: 'rv1', result: '- css-vars · build · done'});
+          fire('delta', '**css-vars** is in: 31 colours now use variables and the build passes. I checked the diff and it only touches the four CSS files, so it is ready to apply once the toggle lands. Two specialists are still working.');
+          fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 3.1});""")
+        pg.wait_for_timeout(300)
+        pg.evaluate("document.querySelector('#specs .sprow.rv-pending .sp-line').click()"); pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"orch-review-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('#specs .sprow.rv-pending .sp-acts .btn.accent')"):
+            errs.append("finished specialist has no Apply button for review")
+        if pg.evaluate("(document.querySelector('#specs .sp-sum') || {}).textContent") != "2 running · 1 to review":
+            errs.append("specialists summary wrong: " + str(pg.evaluate("(document.querySelector('#specs .sp-sum') || {}).textContent")))
+        pg.evaluate("""['theme-toggle', 'contrast-tests'].forEach(h => fire('agent', {handle: h, status: 'cancelled', ended: Date.now()}));
+          fire('agent', {handle: 'css-vars', review: 'discarded'})""")
         # v0.4.2: AI chat titles. Mid-typewriter, then settled; rename on double-click.
         pg.evaluate("fire('title', {id: 'c2', title: 'Postgres Container For HomeGlow', source: 'auto'})"); pg.wait_for_timeout(560)
         pg.screenshot(path=str(out / f"titles-typing-{theme}.png"))

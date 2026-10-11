@@ -230,6 +230,17 @@
     { role: "tool", tool_call_id: "d1", content: 'started: agent "fix-build" is working in the background.' },
     { role: "assistant", content: "On it. I'll report back when the build is green." }],
     agents: [{ handle: "fix-build", task: "Fix the failing HomeGlow build (pnpm build), then run pnpm test and make sure all tests pass. Report what was wrong.", conv: "c8", status: "interrupted", now: "", n: 3, steps: window.__agentSteps.slice(0, 3), started: now0 - 300000, ended: 0, seconds: 95 }] };
+  // v0.6.0: the lead splits a task across three specialists (worktrees on their own branches).
+  window.__specs = [
+    { handle: "theme-toggle", kind: "specialist", mode: "build", iso: "worktree", branch: "blaze/theme-toggle", path: "/home/luke/.blaze/desktop/worktrees/theme-toggle-3fa1c2", conv: "c10",
+      task: "Add a light/dark toggle to the HomeGlow header (sections/header.liquid + assets/theme-toggle.js). Persist the choice in localStorage, respect prefers-color-scheme on first visit. Run pnpm test.",
+      plan: "1. Add the toggle button to header.liquid\n2. Write theme-toggle.js (localStorage + prefers-color-scheme)\n3. Run pnpm test and pnpm build" },
+    { handle: "css-vars", kind: "specialist", mode: "build", iso: "worktree", branch: "blaze/css-vars", path: "/home/luke/.blaze/desktop/worktrees/css-vars-9b07de", conv: "c10",
+      task: "Move every hard-coded colour in assets/*.css to CSS variables with a [data-theme=dark] set. Don't touch header.liquid. Run pnpm build.",
+      plan: "1. Find hard-coded colours in assets/*.css\n2. Add :root and [data-theme=dark] variables\n3. Replace the colours, then pnpm build" },
+    { handle: "contrast-tests", kind: "specialist", mode: "build", iso: "worktree", branch: "blaze/contrast-tests", path: "/home/luke/.blaze/desktop/worktrees/contrast-tests-51c0aa", conv: "c10",
+      task: "Write vitest tests in tests/contrast.test.ts that check text/background contrast is at least 4.5:1 in both themes, reading the variables from assets/base.css.", plan: "" }];
+  window.__specChanges = [{ path: "assets/base.css", op: "modified" }, { path: "assets/product.css", op: "modified" }, { path: "assets/cart.css", op: "modified" }, { path: "assets/theme-dark.css", op: "added" }];
   // v0.5.0: Blaze account through blaze-auth (signed out until a shot signs in).
   const acctUser = { id: "u_demo", email: "kapapaluckson75@gmail.com", name: "Lackson Kapapa", avatar_url: "", email_verified: true, has_password: true, providers: ["google"], created_at: 1791720000 };
   window.__acct = { signed_in: false, user: null, login: { email: true, google: true, github: false }, online: true, pending: "", service: "https://blaze-auth.blaze-app.workers.dev" };
@@ -243,7 +254,8 @@
     ConnectorCancel: async id => { const c = connView.connectors.find(x => x.id === id); if (c) { c.status = "not_connected"; c.pending = null; } },
     ConnectorConnectManual: async () => ({ status: "error", error: "Paste your client ID first (see the steps)." }),
   });
-  Object.assign(A, { Agents: async () => [], AgentStop: async () => "", AgentResume: async () => "", AgentDiscard: async () => "", AnswerAgent: async () => {}, SetMaxAgents: async n => n });
+  Object.assign(A, { Agents: async () => [], AgentStop: async () => "", AgentResume: async () => "", AgentDiscard: async () => "", AnswerAgent: async () => {}, SetMaxAgents: async n => n,
+    SpecialistReview: async (h, action) => { window.fire && window.fire("agent", { handle: h, review: action === "apply" ? "applied" : "discarded" }); return ""; } });
   window.go = { main: { App: new Proxy(A, { get: (t, k) => t[k] || (async () => "") }) } };
   // Events are captured so the screenshot script can play a turn: fire("tool", {...}).
   window.__ev = {};

@@ -561,7 +561,7 @@ func (a *App) run(ctx context.Context) {
 		hist := trim(a.history)
 		a.mu.Unlock()
 		conv := a.convKey()
-		sys := a.system(recentQuery(hist)) + tools.ExtraLine(conv) + agents.Delegation
+		sys := a.system(recentQuery(hist)) + tools.ExtraLine(conv) + agents.Delegation + agents.Orchestration
 		if note != "" {
 			sys += "\nABOUT YOUR LAST REPLY\n" + note + "\n"
 		}
@@ -628,7 +628,8 @@ func (a *App) run(ctx context.Context) {
 				a.mu.Lock()
 				conv := a.convID
 				a.mu.Unlock()
-				out := a.agents.HandleMainTool(tc.Function.Name, tc.Function.Arguments, conv, a.prefs.Folder)
+				// Specialists inherit the lead's mode and step budget (never more).
+				out := a.agents.HandleLeadTool(tc.Function.Name, tc.Function.Arguments, agents.Lead{Conv: conv, Folder: a.prefs.Folder, Mode: a.workMode(), MaxSteps: steps})
 				res = out.Result
 				dispatched = dispatched || out.Dispatched != ""
 			case tc.Function.Name == "update_blaze":

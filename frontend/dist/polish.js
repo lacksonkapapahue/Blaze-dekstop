@@ -83,7 +83,7 @@
   // One sprite sheet of a turning dot sphere per (size, dpr, theme); every mark blits its
   // frame. Only marks on screen that belong to live work animate (≈15 fps); the rest keep a
   // frozen frame. prefers-reduced-motion: always frozen.
-  const SEL = ".msg.blaze .who .mk, .msg.blaze .work .sq, .step .st, .thinking .sq, .acard .amk";
+  const SEL = ".msg.blaze .who .mk, .msg.blaze .work .sq, .step .st, .thinking .sq, .acard .amk, .sprow .sp-mk";
   const FRAMES = 48, FPS = 15;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   const sheets = {};
@@ -127,7 +127,7 @@
     ctx.drawImage(sh.cv, (m._f ?? frame) * sh.px, 0, sh.px, sh.px, 0, 0, sh.px, sh.px);
   }
 
-  const isLive = m => !!(m.closest(".work.live, .step.run, .thinking, .acard.live") ||
+  const isLive = m => !!(m.closest(".work.live, .step.run, .thinking, .acard.live, .sprow.live") ||
     (typeof current !== "undefined" && current && current.el && m.closest(".who") && m.closest(".msg.blaze") === current.el));
 
   const io = typeof IntersectionObserver === "function" ? new IntersectionObserver(es => {
