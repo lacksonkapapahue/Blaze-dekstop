@@ -178,7 +178,7 @@ with sync_playwright() as p:
         # css-vars finishes: its result wakes the lead, which reviews before applying.
         pg.evaluate("""fire('agent', {handle: 'css-vars', kind: 'specialist', conv: 'c10', status: 'done', review: 'pending', changes: window.__specChanges, now: '', n: 9,
             steps: window.__agentSteps.slice(0, 4), started: Date.now() - 140000, ended: Date.now(), seconds: 140,
-            result: 'Moved **31 hard-coded colours** in 3 files to variables on `:root`, with a `[data-theme=dark]` set in the new `assets/theme-dark.css`.\n\n- `pnpm build` passes (9.4s).\n- Left `header.liquid` alone as briefed.'});
+            result: 'Moved **31 hard-coded colours** in 3 files to variables on `:root`, with a `[data-theme=dark]` set in the new `assets/theme-dark.css`.\\n\\n- `pnpm build` passes (9.4s).\\n- Left `header.liquid` alone as briefed.'});
           fire('agent', {handle: 'contrast-tests', kind: 'specialist', conv: 'c10', status: 'running', queue: 0, now: 'Starting', started: Date.now() - 2000, seconds: 2});
           fire('turn', {kind: 'agent', handle: 'css-vars', conv: 'c10'});
           fire('tool', {id: 'rv1', name: 'check_specialist', args: '{"name":"css-vars","diff":true}'});
