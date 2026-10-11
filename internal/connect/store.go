@@ -92,6 +92,7 @@ type ConnState struct {
 	Scopes      []string          `json:"scopes,omitempty"`  // granted
 	Expired     bool              `json:"expired,omitempty"` // refresh failed: needs Reconnect
 	Connected   bool              `json:"connected,omitempty"`
+	Via         string            `json:"via,omitempty"` // "broker": one-click through Blaze's sign-in service
 	ConnectedAt time.Time         `json:"connected_at,omitempty"`
 	Modes       map[string]string `json:"modes,omitempty"` // tool -> ask | always | off
 }

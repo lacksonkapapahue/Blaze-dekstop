@@ -43,6 +43,7 @@ type Manager struct {
 
 	mu        sync.Mutex
 	refreshMu sync.Mutex
+	broker    Broker // one-click sign-in service (nil: manual setup only)
 	loop      *loopback
 	pending   map[string]*PendingView
 	device    map[string]context.CancelFunc
@@ -157,6 +158,7 @@ type PendingView struct {
 	Kind     string `json:"kind"` // browser | device
 	URL      string `json:"url"`
 	UserCode string `json:"user_code,omitempty"`
+	OneClick bool   `json:"one_click,omitempty"` // through Blaze's sign-in service
 }
 
 type ConnectorView struct {
@@ -179,6 +181,9 @@ type ConnectorView struct {
 	Tools        []ToolView   `json:"tools"`
 	Pending      *PendingView `json:"pending"`
 	Since        string       `json:"since"`
+	OneClick     bool         `json:"one_click"` // Connect goes through Blaze's sign-in service
+	Cloud        string       `json:"cloud"`     // ready | soon | "" (service offline or off)
+	Via          string       `json:"via"`       // broker | "" (your own app or token)
 }
 
 type MCPView struct {
@@ -222,6 +227,9 @@ func (m *Manager) needsSetup(c *Connector) bool {
 	if c.Auth != AuthOAuth && c.Auth != AuthDevice {
 		return false
 	}
+	if m.oneClick(c) {
+		return false
+	}
 	st := m.store.Conn(c.ID)
 	return st.ClientID == "" || (c.SecretRequired && m.store.ClientSecret(c.ID) == "")
 }
@@ -260,7 +268,8 @@ func (m *Manager) connView(c *Connector) ConnectorView {
 	st := m.store.Conn(c.ID)
 	cv := ConnectorView{ID: c.ID, Name: c.Name, Blurb: c.Blurb, Auth: c.Auth, Status: m.statusOf(c, st), Account: st.Account,
 		Enabled: !st.Disabled, Steps: c.Steps, Console: c.Console, ConsoleName: c.ConsoleName, Redirect: st.Redirect,
-		CustomScheme: c.CustomScheme, Groups: c.Groups}
+		CustomScheme: c.CustomScheme, Groups: c.Groups, Cloud: m.cloudState(c), Via: st.Via}
+	cv.OneClick = cv.Cloud == "ready"
 	if cv.Status == "connected" || cv.Status == "expired" {
 		if !st.ConnectedAt.IsZero() {
 			cv.Since = st.ConnectedAt.Format("2 Jan 2006")
@@ -421,6 +430,15 @@ func (m *Manager) Connect(id string) ConnectResult {
 		return fail(errors.New("no connector " + id))
 	}
 	st := m.store.Conn(id)
+	if m.useBroker(c, st) {
+		return m.startBroker(c, m.wantScopes(c, st, nil))
+	}
+	return m.connectManual(c, st)
+}
+
+// connectManual is the do-it-yourself path: your own developer app, or a token.
+func (m *Manager) connectManual(c *Connector, st ConnState) ConnectResult {
+	id := c.ID
 	if (c.Auth == AuthOAuth || c.Auth == AuthDevice) && st.ClientID == "" {
 		return fail(errors.New("Paste your " + c.Name + " client ID first (see the steps)."))
 	}
@@ -442,16 +460,23 @@ func (m *Manager) Connect(id string) ConnectResult {
 // tool's when tool is ""). Only ever started by the user.
 func (m *Manager) GrantScopes(id, tool string) ConnectResult {
 	c := m.cat[id]
-	if c == nil || c.Auth != AuthOAuth {
+	if c == nil {
 		return fail(errors.New("this connector can't add permissions"))
 	}
 	st := m.store.Conn(id)
+	viaBroker := st.Via == "broker" && m.oneClick(c)
+	if c.Auth != AuthOAuth && !viaBroker {
+		return fail(errors.New("this connector can't add permissions"))
+	}
 	var extra []string
 	for _, n := range m.order {
 		t := m.tools[n]
 		if t.Connector == id && (tool == "" || t.Name == tool) {
 			extra = append(extra, t.Scopes...)
 		}
+	}
+	if viaBroker {
+		return m.startBroker(c, m.wantScopes(c, st, extra))
 	}
 	return m.startOAuth(c, st, m.wantScopes(c, st, extra))
 }
@@ -631,6 +656,12 @@ func (m *Manager) HandleCallback(raw string) (title, msg string, ok bool) {
 }
 
 func (m *Manager) finishConnect(ctx context.Context, c *Connector, tok *Token, requested []string) error {
+	return m.finishConnectVia(ctx, c, tok, requested, "", "")
+}
+
+// finishConnectVia stores a new sign-in. via is "broker" for one-click connections;
+// hint is the account name to show when WhoAmI can't tell.
+func (m *Manager) finishConnectVia(ctx context.Context, c *Connector, tok *Token, requested []string, via, hint string) error {
 	granted := splitScopes(tok.Scope)
 	if len(granted) == 0 {
 		granted = requested
@@ -644,8 +675,11 @@ func (m *Manager) finishConnect(ctx context.Context, c *Connector, tok *Token, r
 			account = a
 		}
 	}
+	if account == "" {
+		account = hint
+	}
 	_ = m.store.Update(c.ID, func(s *ConnState) {
-		s.Connected, s.Expired, s.Scopes, s.ConnectedAt = true, false, granted, time.Now()
+		s.Connected, s.Expired, s.Scopes, s.ConnectedAt, s.Via = true, false, granted, time.Now(), via
 		if account != "" {
 			s.Account = account
 		}
@@ -799,7 +833,7 @@ func (m *Manager) SaveToken(id, token string) error {
 		return err
 	}
 	_ = m.store.Update(id, func(s *ConnState) {
-		s.Connected, s.Expired, s.Account, s.ConnectedAt = true, false, account, time.Now()
+		s.Connected, s.Expired, s.Account, s.ConnectedAt, s.Via = true, false, account, time.Now(), ""
 	})
 	m.toast(c.Name+" is now connected", "ok")
 	m.changed()
@@ -827,7 +861,7 @@ func (m *Manager) Disconnect(id string) {
 	}
 	m.store.DeleteToken(id)
 	_ = m.store.Update(id, func(s *ConnState) {
-		s.Connected, s.Expired, s.Account, s.Scopes = false, false, "", nil
+		s.Connected, s.Expired, s.Account, s.Scopes, s.Via = false, false, "", nil, ""
 	})
 	m.mu.Lock()
 	for _, g := range c.Groups {
@@ -862,6 +896,9 @@ func (m *Manager) access(ctx context.Context, id string, force bool) (string, er
 		return tok.AccessToken, nil
 	}
 	c := m.cat[id]
+	if st.Via == "broker" {
+		return m.brokerRefresh(ctx, c, tok)
+	}
 	if tok.RefreshToken == "" || c == nil || c.TokenURL == "" {
 		m.markExpired(id)
 		return "", ErrReauth
@@ -890,6 +927,36 @@ func (m *Manager) access(ctx context.Context, id string, force bool) (string, er
 	}
 	if sc := splitScopes(nt.Scope); len(sc) > 0 {
 		_ = m.store.Update(id, func(s *ConnState) { s.Scopes = sc })
+	}
+	return nt.AccessToken, nil
+}
+
+// brokerRefresh renews a one-click connection through the sign-in service, which
+// holds the client secret. Called with refreshMu held.
+func (m *Manager) brokerRefresh(ctx context.Context, c *Connector, tok *Token) (string, error) {
+	b := m.getBroker()
+	if c == nil || tok.RefreshToken == "" || b == nil {
+		if c != nil {
+			m.markExpired(c.ID)
+		}
+		return "", ErrReauth
+	}
+	nt, err := b.Refresh(ctx, c.ID, tok.RefreshToken)
+	if err != nil {
+		if errors.Is(err, ErrBrokerUnreachable) {
+			return "", fmt.Errorf("couldn't reach Blaze's sign-in service to refresh %s. Check your internet connection", c.Name)
+		}
+		m.markExpired(c.ID)
+		return "", ErrReauth
+	}
+	if nt.RefreshToken == "" {
+		nt.RefreshToken = tok.RefreshToken
+	}
+	if nt.Scope == "" {
+		nt.Scope = tok.Scope
+	}
+	if err := m.store.SetToken(c.ID, nt); err != nil {
+		return "", err
 	}
 	return nt.AccessToken, nil
 }
