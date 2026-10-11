@@ -13,6 +13,19 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Debian/Ubuntu**: `sudo apt install ./blaze-desktop_*_amd64.deb`.
 - **Other Linux**: unpack the tar.gz and run `blaze-desktop` (needs GTK 3 + WebKitGTK 4.1).
 
+## What's in v0.7.7 (keys shared with Blaze CLI and your phone)
+- **One key store with Blaze CLI** (`internal/keystore`, the same file in both repos): OS keychain service `blaze-cli`
+  (`<provider>`, `<provider>#extra` for extra keys) or, with no keychain, `~/.blaze/keys.json` (0600) read fresh on
+  every use, so the two apps never overwrite each other's keys. Keys older versions kept under `"keys"` in
+  `config.json` are copied over once and kept for older Blaze versions; `config.json` saves keep every field they
+  don't own.
+- **Keys follow your Blaze account** to Blaze on your phone and other computers (Settings › Account › Model keys,
+  **Sync now**): after sign-in, whenever you add or remove a key, and at start (at most hourly). The apps encrypt the
+  keys with AES-256-GCM before upload; the service stores only the blob. Newest change per provider wins; keys saved
+  before syncing existed are merged, not replaced. Connector tokens and your session never sync.
+- **blaze-auth Worker 0.6.0**: `GET/POST /v1/keys` (one encrypted blob per account, revision check, deleted with the
+  account). Until it's deployed, keys just stay shared on this computer.
+
 ## What's in v0.7.6 (a tidier Preview picker)
 - **Current, Other, All.** The Design tab's Preview picker opens on **Current**: the pages this task changed, plus the one you're previewing (or, before anything changed, the pages next to it). **Other** holds the rest of the folder and **All** shows everything, each with a count; search works inside the tab.
 - **Collapses when you click away.** Clicking anywhere outside the picker closes it, including inside the live preview itself (the preview tells Blaze about the press, and focus moving into the frame counts too).

@@ -166,11 +166,11 @@ export function esc(s: string): string {
   return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 }
 
-export async function readJSON(req: Request): Promise<Record<string, unknown>> {
+export async function readJSON(req: Request, max = 16384): Promise<Record<string, unknown>> {
   const len = parseInt(req.headers.get("Content-Length") || "0", 10);
-  if (len > 16384) throw new HttpError(413, "too_large");
+  if (len > max) throw new HttpError(413, "too_large");
   const text = await req.text();
-  if (text.length > 16384) throw new HttpError(413, "too_large");
+  if (text.length > max) throw new HttpError(413, "too_large");
   if (!text) return {};
   try {
     const v = JSON.parse(text);

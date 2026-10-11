@@ -42,7 +42,7 @@ of provider tokens.
 
 | Method | Path | What |
 | --- | --- | --- |
-| GET | `/health` | `{"ok":true,"service":"blaze-auth","version":"0.5.1"}` |
+| GET | `/health` | `{"ok":true,"service":"blaze-auth","version":"0.6.0"}` |
 | GET | `/v1/providers` | which sign-ins and connectors are configured |
 | POST | `/v1/auth/signup` | `{email, password, name?}` → `201 {token, user}` (`409 email_taken`) |
 | POST | `/v1/auth/login` | `{email, password}` → `{token, user}` (`401 invalid_credentials`, `429 rate_limited`) |
@@ -50,7 +50,9 @@ of provider tokens.
 | POST | `/v1/auth/redeem` (= `/oauth/redeem`) | `{code, code_verifier}` → `{kind:"session", token, user}` |
 | GET | `/v1/me` | `Authorization: Bearer bz_…` → `{user}` |
 | POST | `/v1/logout` | ends this session |
-| POST | `/v1/account/delete` | `{"confirm":"delete"}` → deletes the account, identities and sessions |
+| POST | `/v1/account/delete` | `{"confirm":"delete"}` → deletes the account, identities, sessions and synced keys |
+| GET | `/v1/keys` | Bearer → `{rev, blob, key, updated_at}`: the account's synced model keys (encrypted blob) and the blob key |
+| POST | `/v1/keys` | `{rev, blob}` → `{rev}`; `409 {"error":"conflict","rev"}` when another device wrote first |
 | GET | `/oauth/{provider}/start` | `?state&code_challenge&redirect&scope?` → provider consent |
 | GET | `/oauth/{provider}/callback` | the provider comes back here (register this URL) |
 | POST | `/oauth/redeem` | `{code, code_verifier}` → `{kind:"tokens", provider, tokens, scopes}` |
@@ -76,6 +78,21 @@ and codes are single use; browser origins not in `ALLOWED_ORIGINS` can't POST.
 | `oauthstate:<state>` | the flow (login/connect), desktop state, PKCE challenge, loopback | 10 min |
 | `oauthcode:<sha256(code)>` | tokens or the signed-in user id, bound to the challenge | 2 min |
 | `rl:<kind>:<key>` | failed sign-in / sign-up counters | the window |
+| `keys:<id>` | synced model keys: `{rev, blob, updated_at}`, blob encrypted by the apps | none |
+| `keykey:<id>` | the account's random 32-byte blob key | none |
+
+### Model-key sync (`/v1/keys`, Worker 0.6.0)
+
+Blaze Desktop, Blaze CLI and Blaze Android keep model API keys (Gemini, Groq, OpenRouter,
+Mistral, NVIDIA, …) in sync through the signed-in account. The apps encrypt
+`{"v":1,"keys":{"<provider>":{"k":[main, extras…],"t":<unix ms>}}}` with AES-256-GCM
+(`base64(nonce[12] ‖ ciphertext‖tag)`, AAD `blaze-keys-v1`) before upload and merge per
+provider by the newer `t` (empty `k` = deleted). The Worker only stores the blob and
+hands the per-account blob key to signed-in sessions; it never sees a key in the clear.
+This is not end-to-end encryption: someone controlling the Worker and its KV could
+decrypt. A key change costs one KV write. Code: `src/keys.ts`; clients:
+`internal/keystore/sync.go` (Desktop and CLI), `connect/KeySync.kt` (Android). Older
+Workers answer 404 and the apps just keep keys local.
 
 Passwords: PBKDF2-SHA256, 100,000 iterations (the Workers maximum), 16-byte salt,
 stored as `pbkdf2$sha256$<iter>$<salt>$<hash>`. A verified Google/GitHub email that

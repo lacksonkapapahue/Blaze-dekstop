@@ -1,23 +1,25 @@
 // Package config keeps Blaze's settings in ~/.blaze/config.json and API keys in
-// the OS keychain (Windows Credential Manager, macOS Keychain, Linux Secret
-// Service), falling back to the config file (mode 0600) when no keychain exists.
+// the shared key store (internal/keystore, the same code as Blaze CLI's): the OS
+// keychain (Windows Credential Manager, macOS Keychain, Linux Secret Service),
+// falling back to ~/.blaze/keys.json (mode 0600) when no keychain exists. A key saved
+// in Blaze CLI works here and the other way round.
 //
 // The file is shared with Blaze CLI. Every field added since v0.2 is optional
 // (omitempty) so an older config.json loads unchanged and an older CLI simply
-// ignores what it doesn't know.
+// ignores what it doesn't know. Save keeps fields it doesn't know (and legacy keys an
+// older Blaze still reads) instead of dropping them.
 package config
 
 import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 
-	"github.com/zalando/go-keyring"
+	"github.com/lacksonkapapahue/blaze-desktop/internal/keystore"
 )
-
-const service = "blaze-cli"
 
 type Provider struct {
 	ID, Name, BaseURL, DefaultModel, KeyHint, KeyPage, Env string
@@ -88,13 +90,12 @@ type Entry struct {
 }
 
 type Config struct {
-	Chain       []Entry           `json:"chain"`          // tried in order; first healthy one answers
-	Keys        map[string]string `json:"keys,omitempty"` // only when no keychain is available
-	AutoApprove bool              `json:"auto_approve"`   // --yolo default
-	SetupDone   bool              `json:"setup_done"`
-	MaxSteps    int               `json:"max_steps"`
-	Persona     string            `json:"persona,omitempty"`
-	NoKeyless   bool              `json:"no_keyless,omitempty"` // don't fall back to the keyless model
+	Chain       []Entry `json:"chain"`        // tried in order; first healthy one answers
+	AutoApprove bool    `json:"auto_approve"` // --yolo default
+	SetupDone   bool    `json:"setup_done"`
+	MaxSteps    int     `json:"max_steps"`
+	Persona     string  `json:"persona,omitempty"`
+	NoKeyless   bool    `json:"no_keyless,omitempty"` // don't fall back to the keyless model
 
 	// v0.3 (desktop): model choice. Default nil or provider "auto" = Auto (free routing over Chain).
 	Default    *Entry            `json:"default,omitempty"`
@@ -141,8 +142,58 @@ func (c *Config) Save() error {
 		return err
 	}
 	c.applyCustom()
-	b, _ := json.MarshalIndent(c, "", "  ")
-	return os.WriteFile(c.path, b, 0o600)
+	raw := map[string]json.RawMessage{}
+	if b, err := os.ReadFile(c.path); err == nil {
+		_ = json.Unmarshal(b, &raw)
+	}
+	for _, n := range jsonNames(reflect.TypeOf(*c)) {
+		delete(raw, n) // cleared omitempty fields must go, not linger
+	}
+	mine := map[string]json.RawMessage{}
+	b, _ := json.Marshal(c)
+	_ = json.Unmarshal(b, &mine)
+	for k, v := range mine {
+		raw[k] = v
+	}
+	out, _ := json.MarshalIndent(raw, "", "  ")
+	tmp, err := os.CreateTemp(filepath.Dir(c.path), ".config.json.*")
+	if err != nil {
+		return err
+	}
+	_ = tmp.Chmod(0o600)
+	_, werr := tmp.Write(out)
+	if cerr := tmp.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		os.Remove(tmp.Name())
+		return werr
+	}
+	if err := os.Rename(tmp.Name(), c.path); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+	return nil
+}
+
+// jsonNames are the config.json field names a struct owns.
+func jsonNames(t reflect.Type) []string {
+	var out []string
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		n, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		if n == "-" {
+			continue
+		}
+		if n == "" {
+			n = f.Name
+		}
+		out = append(out, n)
+	}
+	return out
 }
 
 // IsAuto is true when no fixed default model is chosen.
@@ -175,78 +226,47 @@ func (c *Config) SetModelFor(provider, model string) {
 
 // ---------------- keys ----------------
 
-// Key returns the provider's main key: env var first, then keychain, then the file.
+// Keys is the shared key store (same as Blaze CLI's).
+func Keys() *keystore.Store { return keystore.Open(Dir()) }
+
+// KeysChanged, when set, runs after a provider's keys change (the account syncs them).
+var KeysChanged func(provider string)
+
+func keysChanged(provider string) {
+	if KeysChanged != nil && keystore.IsSynced(provider) {
+		KeysChanged(provider)
+	}
+}
+
+// Key returns the provider's main key: env var first, then the shared key store.
 func (c *Config) Key(provider string) string {
 	if p, ok := ProviderByID(provider); ok && p.Env != "" {
 		if v := strings.TrimSpace(os.Getenv(p.Env)); v != "" {
 			return v
 		}
 	}
-	if v, err := keyring.Get(service, provider); err == nil && v != "" {
-		return v
-	}
-	return c.Keys[provider]
+	return Keys().Main(provider)
 }
 
-// SetKey stores a key in the keychain when possible. Returns where it went.
+// SetKey stores a provider's main key. Returns where it went.
 func (c *Config) SetKey(provider, key string) (string, error) {
-	key = strings.TrimSpace(key)
-	if err := keyring.Set(service, provider, key); err == nil {
-		if c.Keys != nil {
-			delete(c.Keys, provider)
-		}
-		return "your system keychain", c.Save()
+	where, err := Keys().Set(provider, key)
+	if err == nil {
+		keysChanged(provider)
 	}
-	if c.Keys == nil {
-		c.Keys = map[string]string{}
-	}
-	c.Keys[provider] = key
-	return "~/.blaze/config.json (owner-only)", c.Save()
+	return where, err
 }
 
 // DeleteKey removes every key of a provider (main and extras).
 func (c *Config) DeleteKey(provider string) {
-	_ = keyring.Delete(service, provider)
-	_ = keyring.Delete(service, provider+extraSuffix)
-	delete(c.Keys, provider)
-	delete(c.Keys, provider+extraSuffix)
-	_ = c.Save()
+	_ = Keys().SetAll(provider, nil)
+	keysChanged(provider)
 }
 
-const extraSuffix = "#extra"
+// ExtraKeys are the provider's additional keys (the key ring).
+func (c *Config) ExtraKeys(provider string) []string { return Keys().Extras(provider) }
 
-// ExtraKeys are the provider's additional keys (the key ring), stored as one JSON list.
-func (c *Config) ExtraKeys(provider string) []string {
-	raw := ""
-	if v, err := keyring.Get(service, provider+extraSuffix); err == nil {
-		raw = v
-	} else {
-		raw = c.Keys[provider+extraSuffix]
-	}
-	var out []string
-	_ = json.Unmarshal([]byte(raw), &out)
-	return out
-}
-
-func (c *Config) setExtras(provider string, l []string) error {
-	if len(l) == 0 {
-		_ = keyring.Delete(service, provider+extraSuffix)
-		delete(c.Keys, provider+extraSuffix)
-		return c.Save()
-	}
-	b, _ := json.Marshal(l)
-	if err := keyring.Set(service, provider+extraSuffix, string(b)); err == nil {
-		delete(c.Keys, provider+extraSuffix)
-		return c.Save()
-	}
-	if c.Keys == nil {
-		c.Keys = map[string]string{}
-	}
-	c.Keys[provider+extraSuffix] = string(b)
-	return c.Save()
-}
-
-// AllKeys is the key ring: the main key first, then the extras, without duplicates.
+// AllKeys is the key ring: the main key (env var first) then the extras, without duplicates.
 func (c *Config) AllKeys(provider string) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -269,39 +289,31 @@ func (c *Config) AddKey(provider, key string) (string, error) {
 			return "", nil
 		}
 	}
-	if c.Key(provider) == "" {
+	ks := Keys()
+	if ks.Main(provider) == "" {
 		return c.SetKey(provider, key)
 	}
-	ex := append(c.ExtraKeys(provider), key)
-	if err := c.setExtras(provider, ex); err != nil {
-		return "", err
+	where, err := ks.SetExtras(provider, append(ks.Extras(provider), key))
+	if err == nil {
+		keysChanged(provider)
 	}
-	if _, err := keyring.Get(service, provider+extraSuffix); err == nil {
-		return "your system keychain", nil
-	}
-	return "~/.blaze/config.json (owner-only)", nil
+	return where, err
 }
 
 // RemoveKey removes one key from the ring. Removing the main key promotes the first extra.
 func (c *Config) RemoveKey(provider, key string) error {
-	ex := c.ExtraKeys(provider)
+	ks := Keys()
 	var keep []string
-	for _, k := range ex {
+	for _, k := range ks.All(provider) {
 		if k != key {
 			keep = append(keep, k)
 		}
 	}
-	if c.Key(provider) == key {
-		_ = keyring.Delete(service, provider)
-		delete(c.Keys, provider)
-		if len(keep) > 0 {
-			if _, err := c.SetKey(provider, keep[0]); err != nil {
-				return err
-			}
-			keep = keep[1:]
-		}
+	if err := ks.SetAll(provider, keep); err != nil {
+		return err
 	}
-	return c.setExtras(provider, keep)
+	keysChanged(provider)
+	return nil
 }
 
 // ---------------- routing helpers ----------------
