@@ -59,7 +59,11 @@ func Default() (*DB, error) {
 
 // Open opens or creates a database file and brings its schema up to date.
 func Open(path string) (*DB, error) {
-	dsn := "file:" + filepath.ToSlash(path) + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)"
+	// The CLI opens the same file. busy_timeout waits up to 5 s for its write lock
+	// instead of failing; _txlock=immediate makes every BEGIN a BEGIN IMMEDIATE, so a
+	// transaction takes the write lock up front and never has to upgrade a read lock
+	// mid-way (the SQLITE_BUSY that broke a first run when both apps created blaze.db).
+	dsn := "file:" + filepath.ToSlash(path) + "?_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)&_txlock=immediate"
 	s, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -112,30 +116,79 @@ var migrations = []string{
 	CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
 }
 
+// ErrNewerSchema means blaze.db was written by a newer Blaze (Desktop or CLI) than
+// this one. Desktop leaves the file untouched and runs without memory.
+var ErrNewerSchema = errors.New("your memory was saved by a newer version of Blaze. Please update Blaze to use memory")
+
+// SchemaVersion is the newest schema this build knows.
+func SchemaVersion() int { return len(migrations) }
+
+// migrate mirrors Blaze CLI's internal/store (v0.6.0): refuse a newer schema, run each
+// migration under the write lock and re-read user_version there, then check the tables.
 func (d *DB) migrate() error {
 	var v int
 	if err := d.sql.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
 		return err
 	}
-	for i := v; i < len(migrations); i++ {
+	if v > len(migrations) {
+		return fmt.Errorf("%w (schema v%d, this build knows v%d)", ErrNewerSchema, v, len(migrations))
+	}
+	// WAL lets Desktop read while the CLI writes. Switched on only after the version
+	// check, so a newer file we refuse is left byte-for-byte as it was.
+	if _, err := d.sql.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+		return err
+	}
+	for v < len(migrations) {
+		// BEGIN IMMEDIATE (via _txlock) holds the write lock; re-read the version
+		// under it in case the CLI migrated while we waited.
 		tx, err := d.sql.Begin()
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(migrations[i]); err != nil {
+		if err := tx.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
 			tx.Rollback()
-			return fmt.Errorf("migration %d: %w", i+1, err)
+			return err
 		}
-		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, i+1)); err != nil {
+		if v >= len(migrations) {
+			tx.Rollback()
+			break
+		}
+		if _, err := tx.Exec(migrations[v]); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("migration %d: %w", v+1, err)
+		}
+		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, v+1)); err != nil {
 			tx.Rollback()
 			return err
 		}
 		if err := tx.Commit(); err != nil {
 			return err
 		}
+		v++
+	}
+	if v > len(migrations) {
+		return fmt.Errorf("%w (schema v%d, this build knows v%d)", ErrNewerSchema, v, len(migrations))
+	}
+	if err := d.checkTables(); err != nil {
+		return err
 	}
 	// Forget tool activations of chats nobody touched for a month.
 	_, _ = d.sql.Exec(`DELETE FROM active_tools WHERE at < ?`, time.Now().Add(-30*24*time.Hour).Unix())
+	return nil
+}
+
+// checkTables makes sure a database that claims schema v1 really has the v1
+// tables, so a damaged or foreign file is refused instead of written to.
+func (d *DB) checkTables() error {
+	for _, t := range []string{"memories", "memories_fts", "skills", "skills_fts", "tools", "tools_fts", "active_tools", "meta"} {
+		var n int
+		if err := d.sql.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name=?`, t).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("schema v%d is missing table %s; not touching it", d.Version(), t)
+		}
+	}
 	return nil
 }
 

@@ -70,6 +70,15 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 Earlier (v0.1.0): first-run PC detection and setup, streaming chat with tool steps, confirm cards, jobs, schedule, doctor, settings.
 
 ## Build
-Go 1.23 + `go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0`, then `wails build`
+Go 1.26 + `go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0`, then `wails build`
 (Linux: `-tags webkit2_41`). CI builds every platform on push and publishes a release;
 UI screenshots go to the `shots` branch.
+
+**Why `frontend/dist` is committed.** The frontend is hand-written vanilla JS, CSS and HTML that
+lives directly in `frontend/dist`. There is no `package.json`, bundler or build step
+(`frontend:install` and `frontend:build` are empty in `wails.json`), so `dist` *is* the source:
+edit files there. Only Wails' generated bindings (`frontend/wailsjs/`) are ignored.
+
+## Security
+How sign-in and one-click connectors work, what the `blaze-auth` Worker receives, stores and logs,
+where your tokens end up, and how to revoke access: [`docs/SECURITY-auth.md`](docs/SECURITY-auth.md).

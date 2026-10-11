@@ -8,7 +8,8 @@ Cloudflare's **free** tier: one Worker and one KV namespace. No D1, no paid add-
 
 Provider client secrets live only as Worker secrets. The desktop binary and this
 repo hold no secrets, and the Worker never stores provider access tokens: they sit
-under a one-time code in KV for at most 5 minutes until the desktop redeems them.
+under a one-time code in KV for at most 2 minutes until the desktop redeems them
+(5 minutes before Worker 0.5.1). Full write-up: [`../docs/SECURITY-auth.md`](../docs/SECURITY-auth.md).
 
 ## How a one-click Connect works
 
@@ -24,7 +25,7 @@ open browser ─ GET /oauth/google/start?state=S&code_challenge=C
                                     302 ───────────────────────────────▶ consent
                                     /oauth/google/callback?code&state=X ◀─┘
                                     exchange code + CLIENT_SECRET (server side)
-                                    KV oauthcode:<sha256(K)> {tokens, C} 5 min
+                                    KV oauthcode:<sha256(K)> {tokens, C} 2 min
 loopback ◀── 302 http://127.0.0.1:PORT/cb?code=K&state=S&flow=connect
 check S; POST /oauth/redeem {code:K, code_verifier}
                                     sha256(verifier) == C ? return tokens, delete code
@@ -41,7 +42,7 @@ of provider tokens.
 
 | Method | Path | What |
 | --- | --- | --- |
-| GET | `/health` | `{"ok":true,"service":"blaze-auth","version":"0.5.0"}` |
+| GET | `/health` | `{"ok":true,"service":"blaze-auth","version":"0.5.1"}` |
 | GET | `/v1/providers` | which sign-ins and connectors are configured |
 | POST | `/v1/auth/signup` | `{email, password, name?}` → `201 {token, user}` (`409 email_taken`) |
 | POST | `/v1/auth/login` | `{email, password}` → `{token, user}` (`401 invalid_credentials`, `429 rate_limited`) |
@@ -73,7 +74,7 @@ and codes are single use; browser origins not in `ALLOWED_ORIGINS` can't POST.
 | `ident:<provider>:<subject>` | user id | none |
 | `sess:<sha256(token)>` | session | 90 days |
 | `oauthstate:<state>` | the flow (login/connect), desktop state, PKCE challenge, loopback | 10 min |
-| `oauthcode:<sha256(code)>` | tokens or the signed-in user id, bound to the challenge | 5 min |
+| `oauthcode:<sha256(code)>` | tokens or the signed-in user id, bound to the challenge | 2 min |
 | `rl:<kind>:<key>` | failed sign-in / sign-up counters | the window |
 
 Passwords: PBKDF2-SHA256, 100,000 iterations (the Workers maximum), 16-byte salt,

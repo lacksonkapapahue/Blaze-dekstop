@@ -6,6 +6,7 @@ package tools
 // match, and the model can recall / load_skill for more.
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +31,23 @@ func DB() *store.DB {
 		return nil
 	}
 	return d
+}
+
+// UpdateNotice is the "please update Blaze" note when blaze.db was written by a
+// newer Blaze (the file is left untouched and Blaze runs without memory), else "".
+func UpdateNotice() string {
+	if _, err := store.Default(); errors.Is(err, store.ErrNewerSchema) {
+		return "Your memory was saved by a newer version of Blaze. Please update Blaze to use it; nothing was changed."
+	}
+	return ""
+}
+
+// noDBMsg is what a memory tool says when there is no database.
+func noDBMsg() string {
+	if n := UpdateNotice(); n != "" {
+		return "Error: " + n + " Tell the user."
+	}
+	return "Error: Blaze's memory database can't be opened."
 }
 
 // Memory returns every saved fact as Markdown lines (for the Settings textarea).
@@ -253,7 +271,7 @@ func init() {
 		func(e *Env, a args) string {
 			d := DB()
 			if d == nil {
-				return "Error: Blaze's memory database can't be opened."
+				return noDBMsg()
 			}
 			fact := strings.Join(strings.Fields(a.s("fact")), " ")
 			if fact == "" {
@@ -296,7 +314,7 @@ func init() {
 		func(e *Env, a args) string {
 			d := DB()
 			if d == nil {
-				return "Error: Blaze's memory database can't be opened."
+				return noDBMsg()
 			}
 			ms := d.Search(a.s("query"), max(1, min(a.i("limit", 10), 50)))
 			if len(ms) == 0 {
@@ -317,7 +335,7 @@ func init() {
 		func(e *Env, a args) string {
 			d := DB()
 			if d == nil {
-				return "Error: Blaze's memory database can't be opened."
+				return noDBMsg()
 			}
 			if id, ok := memID(a.s("text")); ok {
 				m, _ := d.Memory(id)

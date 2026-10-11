@@ -12,9 +12,9 @@ import {
   checkLimit, hit,
 } from "./accounts";
 
-export const VERSION = "0.5.0";
+export const VERSION = "0.5.1";
 const STATE_TTL = 600; // the user has 10 minutes to finish at the provider
-const CODE_TTL = 300; // the desktop has 5 minutes to redeem
+const CODE_TTL = 120; // the desktop redeems within seconds of the loopback redirect; 2 minutes is slack, and the KV minimum is 60
 
 /** What /start leaves in KV under oauthstate:<state>; the callback reads it to know the flow. */
 interface StateRecord {

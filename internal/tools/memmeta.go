@@ -46,8 +46,6 @@ func rowID(id string) (int64, bool) {
 	return n, err == nil && strings.HasPrefix(id, "m")
 }
 
-var errNoDB = errors.New("Blaze's memory database can't be opened.")
-
 // Facts returns every memory, oldest first.
 func Facts() []Fact {
 	d := DB()
@@ -64,7 +62,7 @@ func Facts() []Fact {
 func withRow(id string, fn func(n int64) error) error {
 	d := DB()
 	if d == nil {
-		return errNoDB
+		return errors.New(strings.TrimPrefix(noDBMsg(), "Error: "))
 	}
 	n, ok := rowID(id)
 	if !ok {
