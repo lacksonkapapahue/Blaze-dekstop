@@ -12,8 +12,9 @@ import {
   checkLimit, hit,
 } from "./accounts";
 import { getKeys, putKeys } from "./keys";
+import { comments } from "./comments";
 
-export const VERSION = "0.6.0";
+export const VERSION = "0.7.0";
 const STATE_TTL = 600; // the user has 10 minutes to finish at the provider
 const CODE_TTL = 120; // the desktop redeems within seconds of the loopback redirect; 2 minutes is slack, and the KV minimum is 60
 
@@ -78,6 +79,15 @@ function cors(env: Env, req: Request): Record<string, string> | null {
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
+    // Shared-page comments are open to every origin (shipped sites call them from the browser).
+    const cpath = new URL(req.url).pathname.replace(/\/+$/, "");
+    if (cpath.startsWith("/v1/comments")) {
+      const r = await comments(req, env, cpath, key => softLimit(key, 30, 600)).catch(e => {
+        if (e instanceof HttpError) return json({ error: e.code, ...e.extra }, e.status, { "Access-Control-Allow-Origin": "*" });
+        throw e;
+      });
+      if (r) return r;
+    }
     const ch = cors(env, req);
     if (req.method === "OPTIONS") {
       return ch && req.headers.get("Origin") ? new Response(null, { status: 204, headers: ch }) : json({ error: "forbidden_origin" }, 403);
