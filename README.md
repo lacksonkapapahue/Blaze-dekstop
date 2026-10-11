@@ -13,6 +13,10 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Debian/Ubuntu**: `sudo apt install ./blaze-desktop_*_amd64.deb`.
 - **Other Linux**: unpack the tar.gz and run `blaze-desktop` (needs GTK 3 + WebKitGTK 4.1).
 
+## What's in v0.7.6 (a tidier Preview picker)
+- **Current, Other, All.** The Design tab's Preview picker opens on **Current**: the pages this task changed, plus the one you're previewing (or, before anything changed, the pages next to it). **Other** holds the rest of the folder and **All** shows everything, each with a count; search works inside the tab.
+- **Collapses when you click away.** Clicking anywhere outside the picker closes it, including inside the live preview itself (the preview tells Blaze about the press, and focus moving into the frame counts too).
+
 ## What's in v0.7.0 (skill library and proactive memory)
 - **Bundled skill library**: 19 skills ship inside Blaze (`skills/` in this repo) and are seeded into `~/.blaze/skills` on start: web design in the Team of Keys and classic Blaze styles, landing pages, slide decks, documents, deep research with sources, code review, debugging, git/PR, tests, refactoring, data analysis, shell/sysadmin (Windows, macOS, Linux, Arch), email drafting, planning, images/assets, web audits, API integrations and a skill-creator guide. Upgrades are version-aware and never overwrite a skill you edited; turn any skill off, delete it or restore it in **Settings › Skills**.
 - **Learns as you go**: Blaze now saves lasting facts and preferences on its own, replaces memories that changed instead of piling up duplicates, forgets on request, and writes or improves a skill when a workflow repeats or you teach it a method. A cheap end-of-turn check (skipped for small talk, capped by your spend limit) catches what the turn missed. A small mark under the answer shows what it learned. **Settings › Behaviour › Learning** turns it off.

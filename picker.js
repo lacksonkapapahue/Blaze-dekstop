@@ -65,5 +65,8 @@
     if (m.blaze === "style") { picked.forEach(el => el.style.setProperty(m.prop, m.value)); boxes.forEach((b, i) => place(b, picked[i])); }
     if (m.blaze === "theme") { document.documentElement.style.colorScheme = m.value; }
   });
+  // A press anywhere in the page tells Blaze, so open menus and pickers outside the
+  // preview close (clicks inside an iframe never reach the app's own document).
+  addEventListener("pointerdown", () => parent.postMessage({ blaze: "down" }, "*"), true);
   parent.postMessage({ blaze: "ready", title: document.title }, "*");
 })();
