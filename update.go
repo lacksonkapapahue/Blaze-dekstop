@@ -7,7 +7,7 @@ package main
 // asset that matches how it was installed: setup.exe or the portable exe on Windows,
 // the .dmg on macOS, and the .deb, Arch package or tar.gz on Linux.
 //
-// The releases must be readable. While the repo is private, set a GitHub token in
+// The repo is public, so no token is needed. A private fork can set a GitHub token in
 // BLAZE_UPDATE_TOKEN (or GITHUB_TOKEN), or point updateRepo at a public repo.
 
 import (
@@ -107,7 +107,7 @@ func (a *App) CheckUpdate() UpdateInfo {
 	defer res.Body.Close()
 	switch {
 	case res.StatusCode == 404:
-		info.Error = "No public release found. The releases repo is private, so updates need a token (BLAZE_UPDATE_TOKEN)."
+		info.Error = "No release found yet. Check again later."
 		return info
 	case res.StatusCode == 403 || res.StatusCode == 429:
 		info.Error = "GitHub is rate-limiting update checks. Try again in a while."
