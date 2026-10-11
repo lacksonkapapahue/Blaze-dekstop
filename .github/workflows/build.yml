@@ -60,14 +60,12 @@ jobs:
         run: |
           { echo "### ${{ github.job }} failed on ${GITHUB_SHA::7}"; echo '```'; tail -n 70 build.log; echo '```'; } > tail.md
           gh issue create -R ${{ github.repository }} --title "CI ${{ github.job }} failed ${GITHUB_SHA::7}" --body-file tail.md
-      - name: Post the error on the PR
+      - name: Show the error on the PR
         if: failure() && github.event_name == 'pull_request'
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          { echo "### ${{ github.job }} failed"; echo '```'; grep -E -- '--- FAIL|FAIL|panic|error' build.log | tail -n 40; echo '---'; tail -n 40 build.log; echo '```'; } > tail.md
-          gh issue comment ${{ github.event.pull_request.number }} -R ${{ github.repository }} --body-file tail.md
+          grep -E -- '--- FAIL|^FAIL|panic:|_test.go:[0-9]+:|cannot|undefined' build.log | head -n 10 | while IFS= read -r l; do echo "::error::$l"; done
+          echo "::error::$(tail -n 15 build.log | tr '\n' '|' )"
       - uses: actions/upload-artifact@v4
         with: { name: windows, path: dist/ }
 
