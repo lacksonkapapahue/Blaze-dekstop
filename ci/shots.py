@@ -255,7 +255,10 @@ with sync_playwright() as p:
             errs.append("/update progress line missing")
         if pg.evaluate("view") != "work":
             errs.append("/update left the chat")
-        pg.evaluate("newChat(); window.__upd = {current: 'v0.4.8', latest: 'v0.4.8', available: false}; SelfUpdate.run()"); pg.wait_for_timeout(500)
+        pg.evaluate("newChat(); window.__upd = {current: 'v0.4.8', latest: 'v0.4.8', available: false}"); pg.wait_for_timeout(400)
+        pg.evaluate("SelfUpdate.run()"); pg.wait_for_timeout(500)
+        if "newest version" not in pg.evaluate("(document.querySelector('.selfupd .md') || {}).textContent || ''"):
+            errs.append("/update up-to-date answer missing")
         pg.screenshot(path=str(out / f"update-latest-{theme}.png"))
         pg.evaluate("window.__upd = null")
         # v0.5: Memory graph. Overview, the best-linked memory selected, mid-replay, sorting into categories.
