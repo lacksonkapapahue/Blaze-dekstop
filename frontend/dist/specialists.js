@@ -47,7 +47,13 @@ const Specs = (() => {
       <div class="sp-ask"></div>
       <div class="sp-body"></div>`;
     const line = $(".sp-line", el);
-    line.onclick = e => { if (e.target.closest(".sp-stop")) return; r.open = !r.open; draw(r); };
+    line.onclick = e => {
+      if (e.target.closest(".sp-stop")) return;
+      r.open = !r.open; draw(r);
+      const list = el.parentElement;
+      if (r.open && list) list.scrollTop = el.offsetTop - list.offsetTop;
+      if (typeof scrollDown === "function") scrollDown();
+    };
     line.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); line.click(); } };
     $(".sp-stop", el).onclick = e => { e.stopPropagation(); API().AgentStop(r.v.handle); };
     r.el = el;
@@ -81,20 +87,7 @@ const Specs = (() => {
     body.style.display = r.open ? "" : "none";
     if (r.open) {
       body.innerHTML = "";
-      if (v.plan) body.append(h("div", "sp-sec", `<div class="label">Plan</div><div class="sp-plan">${esc(v.plan)}</div>`));
-      if (v.path) body.append(h("div", "sp-sec sp-where", `<span class="label">Works in</span><span class="mono">${esc(v.path)}</span>${v.branch ? `<span class="label weak">${esc(v.branch)}</span>` : ""}`));
-      const log = h("div", "sp-log");
-      const t = { stepsEl: log, steps: {}, order: [], open: true, expanded: true };
-      r.steps.forEach((s, i) => { const row = addStep(t, (s.id || "s") + "_" + i, s.name, s.args); if (s.done) finishStep(t, row, s.result); else row.classList.add("run"); });
-      if (!r.steps.length) log.append(h("div", "sp-empty label weak", live ? "No steps yet" : "No tool steps"));
-      body.append(log);
-      const rep = st === "done" ? v.result : (v.error || "") + (v.result ? "\n\n" + v.result : "");
-      if (!live && rep) { const d = h("div", "sp-sec sp-report md"); d.innerHTML = `<div class="label">${st === "done" ? "Report" : "What went wrong"}</div>` + MD.render(rep); body.append(d); }
-      if ((v.changes || []).length) {
-        const ch = h("div", "sp-sec sp-changes");
-        ch.innerHTML = `<div class="label">Changed in its copy</div>` + v.changes.slice(0, 20).map(c => `<div class="sp-file"><span class="op label ${c.op}">${c.op === "added" ? "A" : c.op === "deleted" ? "D" : "M"}</span><span class="mono">${esc(c.path)}</span></div>`).join("") + (v.changes.length > 20 ? `<div class="label weak">+${v.changes.length - 20} more</div>` : "");
-        body.append(ch);
-      }
+      // Finished: what needs a decision first (changes + Apply / Discard), then its report.
       const acts = h("div", "sp-acts");
       if (!live && v.review === "pending") {
         const ap = h("button", "btn accent sm", "Apply changes"); ap.onclick = async () => { const e = await API().SpecialistReview(v.handle, "apply"); if (e) toastErr(e); };
@@ -106,7 +99,21 @@ const Specs = (() => {
         const dis = h("button", "btn line sm", "Discard"); dis.onclick = async () => { await API().AgentDiscard(v.handle); remove(v.handle); };
         acts.append(h("span", "sp-note", "Blaze closed while it was working."), h("span", "grow"), res, dis);
       }
+      if ((v.changes || []).length) {
+        const ch = h("div", "sp-sec sp-changes");
+        ch.innerHTML = `<div class="label">Changed in its copy</div>` + v.changes.slice(0, 20).map(c => `<div class="sp-file"><span class="op label ${c.op}">${c.op === "added" ? "A" : c.op === "deleted" ? "D" : "M"}</span><span class="mono">${esc(c.path)}</span></div>`).join("") + (v.changes.length > 20 ? `<div class="label weak">+${v.changes.length - 20} more</div>` : "");
+        body.append(ch);
+      }
       if (acts.children.length) body.append(acts);
+      const rep = st === "done" ? v.result : (v.error || "") + (v.result ? "\n\n" + v.result : "");
+      if (!live && rep) { const d = h("div", "sp-sec sp-report md"); d.innerHTML = `<div class="label">${st === "done" ? "Report" : "What went wrong"}</div>` + MD.render(rep); body.append(d); }
+      if (v.plan) body.append(h("div", "sp-sec", `<div class="label">Plan</div><div class="sp-plan">${esc(v.plan)}</div>`));
+      if (v.path) body.append(h("div", "sp-sec sp-where", `<span class="label">Works in</span><span class="mono">${esc(v.path)}</span>${v.branch ? `<span class="label weak">${esc(v.branch)}</span>` : ""}`));
+      const log = h("div", "sp-log");
+      const t = { stepsEl: log, steps: {}, order: [], open: true, expanded: true };
+      r.steps.forEach((s, i) => { const row = addStep(t, (s.id || "s") + "_" + i, s.name, s.args); if (s.done) finishStep(t, row, s.result); else row.classList.add("run"); });
+      if (!r.steps.length) log.append(h("div", "sp-empty label weak", live ? "No steps yet" : "No tool steps"));
+      body.append(log);
     }
     if (!live) $(".sp-ask", el).innerHTML = "";
   }
