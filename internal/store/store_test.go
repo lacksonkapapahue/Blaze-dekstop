@@ -234,3 +234,18 @@ func TestSkillsIndex(t *testing.T) {
 		t.Error("body")
 	}
 }
+
+func TestRelated(t *testing.T) {
+	d, err := Open(filepath.Join(t.TempDir(), "r.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	old, _, _ := d.Add("Deploys the HomeGlow theme with npm run build", "", "", time.Time{})
+	_, _, _ = d.Add("Likes coffee in the morning", "", "", time.Time{})
+	nid, _, _ := d.Add("Deploys the HomeGlow theme with pnpm build and rsync", "", "", time.Time{})
+	rel := d.Related("Deploys the HomeGlow theme with pnpm build and rsync", 0.3, 3, nid)
+	if len(rel) != 1 || rel[0].ID != old {
+		t.Fatalf("related: %+v", rel)
+	}
+}
