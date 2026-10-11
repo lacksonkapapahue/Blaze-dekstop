@@ -124,7 +124,7 @@ func patchConvTitle(id string, m titleMeta) string {
 
 func userTurns(h []llm.Message) (n int, last string) {
 	for _, m := range h {
-		if m.Role == "user" {
+		if m.Role == "user" && !isAgentResult(m) {
 			n++
 			last = stripAttached(m.Content)
 		}

@@ -145,7 +145,9 @@
     Quota: async () => ({ rows: [{ label: "Status", value: "Working · gemini-3.8-flash" }], note: "Google shows exact per-model limits only in AI Studio.", page: "https://aistudio.google.com/" }),
     TestModel: async p => ({ name: p, ok: true, detail: "answered in 0.9s" }),
     ConnectOpenRouter: async () => ({ ok: false, error: "Sign-in didn't finish." }),
-    UseFreeStack: async () => state.chain, CheckUpdate: async () => ({ current: "v0.4.1", latest: "v0.4.1", available: false }),
+    UseFreeStack: async () => state.chain, CheckUpdate: async () => window.__upd || ({ current: "v0.4.1", latest: "v0.4.1", available: false }),
+    // v0.4.8: /update in the chat. Progress events; never "restarts" so the shot can catch it.
+    InstallUpdate: () => new Promise(() => { [8, 42].forEach((p, i) => setTimeout(() => fire("update", { stage: "download", pct: p, text: "" }), 150 + i * 150)); }),
     Files: async () => ["assets/theme.css", "design/option-a.html", "design/option-b.html", "layout/theme.liquid", "package.json", "sections/hero.liquid"],
     Design: async () => ({ base: window.__sample, target: { kind: "file", path: "index.html" }, files: ["index.html", "design/option-a.html"], versions: [{ n: 1, summary: "First pass at the landing page", when: "21:02" }, { n: 2, summary: "Warmer palette and rounded cards", when: "21:10" }, { n: 3, summary: "Bigger hero headline", when: "21:18" }] }),
     SetHotkey: async id => ({ ...state.desktop, hotkey: id }), RetryHotkey: async () => state.desktop, SetAutostart: async () => "",
@@ -154,6 +156,22 @@
     ForgetMemory: async () => "", SortMemories: async () => "", SetMemoryAISort: async () => {},
     Doctor: async () => [{ name: "Internet", ok: true, detail: "Online" }, { name: "Google Gemini", ok: true, detail: "gemini-3.8-flash answered in 0.9s" }, { name: "Groq", ok: false, detail: "openai/gpt-oss-120b: Groq hit its free limit for now. Blaze will use another model." }, { name: "Shell", ok: true, detail: "bash · /usr/bin/bash" }, { name: "Tray", ok: true, detail: "In the system tray" }, { name: "Shortcut", ok: true, detail: "Press Ctrl+Shift+Space anywhere for quick ask" }, { name: "Start at login", ok: true, detail: "Off (Settings › Behaviour)" }],
   };
+  // v0.4.7: background agents. A saved chat whose agent was interrupted by a restart.
+  const now0 = Date.now();
+  window.__agentSteps = [
+    { id: "s1", name: "file_read", args: '{"path":"package.json"}', plain: "Reading package.json", result: "Read package.json (48 lines)", done: true },
+    { id: "s2", name: "run_shell", args: '{"command":"pnpm build"}', plain: "Running a command", result: "exit 1 · build failed\nError: Cannot find module './hero.css'", bad: true, done: true },
+    { id: "s3", name: "file_search", args: '{"pattern":"hero.css"}', plain: "Searching your files for \"hero.css\"", result: "sections/hero.liquid:3 · assets/Hero.css", done: true },
+    { id: "s4", name: "file_edit", args: '{"path":"sections/hero.liquid"}', plain: "Editing hero.liquid", result: "Edited sections/hero.liquid (1 replacement).", done: true },
+    { id: "s5", name: "run_shell", args: '{"command":"pnpm build"}', plain: "Running a command", result: "exit 0 · built in 9.8s", done: true },
+    { id: "s6", name: "run_shell", args: '{"command":"pnpm test"}', plain: "Running a command", result: "exit 0 · 42 passed", done: true }];
+  window.__agentConv = { id: "c8", title: "Ship the hero fix", folder: "/home/luke/code/homeglow", messages: [
+    { role: "user", content: "Fix the build and get the tests green, I'll keep working on copy." },
+    { role: "assistant", content: "", tool_calls: [{ id: "d1", function: { name: "dispatch_agent", arguments: '{"handle":"fix-build","task":"Fix the HomeGlow build"}' } }] },
+    { role: "tool", tool_call_id: "d1", content: 'started: agent "fix-build" is working in the background.' },
+    { role: "assistant", content: "On it. I'll report back when the build is green." }],
+    agents: [{ handle: "fix-build", task: "Fix the failing HomeGlow build (pnpm build), then run pnpm test and make sure all tests pass. Report what was wrong.", conv: "c8", status: "interrupted", now: "", n: 3, steps: window.__agentSteps.slice(0, 3), started: now0 - 300000, ended: 0, seconds: 95 }] };
+  Object.assign(A, { Agents: async () => [], AgentStop: async () => "", AgentResume: async () => "", AgentDiscard: async () => "", AnswerAgent: async () => {}, SetMaxAgents: async n => n });
   window.go = { main: { App: new Proxy(A, { get: (t, k) => t[k] || (async () => "") }) } };
   // Events are captured so the screenshot script can play a turn: fire("tool", {...}).
   window.__ev = {};

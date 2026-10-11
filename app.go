@@ -20,6 +20,7 @@ import (
 
 	wr "github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/lacksonkapapahue/blaze-desktop/internal/agents"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/config"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/connect"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/llm"
@@ -55,6 +56,8 @@ type Prefs struct {
 	OnboardSkipped bool `json:"onboard_skipped"` // onboarding was skipped or finished; don't open it by itself
 
 	MemoryAISort *bool `json:"memory_ai_sort,omitempty"` // let a model sort new memories into categories (default on)
+
+	MaxAgents int `json:"max_agents,omitempty"` // background agents at once (0 = default, bgagents.go)
 }
 
 type App struct {
@@ -78,9 +81,19 @@ type App struct {
 	sh       shellState // window, orb and tray state (shell.go)
 	quitting bool       // a real quit is under way; don't hide on close
 	flags    startFlags // command-line flags (--background, --orb, --relaunch)
+
+	// Background agents (bgagents.go).
+	agents    *agents.Manager
+	main      *agents.Mainline      // main turns, one at a time; inputs that arrive mid-turn wait
+	envs      map[string]*tools.Env // each sub-agent's own shell and approval gate
+	questions map[string]chan string
 }
 
-func NewApp() *App { return &App{pending: map[string]chan int{}, ready: make(chan struct{})} }
+func NewApp() *App {
+	a := &App{pending: map[string]chan int{}, ready: make(chan struct{})}
+	a.main = &agents.Mainline{Run: a.turn}
+	return a
+}
 
 // waitReady blocks until startup is done. Wails runs OnStartup in a goroutine while
 // the page loads, so the UI's first calls can arrive before cfg/env exist.
@@ -115,10 +128,14 @@ func (a *App) startup(ctx context.Context) {
 	a.pv.load(a.prefs.Folder)
 	a.newEnv()
 	a.startConnectors()
+	a.startAgents()
 	a.startShell()
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	if a.agents != nil {
+		a.agents.StopAll() // saved as running, so the next launch offers Resume
+	}
 	if a.env != nil {
 		a.env.Jobs.StopAll()
 	}
@@ -291,6 +308,7 @@ type Conv struct {
 	Folder   string        `json:"folder"`
 	Updated  time.Time     `json:"updated"`
 	Messages []llm.Message `json:"messages"`
+	Agents   []agents.View `json:"agents,omitempty"` // this chat's background agents (filled when opened)
 
 	TitleSource string `json:"title_source,omitempty"` // auto (AI, titles.go) or manual (renamed); "" = first prompt
 	TitleTurns  int    `json:"title_turns,omitempty"`  // user turns when the auto title was last evaluated
@@ -349,6 +367,9 @@ func (a *App) OpenConversation(id string) Conv {
 	a.history = c.Messages
 	a.mu.Unlock()
 	a.noteHistory(c.Messages)
+	if a.agents != nil && c.ID != "" {
+		c.Agents = a.agents.List(c.ID)
+	}
 	if c.Project != a.prefs.Project {
 		a.prefs.Project = c.Project
 		a.savePrefs()
@@ -415,47 +436,30 @@ func (a *App) Send(text string, files []string) string {
 		}
 		fmt.Fprintf(&b, "\n\n<attached path=\"%s\">\n%s\n</attached>", f, data)
 	}
-	a.mu.Lock()
-	if a.busy {
-		a.mu.Unlock()
-		return "busy"
+	// A message sent mid-turn waits its turn instead of being refused (the main
+	// agent stays free for chat while background agents work).
+	if a.main.Submit(agents.Input{Kind: "user", Text: b.String()}) {
+		return "queued"
 	}
-	a.history = append(a.history, llm.Message{Role: "user", Content: b.String()})
-	a.mu.Unlock()
-	return a.start()
-}
-
-func (a *App) start() string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	ctx, cancel := context.WithCancel(a.ctx)
-	a.cancel = cancel
-	a.busy = true
-	a.tagMemoryTurn()
-	go a.run(ctx)
 	return "ok"
 }
 
 // Retry drops the last answer and asks again.
 func (a *App) Retry() string {
-	a.mu.Lock()
-	if a.busy {
-		a.mu.Unlock()
+	if a.main.Busy() {
 		return "busy"
 	}
-	last := -1
-	for i, m := range a.history {
-		if m.Role == "user" {
-			last = i
-		}
+	a.mu.Lock()
+	has := false
+	for _, m := range a.history {
+		has = has || m.Role == "user"
 	}
-	if last < 0 {
-		a.mu.Unlock()
+	a.mu.Unlock()
+	if !has {
 		return "nothing"
 	}
-	a.history = a.history[:last+1]
-	a.mu.Unlock()
-	return a.start()
+	a.main.Submit(agents.Input{Kind: "retry"})
+	return "ok"
 }
 
 var attachedRe = regexp.MustCompile(`(?s)\n*<attached path="[^"]*">.*?</attached>`)
@@ -485,7 +489,7 @@ func (a *App) run(ctx context.Context) {
 	prompt := ""
 	a.mu.Lock()
 	for _, m := range a.history {
-		if m.Role == "user" {
+		if m.Role == "user" && !isAgentResult(m) {
 			prompt = strings.TrimPrefix(firstLine(stripAttached(m.Content)), "[Design edit] ")
 		}
 	}
@@ -528,15 +532,15 @@ func (a *App) run(ctx context.Context) {
 		a.mu.Lock()
 		hist := trim(a.history)
 		a.mu.Unlock()
-		sys := a.system()
+		sys := a.system() + agents.Delegation
 		if note != "" {
 			sys += "\nABOUT YOUR LAST REPLY\n" + note + "\n"
 		}
 		msgs := append([]llm.Message{{Role: "system", Content: sys}}, hist...)
 		// Connector tools join only when connected and enabled, and a group's tools
 		// only after the model loads it, so the list stays small.
-		all := append(tools.All(), a.conn.Tools()...)
-		known := append(tools.Names(), a.conn.Known()...)
+		all := append(append(append(tools.All(), a.conn.Tools()...), agents.MainTools()...), updateBlazeTool())
+		known := append(append(append(tools.Names(), a.conn.Known()...), agents.MainToolNames...), "update_blaze")
 		wr.EventsEmit(a.ctx, "thinking", step)
 		r, err := llm.CompleteWith(ctx, a.cfg, msgs, all, llm.Opts{
 			OnText:   func(s string) { wr.EventsEmit(a.ctx, "delta", s) },
@@ -575,6 +579,7 @@ func (a *App) run(ctx context.Context) {
 			wr.EventsEmit(a.ctx, "done", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless, "seconds": time.Since(started).Seconds()})
 			return
 		}
+		dispatched, onlyAgentTools := false, true
 		for _, tc := range n.Calls {
 			if ctx.Err() != nil {
 				wr.EventsEmit(a.ctx, "stopped", nil)
@@ -583,9 +588,21 @@ func (a *App) run(ctx context.Context) {
 			wr.EventsEmit(a.ctx, "tool", map[string]string{"id": tc.ID, "name": tc.Function.Name, "args": tc.Function.Arguments})
 			setTrayStatus("Working · " + friendlyTool(tc.Function.Name, tc.Function.Arguments))
 			var res string
-			if a.conn.Handles(tc.Function.Name) {
+			if agents.IsMainTool(tc.Function.Name) {
+				a.mu.Lock()
+				conv := a.convID
+				a.mu.Unlock()
+				out := a.agents.HandleMainTool(tc.Function.Name, tc.Function.Arguments, conv, a.prefs.Folder)
+				res = out.Result
+				dispatched = dispatched || out.Dispatched != ""
+			} else if tc.Function.Name == "update_blaze" {
+				onlyAgentTools = false
+				res = a.selfUpdate()
+			} else if a.conn.Handles(tc.Function.Name) {
+				onlyAgentTools = false
 				res = a.conn.Run(ctx, tc.Function.Name, tc.Function.Arguments)
 			} else {
+				onlyAgentTools = false
 				res = tools.Run(a.env, tc.Function.Name, tc.Function.Arguments)
 			}
 			changed, urls = a.designTouch(tc.Function.Name, tc.Function.Arguments, res, changed, urls)
@@ -593,6 +610,20 @@ func (a *App) run(ctx context.Context) {
 			a.mu.Lock()
 			a.history = append(a.history, llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: res})
 			a.mu.Unlock()
+		}
+		// Handing work off ends the turn at once: the user gets a short line and the
+		// composer is free while the agent works.
+		if dispatched && onlyAgentTools {
+			line := strings.TrimSpace(r.Text)
+			if line == "" {
+				line = "On it. I'll report back when it's done."
+				wr.EventsEmit(a.ctx, "delta", line)
+				a.mu.Lock()
+				a.history = append(a.history, llm.Message{Role: "assistant", Content: line})
+				a.mu.Unlock()
+			}
+			wr.EventsEmit(a.ctx, "done", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless, "seconds": time.Since(started).Seconds(), "handoff": true})
+			return
 		}
 	}
 	wr.EventsEmit(a.ctx, "error", map[string]any{"message": fmt.Sprintf("Stopped after %d steps without finishing. Say \"continue\" to keep going.", steps), "kind": "steps"})

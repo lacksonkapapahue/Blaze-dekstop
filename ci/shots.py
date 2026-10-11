@@ -6,8 +6,9 @@ out = root / "shots"; out.mkdir(exist_ok=True)
 mock = (root / "ci" / "mock.js").read_text()
 url = (root / "frontend" / "dist" / "index.html").as_uri()
 sample = (root / "ci" / "sample").as_uri()
+allerrs = []
 with sync_playwright() as p:
-    b = p.chromium.launch()
+    b = p.chromium.launch(**({"executable_path": __import__("os").environ["CHROME"]} if __import__("os").environ.get("CHROME") else {}))
     for theme in ["light", "dark"]:
         pg = b.new_page(viewport={"width": 1280, "height": 820}, device_scale_factor=1)
         pg.add_init_script(f"window.__theme='{theme}';window.__sample='{sample}';" + mock)
@@ -93,6 +94,57 @@ with sync_playwright() as p:
             if not cmd.startswith("cat ~/Projects/blaze/package.json"):
                 errs.append("expanded step lost its exact command: " + repr(cmd))
         steps_turn(pg, "", None)
+        # v0.4.7: background agents. Dispatch, then keep chatting while the agent works.
+        pg.evaluate("newChat()"); pg.wait_for_timeout(300)
+        pg.evaluate("""sendText('Fix the failing build and get the tests green. I will keep working on the hero copy.', []);
+          fire('turn', {kind: 'user', conv: 'c7'});
+          fire('route', {route: 'Google Gemini · gemini-3.8-flash'});
+          fire('tool', {id: 'd1', name: 'dispatch_agent', args: '{"handle":"fix-build","task":"Fix the HomeGlow build"}'});
+          fire('agent', {handle: 'fix-build', conv: 'c7', task: 'Fix the failing HomeGlow build (pnpm build), then run pnpm test and make sure all tests pass. Report what was wrong.', status: 'running', now: 'Starting', n: 0, started: Date.now() - 1000, seconds: 1});
+          fire('tool_done', {id: 'd1', result: 'started: agent "fix-build" is working in the background.'});
+          fire('delta', "On it. A background agent is fixing the build; I'll report back when it's green.");
+          fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 1.4, handoff: true});
+          window.__agentSteps.slice(0, 3).forEach(s => fire('agent_step', {handle: 'fix-build', step: s}));
+          fire('agent_step', {handle: 'fix-build', step: {...window.__agentSteps[3], done: false, result: ''}});
+          fire('agent', {handle: 'fix-build', conv: 'c7', status: 'running', now: 'Editing hero.liquid', n: 4, started: Date.now() - 42000, seconds: 42});
+          sendText('While that runs: give me three punchier headlines for the hero.', []);
+          fire('turn', {kind: 'user', conv: 'c7'});
+          fire('delta', '1. **Light that feels like home.**\\n2. **Warm corners, every evening.**\\n3. **Glow, without the glare.**\\n\\nI like the first: short, and it says what you sell.');
+          fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 2.1});""")
+        pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"agent-running-{theme}.png"))
+        if pg.evaluate("document.querySelectorAll('.agcard.running').length") != 1:
+            errs.append("running agent card missing")
+        if pg.evaluate("document.querySelector('.agcard .ag-now').textContent.trim()") != "Editing hero.liquid":
+            errs.append("agent card does not show the plain step")
+        # An approval from the agent shows on its card, not in the main chat.
+        pg.evaluate("""fire('confirm', {id: 'k9', agent: 'fix-build', title: 'Run this command?', detail: 'pnpm add -D vite@6'});""")
+        pg.wait_for_timeout(300)
+        pg.evaluate("document.querySelector('.agcard').scrollIntoView({block: 'center'})"); pg.wait_for_timeout(150)
+        pg.screenshot(path=str(out / f"agent-approval-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('.agcard .ag-ask .ag-q')"):
+            errs.append("agent approval did not land on its card")
+        pg.evaluate("document.querySelector('.agcard .ag-q .yes').click()")
+        # It finishes: the card collapses and its result wakes the main agent.
+        pg.evaluate("""fire('agent', {handle: 'fix-build', conv: 'c7', status: 'done', now: '', n: 6, steps: window.__agentSteps, started: Date.now() - 95000, ended: Date.now(), seconds: 95,
+            result: 'The build broke because `sections/hero.liquid` imported `./hero.css`, but the file is `assets/Hero.css` (capital H). Linux is case-sensitive, so the build failed there.\\n\\n- Fixed the import in `sections/hero.liquid`.\\n- `pnpm build` passes (9.8s).\\n- `pnpm test`: **42 passed**.'});
+          fire('turn', {kind: 'agent', handle: 'fix-build', conv: 'c7'});
+          fire('delta', 'The build is **green again**. The hero imported `./hero.css` but the file is `Hero.css`, and Linux cares about the capital. Fixed, and all **42 tests pass**.');
+          fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 1.9});""")
+        pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"agent-done-{theme}.png"))
+        if pg.evaluate("document.querySelector('.agcard .ag-now').textContent.trim()") != "Done · 6 steps":
+            errs.append("finished agent card did not collapse to Done · 6 steps")
+        pg.evaluate("document.querySelector('.agcard .ag-now').click()"); pg.wait_for_timeout(300)
+        pg.evaluate("document.querySelector('.agcard').scrollIntoView({block: 'start'})"); pg.wait_for_timeout(150)
+        pg.screenshot(path=str(out / f"agent-expanded-{theme}.png"))
+        if pg.evaluate("document.querySelectorAll('.agcard.open .ag-log .step').length") != 6:
+            errs.append("expanded agent card does not list its 6 steps")
+        # A saved chat after a restart: the agent shows as interrupted with Resume / Discard.
+        pg.evaluate("loadConv(window.__agentConv)"); pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"agent-interrupted-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('.agcard.interrupted .ag-acts .btn.accent')"):
+            errs.append("interrupted agent card has no Resume button")
         # v0.4.2: AI chat titles. Mid-typewriter, then settled; rename on double-click.
         pg.evaluate("fire('title', {id: 'c2', title: 'Postgres Container For HomeGlow', source: 'auto'})"); pg.wait_for_timeout(560)
         pg.screenshot(path=str(out / f"titles-typing-{theme}.png"))
@@ -169,7 +221,46 @@ with sync_playwright() as p:
           fire('delta', window.__cardReply); fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 2.9}); })""")
         pg.wait_for_timeout(600)
         pg.screenshot(path=str(out / f"card-orb-{theme}.png"))
+        # v0.4.7: the orb's compact running-agents indicator, while the user asks something else.
+        pg.evaluate("""newChat().then(() => { sendText('Research the three best budget laptops for coding and compare them', []);
+          fire('turn', {kind: 'user', conv: 'c9'});
+          fire('tool', {id: 'd2', name: 'dispatch_agent', args: '{}'});
+          fire('agent', {handle: 'laptops', conv: 'c9', task: 'Research the three best budget laptops for coding (under 700 USD) and compare them in a table.', status: 'running', now: 'Reading notebookcheck.net', n: 5, started: Date.now() - 65000, seconds: 65});
+          fire('agent', {handle: 'price-check', conv: 'c9', task: 'Check Zambian prices for the shortlisted laptops.', status: 'running', now: 'Searching the web for "ThinkPad E14 price Lusaka"', n: 2, started: Date.now() - 20000, seconds: 20});
+          fire('tool_done', {id: 'd2', result: 'started: agent "laptops"'});
+          fire('delta', "On it. Two agents are researching; I'll report back with a comparison."); fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 1.2, handoff: true}); })""")
+        pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"orb-agents-{theme}.png"))
+        if pg.evaluate("(document.querySelector('#orbbar .orbag') || {}).textContent") != "2 agents":
+            errs.append("orb agents indicator missing")
+        pg.evaluate("""['laptops', 'price-check'].forEach(h => fire('agent', {handle: h, status: 'cancelled', ended: Date.now()}))""")
         pg.evaluate("fire('orb', false)"); pg.set_viewport_size({"width": 1280, "height": 820}); pg.wait_for_timeout(300)
+        # v0.4.8: the sun/moon theme switch in the top bar, flipped once and back.
+        pg.evaluate("show('work')"); pg.wait_for_timeout(200)
+        pg.evaluate("document.querySelector('#themeBtn').click()"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"theme-flipped-{theme}.png"))
+        flipped = pg.evaluate("document.documentElement.dataset.theme")
+        if flipped == theme:
+            errs.append("theme button didn't switch the theme")
+        pg.evaluate("document.querySelector('#themeBtn').click()"); pg.wait_for_timeout(400)
+        # v0.4.8: /update updates Blaze right in the chat (no Settings screen).
+        pg.evaluate("newChat()"); pg.wait_for_timeout(300)
+        pg.evaluate("""window.__upd = {current: 'v0.4.7', latest: 'v0.4.8', available: true, can_auto: true, method: 'Blaze downloads the setup and restarts.', page: ''};
+          document.querySelector('#input').value = '/upd'; onType();""")
+        pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"update-command-{theme}.png"))
+        pg.evaluate("pickMenu(0)"); pg.wait_for_timeout(900)
+        pg.screenshot(path=str(out / f"update-chat-{theme}.png"))
+        if "42%" not in pg.evaluate("(document.querySelector('.selfupd .work') || {}).textContent || ''"):
+            errs.append("/update progress line missing")
+        if pg.evaluate("view") != "work":
+            errs.append("/update left the chat")
+        pg.evaluate("newChat(); window.__upd = {current: 'v0.4.8', latest: 'v0.4.8', available: false}"); pg.wait_for_timeout(400)
+        pg.evaluate("SelfUpdate.run()"); pg.wait_for_timeout(500)
+        if "newest version" not in pg.evaluate("(document.querySelector('.selfupd .md') || {}).textContent || ''"):
+            errs.append("/update up-to-date answer missing")
+        pg.screenshot(path=str(out / f"update-latest-{theme}.png"))
+        pg.evaluate("window.__upd = null")
         # v0.5: Memory graph. Overview, the best-linked memory selected, mid-replay, sorting into categories.
         pg.evaluate("show('memory')"); pg.wait_for_timeout(700)
         pg.evaluate("MemoryUI.settle()"); pg.wait_for_timeout(500)
@@ -230,7 +321,7 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"onboard-04-perms-mac-{theme}.png"))
         pg.evaluate("window.go.main.App.State().then(s => { s.desktop = s.__d; Onboard.close(); show('work'); })"); pg.wait_for_timeout(300)
         if errs:
-            print("JS errors:", errs); sys.exit(1)
+            print("JS errors:", errs); allerrs.extend(f"{theme}: {e}" for e in errs)
     # Windows runs frameless with its own title-bar buttons.
     pg = b.new_page(viewport={"width": 1280, "height": 820}, device_scale_factor=1)
     pg.add_init_script(f"window.__theme='light';window.__os='windows';window.__sample='{sample}';" + mock)
@@ -239,6 +330,9 @@ with sync_playwright() as p:
     pg.goto(url); pg.wait_for_timeout(600)
     pg.screenshot(path=str(out / "home-windows-light.png"))
     if errs:
-        print("JS errors:", errs); sys.exit(1)
+        print("JS errors:", errs); allerrs.extend("windows: " + e for e in errs)
     b.close()
+# Shots still get pushed when something broke; ERRORS.txt says what (the job then fails).
+if allerrs:
+    (out / "ERRORS.txt").write_text("\n".join(allerrs) + "\n"); sys.exit(1)
 print("ok")

@@ -188,6 +188,7 @@ func (a *App) InstallUpdate() string {
 		return err.Error()
 	}
 	a.progress("restart", 100, "Restarting Blaze…")
+	a.markResume() // running agents carry on after the restart (selfupdate.go)
 	go func() {
 		time.Sleep(600 * time.Millisecond)
 		if restart != nil {
