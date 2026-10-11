@@ -9,6 +9,10 @@
 .specs.folded .sp-hd .chev { transform: rotate(-90deg); }
 .sp-hd:hover .chev, .sp-hd:hover .label.ink { color: var(--accent); }
 .specs.folded .sp-list { display: none; }
+.sp-hd .sp-clear { display: none; flex: none; color: var(--weak); padding: 2px 4px; }
+.specs.all-done .sp-hd .sp-clear { display: inline; }
+.sp-hd .sp-clear:hover, .sp-hd .sp-clear:focus-visible { color: var(--accent); }
+.specs.all-done { box-shadow: inset 3px 0 0 var(--hair2); }
 .sp-list { max-height: min(40vh, 340px); overflow: auto; position: relative; }
 
 .sprow { border-bottom: 1px solid var(--hair); }

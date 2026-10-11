@@ -2,6 +2,11 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.8.2 (Specialists strip tucks away when done)
+- When every specialist in a round has finished and nothing awaits review, the strip shows the outcome for 6 seconds, then hides; an open row keeps it up while you read. **Clear** in its header hides a finished round at once.
+- A new round shows only its own specialists, not the finished ones from before; a reopened chat shows only specialists that still need something.
+- CI: jsdom test for the strip (`ci/specs.test.js`).
+
 ## v0.8.1 (MCP servers shared with Blaze CLI)
 
 - **One MCP list for both apps**: servers live in `~/.blaze/mcp.json` in the standard shape (`{"mcpServers": {name: {command, args, env} | {url, headers}}}`, plus `"type": "sse"` and `"disabled": true`). Blaze CLI reads and writes the same file; Desktop picks up edits made there (or by hand) on the next look, and keeps keys and fields it doesn't own. Servers Desktop had before move into the file once.
