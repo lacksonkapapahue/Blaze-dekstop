@@ -41,6 +41,7 @@ function connAction(c, after) {
   if (c.status === "connected") { b.className = "btn line sm"; b.textContent = "Manage"; b.onclick = () => show("connector", c.id); }
   else if (c.status === "expired") { b.className = "btn accent sm"; b.innerHTML = `${icon("retry", "i sm")}Reconnect`; b.onclick = go; }
   else if (c.status === "connecting") { b.className = "btn ghost sm"; b.textContent = "Cancel"; b.onclick = async () => { await API().ConnectorCancel(c.id); after && after(); }; }
+  else if (c.one_click) { b.className = "btn accent sm"; b.textContent = "Connect"; b.title = "Sign in to " + c.name + " in your browser. No keys needed."; b.onclick = go; }
   else if (c.status === "needs_setup" || c.auth === "token") { b.className = "btn line sm"; b.textContent = "Set up"; b.onclick = () => show("connector", c.id); }
   else { b.className = "btn accent sm"; b.textContent = "Connect"; b.onclick = go; }
   return b;
@@ -134,8 +135,21 @@ async function connectorView(el, id) {
     acts.append(dc);
   } else if (c.status === "connecting") {
     acts.append(connAction(c, redraw));
+  } else if (c.one_click) {
+    // The one-click box below carries the Connect button.
   } else if (c.auth !== "token") {
     const cn = connAction(c, redraw); if (c.status === "needs_setup") { cn.className = "btn accent sm"; cn.textContent = "Connect"; cn.disabled = true; cn.title = "Fill in the setup first"; } acts.append(cn);
+  }
+
+  // One click: Blaze's sign-in service holds the developer app, so there's nothing to set up.
+  const live = c.status === "connected" || c.status === "expired";
+  if (c.one_click && !live && c.status !== "connecting") {
+    const g = group("Connect");
+    const bx = h("div", "box pad oneclick", `<div><div class="ocbadge"><span class="dot"></span>One click</div><div class="t" style="margin-top:8px">Sign in to ${esc(c.name)} in your browser</div><div class="s">Approve access and you're done: no developer app, no keys. Tokens stay in your system keychain.</div></div>`);
+    const b = connAction(c, redraw); b.classList.remove("sm"); bx.append(b);
+    g.append(bx); col.append(g);
+  } else if (c.cloud === "soon" && !live && c.status !== "connecting") {
+    col.append(h("div", "callout soonnote", `${icon("plug")}<div>One-click Connect for ${esc(c.name)} is coming soon. Until then, connect it with your own ${c.auth === "token" ? "token" : "developer app"} below.</div></div>`));
   }
 
   if (c.status === "expired") col.append(h("div", "callout", `${icon("retry")}<div>Your ${esc(c.name)} connection has expired. Reconnect it before Blaze can use it.</div>`));
@@ -150,9 +164,9 @@ async function connectorView(el, id) {
       $(".cp", bx).onclick = () => { navigator.clipboard.writeText(c.pending.user_code); toast("Code copied"); };
     } else {
       bx.innerHTML = `<div class="waitline"><span class="sq"></span><span>Waiting for you to sign in to ${esc(c.name)} in your browser…</span></div>
-        <div class="keyrow" style="margin-top:12px"><button class="btn line sm op">${icon("ext", "i sm")}Open the sign-in page again</button></div>
-        <details class="paste"><summary class="small sub">Browser showed an error page instead of coming back?</summary><div class="small sub" style="margin:8px 0">Copy the full address from the browser's address bar and paste it here.</div><div class="keyrow"><input class="field mono pu" placeholder="http://127.0.0.1:43117/callback?code=…"><button class="btn line sm pb">Finish</button></div></details>`;
-      $(".pb", bx).onclick = async () => { const err = await API().ConnectorPasteCallback($(".pu", bx).value); if (err) toast(err, "error"); redraw(); };
+        <div class="keyrow" style="margin-top:12px"><button class="btn line sm op">${icon("ext", "i sm")}Open the sign-in page again</button></div>${c.pending.one_click ? "" : `
+        <details class="paste"><summary class="small sub">Browser showed an error page instead of coming back?</summary><div class="small sub" style="margin:8px 0">Copy the full address from the browser's address bar and paste it here.</div><div class="keyrow"><input class="field mono pu" placeholder="http://127.0.0.1:43117/callback?code=…"><button class="btn line sm pb">Finish</button></div></details>`}`;
+      if ($(".pb", bx)) $(".pb", bx).onclick = async () => { const err = await API().ConnectorPasteCallback($(".pu", bx).value); if (err) toast(err, "error"); redraw(); };
     }
     $(".op", bx).onclick = () => API().OpenURL(c.pending.url);
     g.append(bx); col.append(g);
@@ -161,7 +175,7 @@ async function connectorView(el, id) {
   // Setup: fields, steps, console link, redirect choice.
   let setupG = null;
   if (c.status !== "connecting") {
-    const g = group(c.auth === "token" ? "Connect with a token" : "Your developer app", c.auth === "token" ? "" : "Blaze has no server of its own, so you make a free developer app and paste its ID. It only ever talks to " + esc(c.name) + ".");
+    const g = group(c.auth === "token" ? "Connect with a token" : "Your developer app", c.auth === "token" ? "" : "Make a free developer app and paste its ID. Blaze then talks to " + esc(c.name) + " directly from this computer.");
     const steps = h("ol", "csteps"); (c.steps || []).forEach(s => steps.append(h("li", "", esc(s))));
     const consoleBtn = h("button", "btn line sm", `${icon("ext", "i sm")}Open ${esc(c.console_name || "the developer console")}`); consoleBtn.onclick = () => API().OpenURL(c.console);
     const fields = h("div", "formgrid cfields");
@@ -200,14 +214,24 @@ async function connectorView(el, id) {
       if (c.id === "google") rd.append(h("div", "note2", "Desktop app clients accept any 127.0.0.1 port, so there's nothing to add in Google Cloud."));
       fields.append(rd);
     }
-    if (c.status === "connected" || c.status === "expired") {
-      // Already set up: keep the developer app out of the way.
+    if (c.auth !== "token" && (c.one_click || c.via === "broker")) {
+      // One-click is the main path, so the developer app gets its own Connect.
+      const mc = h("button", "btn accent sm", "Connect with my app");
+      mc.onclick = async () => { mc.disabled = true; const r = await API().ConnectorConnectManual(c.id); mc.disabled = false; if (r && r.status === "error") toast(r.error, "error"); else redraw(); };
+      const kr = h("div", "keyrow"); kr.append(mc); fields.append(kr);
+    }
+    const oneClickish = c.one_click || c.via === "broker";
+    if (live || oneClickish) {
+      // Already set up, or one click covers it: keep the developer app out of the way.
       const d = h("details", "csetupwrap");
-      d.append(h("summary", "", `${icon("chev", "i sm")}<span>${c.auth === "token" ? "Replace the token" : "Developer app and redirect URI"}</span>`), bx);
-      g.innerHTML = ""; g.append(group(c.auth === "token" ? "Token" : "Your developer app").firstChild, d);
+      const label = oneClickish && !(live && c.via !== "broker")
+        ? (c.auth === "token" ? "Use your own token instead" : "Use your own developer app instead")
+        : (c.auth === "token" ? "Replace the token" : "Developer app and redirect URI");
+      d.append(h("summary", "", `${icon("chev", "i sm")}<span>${label}</span>`), bx);
+      g.innerHTML = ""; g.append(group(oneClickish ? "Advanced" : c.auth === "token" ? "Token" : "Your developer app").firstChild, d);
     } else g.append(bx);
     setupG = g;
-    if (c.status !== "connected" && c.status !== "expired") col.append(g);
+    if (!live && !oneClickish) col.append(g);
   }
   if (c.status === "connected" || c.status === "expired") {
     const g = group("Use with Blaze");
@@ -215,7 +239,7 @@ async function connectorView(el, id) {
     const tg = h("label", "toggle", `<input type="checkbox" ${c.enabled ? "checked" : ""}><span><span class="tt">Let Blaze use ${esc(c.name)}</span><span class="td">When off, its tools are hidden from Blaze; the sign-in stays.</span></span>`);
     $("input", tg).onchange = async e => { await API().ConnectorSetEnabled(c.id, e.target.checked); redraw(); };
     bx.append(tg);
-    if (c.since) bx.append(h("div", "note2", `Connected ${esc(c.since)}${(c.granted || []).length ? ". Blaze can " + esc(c.granted.join(", ")) + "." : "."}`));
+    if (c.since) bx.append(h("div", "note2", `Connected ${esc(c.since)}${c.via === "broker" ? " in one click" : ""}${(c.granted || []).length ? ". Blaze can " + esc(c.granted.join(", ")) + "." : "."}`));
     g.append(bx); col.append(g);
   }
 
@@ -288,7 +312,7 @@ on("connector_suggest", d => {
     if (enable) { await API().ConnectorSetEnabled(d.id, true); card.classList.add("done"); $(".actions", card).innerHTML = `<span class="label">Turned on · ask again</span>`; return; }
     await loadConnectors();
     const c = (CV.connectors || []).find(x => x.id === d.id);
-    if (!c || c.status === "needs_setup" || c.auth === "token") { show("connector", d.id); return; }
+    if (!c || (!c.one_click && (c.status === "needs_setup" || c.auth === "token"))) { show("connector", d.id); return; }
     const r = await API().ConnectorConnect(d.id);
     if (r && r.status === "error") toast(r.error, "error"); else { card.classList.add("done"); $(".actions", card).innerHTML = `<span class="label">Finish in your browser</span>`; }
   };
