@@ -27,6 +27,8 @@ function connectorRow(c, redraw, opts = {}) {
   else if (st === "connected") stat = acctStatus("Off", "off", "Connected, but off for Blaze");
   else if (st === "expired") stat = acctStatus("Expired", "ink");
   else if (st === "connecting") stat = acctStatus("Waiting", "warn", "Finish signing in in your browser");
+  else if (c.one_click) stat = acctStatus("One click", "", "Connect signs you in through the browser. No keys needed.");
+  else if (c.cloud === "soon") stat = acctStatus("Own key", "off", "One-click Connect is coming soon; connect with your own key for now");
   const cap = st === "connected" && c.account ? `${esc(c.account)} · ${esc(capOf(c))}` : esc(capOf(c));
   r.innerHTML = `${logo(c.id)}<div class="am"><div class="an">${esc(c.name)}</div><div class="ac">${cap}</div></div><div class="ar">${stat}</div>`;
   const open = () => { acctFrom = opts.from || ""; show("connector", c.id); };
@@ -34,7 +36,7 @@ function connectorRow(c, redraw, opts = {}) {
   // Hark-style quiet buttons: Connect and Manage are line buttons, Reconnect stays accent.
   if (b.textContent === "Connect" || b.textContent === "Set up") { b.className = "btn line sm"; b.textContent = "Connect"; }
   if (b.textContent === "Manage") { b.className = "btn ghost sm"; b.innerHTML = `Manage${icon("chev", "i sm")}`; }
-  if (st === "needs_setup" || isLogin(c) && st !== "connected" && st !== "expired" || st === "connected") b.onclick = e => { e.stopPropagation(); open(); };
+  if (st === "needs_setup" || isLogin(c) && !c.one_click && st !== "connected" && st !== "expired" || st === "connected") b.onclick = e => { e.stopPropagation(); open(); };
   $(".ar", r).append(b);
   r.onclick = e => { if (!e.target.closest("button")) open(); };
   // Anything that leaves for the connector page comes back to where it started.
@@ -84,6 +86,9 @@ async function drawAccounts(body, redraw) {
   const provs = (S.providers || []).filter(p => p.id !== "pollinations").sort((a, b) => (b.ready ? 1 : 0) - (a.ready ? 1 : 0));
   const list = h("div", "alist");
   const t = acctTab;
+  if (t === "all" && window.accountCard) {
+    try { await loadAccount(); list.append(ACCT.signed_in ? accountCard(true) : signedOutCard()); } catch (e) { /* account service is optional */ }
+  }
   const box = () => { const b = h("div", "abox"); list.append(b); return b; };
   if (t === "all" || t === "connections") {
     if (t === "all") list.append(acctSection("Connections", oauth.length));
@@ -105,7 +110,7 @@ async function drawAccounts(body, redraw) {
     const b = box(); provs.forEach(p => b.append(keyRow(p, redraw)));
     if (t === "keys") list.append(h("div", "anote", "Model providers. A second key for the same service joins its key ring: when one runs out of quota, Blaze carries on with the next."));
   }
-  list.append(h("div", "anote", `Sign-ins come back to <span class="mono">${esc(CV.loopback || "127.0.0.1")}</span>. Tokens and keys stay in your system keychain, never in a file.`));
+  list.append(h("div", "anote", `Sign-ins come back to <span class="mono">${esc(CV.loopback || "127.0.0.1")}</span>. Tokens and keys stay in your system keychain, never in a file. One-click Connect signs in through Blaze's sign-in service, which never keeps your tokens.`));
   body.innerHTML = ""; body.append(list);
 }
 

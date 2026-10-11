@@ -1,0 +1,27 @@
+# Blaze accounts + one-click connector broker. Free tier only: Workers + one KV namespace.
+name = "blaze-auth"
+main = "src/index.ts"
+compatibility_date = "2025-10-01"
+account_id = "ef895b6795ee39066c863c39a42ec8b6"
+workers_dev = true
+
+[vars]
+BASE_URL = "https://blaze-auth.blaze-app.workers.dev"
+# Comma-separated browser origins allowed to call the API (the desktop app calls from Go,
+# which sends no Origin, so this can stay empty).
+ALLOWED_ORIGINS = ""
+# WebCrypto in Workers caps PBKDF2 at 100000 iterations. Lower it (e.g. 60000) only if
+# free-tier sign-ins hit "exceeded CPU time"; each user's hash keeps its own count.
+PBKDF2_ITERATIONS = "100000"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "03a2047f64234d28946816100f97e46a"
+
+# Secrets (never in this file): wrangler secret put <NAME>
+#   GOOGLE_CLIENT_ID   GOOGLE_CLIENT_SECRET    sign-in with Google + Google connector
+#   GITHUB_CLIENT_ID   GITHUB_CLIENT_SECRET    sign-in with GitHub + GitHub connector
+#   SPOTIFY_CLIENT_ID  SPOTIFY_CLIENT_SECRET
+#   NOTION_CLIENT_ID   NOTION_CLIENT_SECRET
+#   SLACK_CLIENT_ID    SLACK_CLIENT_SECRET
+# A provider without both secrets answers 503 {"error":"not_configured"}.

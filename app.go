@@ -75,6 +75,7 @@ type App struct {
 	busy    bool
 	pending map[string]chan int // confirm cards: 0 no, 1 yes, 2 always
 	conn    *connect.Manager
+	cloud   *cloudState // Blaze account + one-click connectors (account.go)
 	convID  string
 	history []llm.Message
 	pv      *preview
@@ -132,6 +133,7 @@ func (a *App) startup(ctx context.Context) {
 	a.pv.load(a.prefs.Folder)
 	a.newEnv()
 	a.startConnectors()
+	a.startCloud()
 	a.startComposer()
 	a.startAgents()
 	a.startShell()
