@@ -515,7 +515,7 @@ func (a *App) run(ctx context.Context) {
 	prompt := ""
 	a.mu.Lock()
 	for _, m := range a.history {
-		if m.Role == "user" && !isAgentResult(m) {
+		if m.Role == "user" && !isAgentResult(m) && !strings.HasPrefix(m.Content, continueTag) {
 			prompt = strings.TrimPrefix(firstLine(stripAttached(m.Content)), "[Design edit] ")
 		}
 	}
@@ -577,18 +577,23 @@ func (a *App) run(ctx context.Context) {
 		all := append(append(append(tools.Select(conv), a.conn.Tools()...), agents.MainTools()...), updateBlazeTool())
 		known := append(append(append(tools.Names(), a.conn.Known()...), agents.MainToolNames...), "update_blaze")
 		wr.EventsEmit(a.ctx, "thinking", step)
+		var partial strings.Builder // what streamed, kept if the reply breaks off
 		r, err := llm.CompleteWith(ctx, a.cfg, msgs, a.modeTools(all), llm.Opts{
-			OnText:   func(s string) { wr.EventsEmit(a.ctx, "delta", s) },
+			OnText:   func(s string) { partial.WriteString(s); wr.EventsEmit(a.ctx, "delta", s) },
 			OnStatus: func(s string) { wr.EventsEmit(a.ctx, "status", s) },
 			// Keyless may answer plain chat in Work when nothing that can use tools is set up.
 			// Never in Design: a design turn without tools can't change anything.
 			PlainFallback: !design,
 		})
 		if err != nil {
+			// Keep what the user already saw, so Continue picks up from there.
+			kept := a.keepPartial(partial.String())
 			if ctx.Err() != nil {
-				wr.EventsEmit(a.ctx, "stopped", nil)
+				wr.EventsEmit(a.ctx, "stopped", map[string]any{"resumable": kept || step > 0})
 			} else {
-				wr.EventsEmit(a.ctx, "error", turnError(err))
+				e := turnError(err)
+				e["partial"] = kept || step > 0
+				wr.EventsEmit(a.ctx, "error", e)
 			}
 			return
 		}
@@ -614,13 +619,17 @@ func (a *App) run(ctx context.Context) {
 			if a.autoReply(&ap, r.Text) {
 				continue // Autopilot: the user is away, so the agent decides and keeps going
 			}
-			wr.EventsEmit(a.ctx, "done", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless, "seconds": time.Since(started).Seconds()})
+			done := map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless, "seconds": time.Since(started).Seconds()}
+			if r.Truncated() {
+				done["cut"] = true // ran out of output tokens or the stream broke: offer Continue
+			}
+			wr.EventsEmit(a.ctx, "done", done)
 			return
 		}
 		dispatched, onlyAgentTools := false, true
 		for _, tc := range n.Calls {
 			if ctx.Err() != nil {
-				wr.EventsEmit(a.ctx, "stopped", nil)
+				wr.EventsEmit(a.ctx, "stopped", map[string]any{"resumable": true})
 				return
 			}
 			wr.EventsEmit(a.ctx, "tool", map[string]string{"id": tc.ID, "name": tc.Function.Name, "args": tc.Function.Arguments})
@@ -668,7 +677,22 @@ func (a *App) run(ctx context.Context) {
 			return
 		}
 	}
-	wr.EventsEmit(a.ctx, "error", map[string]any{"message": fmt.Sprintf("Stopped after %d steps without finishing. Say \"continue\" to keep going.", steps), "kind": "steps"})
+	wr.EventsEmit(a.ctx, "error", map[string]any{"message": fmt.Sprintf("Stopped after %d steps without finishing. Continue gives it another %d.", steps, steps), "kind": "steps"})
+}
+
+// continueTag starts the message the Continue button sends.
+const continueTag = "[Continue]"
+
+// keepPartial saves the text a reply streamed before it broke off (Stop, an error),
+// so the model can see where it stopped when the user presses Continue.
+func (a *App) keepPartial(text string) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	a.mu.Lock()
+	a.history = append(a.history, llm.Message{Role: "assistant", Content: text + "\n\n(cut off here)"})
+	a.mu.Unlock()
+	return true
 }
 
 // turnError is what the chat's error card shows: a plain sentence, the raw details,
@@ -820,6 +844,7 @@ RULES
 DESIGN TAB
 - Build anything visual (pages, screens, components, logos) as real files in the project: plain HTML/CSS/SVG, or the project's own framework. The app previews them live in its Design tab and saves a version after each turn.
 - For a framework app, start its dev server with run_shell background=true; the app finds the localhost URL. Don't open_url it.
+- A message starting with [Continue] means your last reply was cut off (output limit, the user pressed Stop, an error, or the step limit). Carry on exactly where it stopped: no recap and no apology, don't repeat text already written, and if it broke mid-sentence or mid-code-block, resume there (reopen the code fence first). If tools were mid-way, check what already happened before redoing it.
 - A message starting with [Design edit] names one element (CSS selector + its HTML). Change ONLY that element in the source file, keep everything else identical, then say in one line what changed.
 - When asked for directions, make 2-3 clearly different options as separate files (e.g. design/option-a.html, option-b.html, option-c.html), each self-contained. (The Directions button runs them as live branches instead.)
 `)

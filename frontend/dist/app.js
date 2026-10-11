@@ -417,7 +417,8 @@ function loadConv(conv) {
         }
         const s = addStep(turn, tc.id, tc.function.name, tc.function.arguments); finishStep(turn, s, results[tc.id] || "");
       });
-      if (m.content && m.content !== "…") turn.text += (turn.text ? "\n\n" : "") + m.content;
+      // "(cut off here)" marks, for the model, where a reply broke off; the user sees the text joined.
+      if (m.content && m.content !== "…") turn.text += (turn.text ? "\n\n" : "") + m.content.replace(/\n\n\(cut off here\)$/, "");
     }
   });
   turns.forEach(t => renderAnswer(t, true));
@@ -445,6 +446,7 @@ function userMsg(content, att) {
   let text = content.replace(/\n*<attached path="([^"]*)"([^>]*)>[\s\S]*?<\/attached>/g, (_, p, rest) => { if (!/kind=/.test(rest)) files.push(p); return ""; });
   if (text.startsWith("[Autopilot] ")) return apNote();
   const m = h("div", "msg user");
+  if (text.startsWith(CONTINUE_TAG)) { m.classList.add("cont"); m.append(h("div", "bubble", `${icon("retry", "i sm")} Continue`)); return m; }
   if (text.startsWith("[Design edit]")) {
     const act = (text.match(/^\[Design edit\] (.*)/) || [])[1] || "Edit";
     const req = (text.match(/\nRequest: ([\s\S]*)$/) || [])[1] || "";
@@ -638,6 +640,8 @@ async function runCommand(c) {
 async function sendText(text, files, att) {
   const col = $("#log .col", pane);
   const heroEl = $(".hero", col); if (heroEl) heroEl.remove();
+  // A new message moves on: an older reply's Continue would resume the wrong thing.
+  $$(".cutrow", col).forEach(r => r.remove()); $$(".contbtn", col).forEach(b => b.remove());
   const bubble = userMsg(text + (files || []).map(f => `\n<attached path="${f}"></attached>`).join(""), att);
   col.append(bubble);
   if (busy) {
@@ -737,6 +741,29 @@ function routeMeta(turn, d) {
   turn.el.append(m);
 }
 
+// ---------- Continue: pick up a reply that was cut off ----------
+// Shown when a reply hit the model's output limit, the stream broke, the user pressed
+// Stop, an error ended it part-way, or it ran out of steps. The model sees what it
+// already wrote (Go keeps the partial text) and carries on from there.
+const CONTINUE_TAG = "[Continue]";
+const CONTINUE_TEXT = CONTINUE_TAG + " Pick up exactly where you stopped.";
+function continueReply() {
+  $$(".contbtn").forEach(b => b.closest(".cutrow") ? b.closest(".cutrow").remove() : b.remove());
+  sendText(CONTINUE_TEXT, [], []);
+}
+function continueBtn(cls = "accent") {
+  const b = h("button", `btn sm ${cls} contbtn`, `${icon("retry", "i sm")}Continue`);
+  b.title = "Carry on from where the reply stopped";
+  b.onclick = e => { e.stopPropagation(); continueReply(); };
+  return b;
+}
+function cutRow(target, why) {
+  if (!target || $(".cutrow", target)) return;
+  const row = h("div", "cutrow", `<span class="label">${esc(why)}</span><span class="grow"></span>`);
+  row.append(continueBtn());
+  target.append(row);
+}
+
 // The error card: one plain sentence, what each model said (short), and actions.
 function errorCard(target, e) {
   if (typeof e === "string") e = { message: e, detail: "" };
@@ -752,7 +779,7 @@ function errorCard(target, e) {
   if (setup) btn("accent", `${icon("key", "i sm")}Add a model`, () => show("settings", "providers"));
   else if (e.kind !== "steps") btn("accent", `${icon("retry", "i sm")}Retry`, () => retry());
   if (e.kind !== "steps") { const sw = btn("line", `${icon("layers", "i sm")}Switch model`, ev => { ev.stopPropagation(); modelPopover(sw); }); sw.dataset.pop = "1"; }
-  if (e.kind === "steps") btn("accent", "Continue", () => { $("#input").value = "continue"; submit(); });
+  if (e.kind === "steps" || e.partial) acts.prepend(continueBtn(e.kind === "steps" ? "accent" : "line"));
   if (e.detail && e.detail !== e.message) btn("ghost", "Details", () => card.classList.toggle("open"));
   $("pre", card).textContent = e.detail || "";
   target.append(card);
@@ -813,7 +840,7 @@ on("confirm", c => {
 });
 on("done", d => {
   thinking(false);
-  if (current) { renderAnswer(current, true); finishWork(current, d && d.seconds); routeMeta(current, d); }
+  if (current) { renderAnswer(current, true); finishWork(current, d && d.seconds); routeMeta(current, d); if (d && d.cut) cutRow(current.el, "The reply was cut off"); }
   if (d && d.route) setModel(d.route);
   current = null; setBusy(false); scrollDown(); refreshSide();
 });
@@ -823,10 +850,14 @@ on("error", e => {
   errorCard(current ? current.el : $("#log .col", pane), e);
   current = null; setBusy(false); scrollDown(true); refreshSide();
 });
-on("stopped", () => {
+on("stopped", d => {
   thinking(false);
   if (current) { if (current.text) renderAnswer(current, true); finishWork(current); }
-  if (current) current.el.append(h("div", "meta", `<span class="route">Stopped</span>`));
+  if (current) {
+    const m = h("div", "meta", `<span class="route">Stopped</span><span class="grow"></span>`);
+    if ((d && d.resumable) || current.text) m.append(continueBtn("ghost xs"));
+    current.el.append(m);
+  }
   current = null; setBusy(false); refreshSide();
 });
 on("design", d => {

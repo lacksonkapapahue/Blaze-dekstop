@@ -64,6 +64,14 @@ type Result struct {
 	Usage     *Usage
 	Headers   map[string]string // x-ratelimit-* of the reply
 	Repairs   []string          // what the tool-call gatekeeper fixed
+	Finish    string            // the provider's finish_reason: "stop", "length", "tool_calls"…
+	Cut       bool              // the stream broke off before the reply ended
+}
+
+// Truncated reports a reply the model didn't get to finish: it hit its output-token
+// limit, or the stream broke off. The app offers Continue for these.
+func (r *Result) Truncated() bool {
+	return r != nil && (r.Cut || r.Finish == "length" || r.Finish == "max_tokens")
 }
 
 type HTTPError struct {
@@ -334,8 +342,9 @@ func (s *streamAcc) result() []ToolCall {
 
 type chunk struct {
 	Choices []struct {
-		Delta   *delta `json:"delta"`
-		Message *delta `json:"message"`
+		Delta        *delta  `json:"delta"`
+		Message      *delta  `json:"message"`
+		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *Usage          `json:"usage"`
 	Error json.RawMessage `json:"error"`
@@ -394,6 +403,9 @@ func ParseStream(r io.Reader, onText func(string), tick func()) (*Result, error)
 			res.Usage = ch.Usage
 		}
 		for _, c := range ch.Choices {
+			if c.FinishReason != nil && *c.FinishReason != "" {
+				res.Finish = *c.FinishReason
+			}
 			d := c.Delta
 			if d == nil {
 				d = c.Message
@@ -431,6 +443,7 @@ func ParseStream(r io.Reader, onText func(string), tick func()) (*Result, error)
 			return nil, err
 		}
 		// Cut off mid-stream: keep what arrived, but a half-written call is not safe to run.
+		res.Cut = true
 		var keep []ToolCall
 		for _, c := range res.ToolCalls {
 			if completeJSON(c.Function.Arguments) || strings.TrimSpace(c.Function.Arguments) == "" {

@@ -543,3 +543,8 @@ body.orb #log { padding-top: 16px; }
 body.orb .acard .abody { padding: 10px 12px 14px; font-size: 13px; }
 body.orb .acard .ahead { min-height: 38px; }
 body.orb .acard .atitle { padding-left: 12px; }
+
+/* Continue a reply that was cut off */
+.cutrow { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 8px 10px 8px 12px; border: 1px solid var(--hair2); box-shadow: inset 3px 0 0 var(--acc); }
+.cutrow .label { color: var(--sub); }
+.msg.user.cont .bubble { display: inline-flex; align-items: center; gap: 6px; color: var(--sub); font-size: 12.5px; }

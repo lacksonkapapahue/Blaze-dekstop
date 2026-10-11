@@ -35,6 +35,36 @@ const ok = (cond, msg) => { n++; if (!cond) { fails++; console.log("FAIL " + msg
   for (let i = 0; i < 100 && !d.querySelector("#input"); i++) await tick(30);
   if (!d.querySelector("#input")) { console.log(errs.slice(0,5).join("\n")); w.eval("show(\"work\")"); await tick(100); }
   ok(!!d.querySelector("#input"), "page: composer is up");
+  // Continue: a reply cut off at the output limit, stopped, or ended by an error part-way offers Continue,
+  // which sends the [Continue] message (shown as a small "Continue" bubble).
+  {
+    const sent = []; const A = w.go.main.App, sw = A.SendWith, s1 = A.Send;
+    A.SendWith = async (t, f, a) => { sent.push(t); return "ok"; }; A.Send = async (t, f) => { sent.push(t); return "ok"; };
+    if (typeof w.show === "function") { w.show("work"); await tick(80); }
+    await w.eval('sendText("write me a long story", [], [])'); await tick(40);
+    w.fire("delta", "Once upon a time, the"); w.fire("done", { route: "Groq · x", cut: true }); await tick(40);
+    const row = d.querySelector(".cutrow");
+    ok(!!row && /cut off/.test(row.textContent) && !!row.querySelector(".contbtn"), "continue: a cut-off reply offers Continue");
+    sent.length = 0; row.querySelector(".contbtn").click(); await tick(60);
+    ok(sent.length === 1 && sent[0].startsWith("[Continue]"), "continue: the button sends the [Continue] message");
+    const users = [...d.querySelectorAll(".msg.user")]; const last = users[users.length - 1];
+    ok(last && last.classList.contains("cont") && /Continue/.test(last.textContent) && !/Pick up/.test(last.textContent), "continue: shown as a small Continue bubble");
+    ok(!d.querySelector(".cutrow"), "continue: the old Continue goes away");
+    w.fire("delta", " end."); w.fire("stopped", { resumable: true }); await tick(40);
+    const metas = [...d.querySelectorAll(".meta")]; const sm = metas[metas.length - 1];
+    ok(sm && /Stopped/.test(sm.textContent) && !!sm.querySelector(".contbtn"), "continue: Stop leaves a Continue");
+    await w.eval('sendText("again", [], [])'); await tick(40);
+    ok(!d.querySelector(".contbtn"), "continue: a new message clears old Continue buttons");
+    w.fire("delta", "Half an ans"); w.fire("error", { message: "The model went away.", kind: "model", partial: true }); await tick(40);
+    const card = [...d.querySelectorAll(".card.err")].pop();
+    ok(card && !!card.querySelector(".contbtn") && /Retry/.test(card.textContent), "continue: an error part-way offers Continue beside Retry");
+    await w.eval('sendText("steps", [], [])'); await tick(40);
+    w.fire("error", { message: "Stopped after 30 steps without finishing.", kind: "steps" }); await tick(40);
+    const sc = [...d.querySelectorAll(".card.err")].pop();
+    ok(sc && !!sc.querySelector(".contbtn.accent") && !/Retry/.test(sc.textContent), "continue: the step limit offers Continue");
+    A.SendWith = sw; A.Send = s1;
+  }
+
   // v0.9 New design: a scratch artboard, drawn at its real size scaled to fit, with Export.
   if (typeof w.show === "function") { w.show("design"); await tick(150); }
   const nb = d.querySelector("#dnew");
