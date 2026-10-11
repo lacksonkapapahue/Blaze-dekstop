@@ -92,7 +92,7 @@ function updateCard() {
     <div>Blaze <span class="mono ink">${esc(u.latest)}</span> is out. You have <span class="mono">${esc(u.current)}</span>.</div>
     <div class="sub small" style="margin-top:4px">${esc(u.method || "")}</div><div class="label weak updstatus" style="margin-top:8px"></div>
     <div class="actions"><button class="btn accent sm yes">${u.can_auto ? "Update now" : "Open release page"}</button><button class="btn line sm no">Later</button><button class="btn ghost sm skip">Skip this version</button></div>`);
-  card.querySelector(".yes").onclick = () => u.can_auto ? installUpdate(card) : API().OpenURL(u.page);
+  card.querySelector(".yes").onclick = () => { if (!u.can_auto) return API().OpenURL(u.page); card.remove(); SelfUpdate.run(); };
   card.querySelector(".no").onclick = () => card.remove();
   card.querySelector(".skip").onclick = async () => { await API().SkipUpdate(u.latest); UPD.skipped = true; $("#updCount").textContent = ""; card.remove(); };
   $("#log .col", pane).append(card); scrollDown(true);
@@ -851,6 +851,7 @@ function setOrb(onOff) {
   if (onOff) {
     if (!$("#orbbar")) {
       const bar = h("div", "", `<canvas width="44" height="44"></canvas><span class="label ink">Blaze</span><span class="grow"></span>
+        <button class="themebtn" title="Switch theme"></button>
         <button class="btn ghost xs" data-o="new" title="New chat">${icon("plus", "i sm")}<span>New</span></button>
         <button class="btn ghost xs" data-o="expand" title="Open the full window">${icon("open", "i sm")}<span>Expand</span></button>
         <button class="btn ghost xs" data-o="hide" title="Hide (Esc)">${icon("x", "i sm")}<span>Hide</span></button>`);

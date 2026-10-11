@@ -61,6 +61,8 @@ func friendlyTool(name, rawArgs string) string {
 		s = "Running " + orStr(v("language"), "some") + " code"
 	case "install_tool":
 		s = "Installing " + orStr(v("name"), "a tool")
+	case "update_blaze":
+		s = "Checking for a Blaze update"
 	case "remember":
 		s = "Saving that to memory"
 	case "schedule":

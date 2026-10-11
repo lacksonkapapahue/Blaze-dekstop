@@ -73,6 +73,7 @@ func (a *App) startAgents() {
 	}
 	a.agents.Load()
 	a.agents.Prune(7 * 24 * time.Hour)
+	a.resumeAfterUpdate()
 }
 
 func (a *App) emit(ev string, d any) {

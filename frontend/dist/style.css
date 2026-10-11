@@ -138,6 +138,12 @@ select.field { appearance: none; padding-right: 30px; background-image: linear-g
 .chip { display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; border: 1px solid transparent; font: 12px var(--mono); color: var(--sub); max-width: 38%; min-width: 0; }
 .chip:hover { border-color: var(--hair2); color: var(--ink); background: var(--raised); }
 .chip > span:not(.dot) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.themebtn { display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none; border: 1px solid var(--hair2); background: var(--raised); color: var(--ink); }
+.themebtn:hover { border-color: var(--ink); }
+.themebtn svg { transition: transform .3s ease; }
+.themebtn:active svg { transform: rotate(-30deg) scale(.9); }
+.themefade, .themefade * { transition: background-color .3s ease, color .3s ease, border-color .3s ease !important; }
+@media (prefers-reduced-motion: reduce) { .themefade, .themefade * { transition: none !important; } .themebtn svg { transition: none; } }
 #route { border-color: var(--hair2); background: var(--raised); color: var(--ink); max-width: 46%; }
 #route:hover { border-color: var(--ink); }
 #route .caret { color: var(--weak); margin-left: 2px; }
@@ -255,7 +261,7 @@ select.field { appearance: none; padding-right: 30px; background-image: linear-g
 .card.confirm { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 .card .title { margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
 .card .detail { font: 12px/1.6 var(--mono); color: var(--ink); background: var(--faint); border: 1px solid var(--hair); padding: 9px 11px; white-space: pre-wrap; word-break: break-all; margin-top: 6px; }
-.card .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.card .actions, .selfupd .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .card.done { opacity: .65; box-shadow: none; border-color: var(--hair2); }
 .card.err { border-color: var(--hair2); box-shadow: inset 3px 0 0 var(--ink); }
 .card.err .msgtext { color: var(--ink); }
