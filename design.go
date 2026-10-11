@@ -271,6 +271,20 @@ func (p *preview) proxy(w http.ResponseWriter, r *http.Request, target string) {
 	rp.ServeHTTP(w, r)
 }
 
+// threeD reports whether the previewed page is a 3D mockup (a Three.js page built from a
+// blaze-parts block, see the three-d-design skill). Those open in Design on their own
+// unless the user chose Never, since picking and editing parts is the point of them.
+func (p *preview) threeD(st DesignState) bool {
+	if st.Target.Kind != "file" || st.Target.Path == "" {
+		return false
+	}
+	p.mu.Lock()
+	full := filepath.Join(p.folder, filepath.FromSlash(st.Target.Path))
+	p.mu.Unlock()
+	b, err := os.ReadFile(full)
+	return err == nil && len(b) < 4<<20 && studio.HasParts(string(b))
+}
+
 // noteTurn records a version when the turn changed design files or found a dev server.
 func (p *preview) noteTurn(changed []string, urls []string, summary string) (bool, DesignState) {
 	p.mu.Lock()

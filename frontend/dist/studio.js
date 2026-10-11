@@ -167,6 +167,7 @@
     const frame = $("#dstage .pframe");
     const post = m => { try { frame && frame.contentWindow.postMessage(m, "*"); } catch (e) {} };
     const acts = $(".sbacts", bar);
+    if (items.every(it => it.part)) return parts3d(bar, items, one, post);
     if (one.leaf && one.text) { const rt = h("button", "", "Retype"); rt.title = "Edit the text right in the page (or double-click it)"; rt.onclick = () => post({ blaze: "retype" }); acts.prepend(rt); }
     // Voice while pointing: hold the mic and say what to change.
     const mic = h("button", "micbtn", `${icon("mic", "i sm")}<span>Hold to talk</span>`);
@@ -209,9 +210,11 @@
     const r = await call("ApplyEdit", { file: "", edit });
     if (r && r.ok) { editDone(r); return true; }
     // Not writable by hand (framework expression, ambiguous match): Blaze does it.
-    const req = edit.kind === "text" ? `Replace its text with: ${edit.new_text}` : edit.kind === "style" ? (why ? why + "\n" : "") + "Set these CSS values in the source: " + Object.entries(edit.props || {}).map(([k, v]) => `${k}: ${v}`).join("; ") : "Remove it";
+    const vals = Object.entries(edit.props || {}).map(([k, v]) => `${k}: ${v}`).join("; ");
+    const req = edit.kind === "text" ? `Replace its text with: ${edit.new_text}` : edit.kind === "style" ? (why ? why + "\n" : "") + "Set these CSS values in the source: " + vals : edit.kind === "part" ? (why ? why + "\n" : "") + "Set these values on this part in the blaze-parts block: " + vals : "Remove it";
     const t = D.target.kind === "url" ? `dev server ${D.target.url} (find the source file)` : D.target.path;
-    sendText(`[Design edit] ${edit.kind === "text" ? "Replace text" : "Restyle"}\nFile: ${t}\nElement: ${(it && it.selector) || ""}\n\`\`\`html\n${(it && it.html) || ""}\n\`\`\`\nRequest: ${req}`, []);
+    const what = edit.kind === "part" ? `Part: ${edit.target.id}\n\`\`\`json\n${(it && it.html) || ""}\n\`\`\`` : `Element: ${(it && it.selector) || ""}\n\`\`\`html\n${(it && it.html) || ""}\n\`\`\``;
+    sendText(`[Design edit] ${edit.kind === "text" ? "Replace text" : edit.kind === "part" ? "Adjust part" : "Restyle"}\nFile: ${t}\n${what}\nRequest: ${req}`, []);
     note("Blaze is making that change" + (r && r.error ? ` (${r.error})` : ""));
     return false;
   }
@@ -227,6 +230,41 @@
     t._k = setTimeout(() => { t.classList.add("out"); setTimeout(() => t.remove(), 300); }, 9000);
     t.onmouseenter = () => clearTimeout(t._k);
   }
+  // 3D parts (three-d-design skill): colour, scale and turn write straight to the part's entry
+  // in the page's blaze-parts JSON; arrow keys in the preview nudge it. No text or CSS tools.
+  function parts3d(bar, items, one, post) {
+    const acts = $(".sbacts", bar);
+    $$("button", acts).forEach(b => { if (b.dataset.a === "Replace text") b.remove(); if (b.dataset.a === "Restyle") b.textContent = "Adjust"; });
+    const mic = h("button", "micbtn", `${icon("mic", "i sm")}<span>Hold to talk</span>`);
+    mic.title = "Hold, say what to change (\"taller, oak, round the corners\"), let go";
+    mic.onpointerdown = e => { e.preventDefault(); voiceStart(mic); };
+    mic.onpointerup = mic.onpointerleave = () => voiceStop(mic);
+    acts.append(mic);
+    const tweak = $(".sbtweak", bar), p = one.part || {};
+    tweak.innerHTML = `<label><span class="label">Colour</span><input type="color" data-p="color"></label>
+      <label><span class="label">Scale</span><input type="range" min="10" max="300" value="100" data-p="scale" data-u="%"></label>
+      <label><span class="label">Turn</span><input type="range" min="-180" max="180" value="0" data-p="rotate-y" data-u="°"></label>
+      <button class="btn accent sm apply">Apply</button>
+      <div class="hknote">Arrow keys move the part in the preview${p.units ? " (" + esc(p.units) + ")" : ""}, Shift for bigger steps, Page Up/Down to raise or lower it.</div>`;
+    const changed = {};
+    $$("input", tweak).forEach(inp => {
+      if (inp.dataset.p === "color") inp.value = rgbHex(one.styles && one.styles.color);
+      inp.oninput = () => { changed[inp.dataset.p] = inp.value; post({ blaze: "style3d", prop: inp.dataset.p, value: inp.value }); };
+    });
+    $(".apply", tweak).onclick = async () => {
+      const text = ($(".sbform input", bar) || {}).value || "";
+      if (!Object.keys(changed).length) { if (text) designEdit("Adjust", text); return; }
+      for (const it of items) {
+        const q = it.part || {}, props = {};
+        if (changed.color) props.color = JSON.stringify(changed.color);
+        if (changed.scale) { const k = +changed.scale / 100, b = q.scale || [1, 1, 1]; props.scale = JSON.stringify(b.map(v => Math.round(v * k * 1000) / 1000)); }
+        if (changed["rotate-y"]) { const b = (q.rotation || [0, 0, 0]).slice(); b[1] = Math.round(((b[1] + +changed["rotate-y"] + 540) % 360 - 180) * 10) / 10; props.rotation = JSON.stringify(b); }
+        await writeBack({ kind: "part", target: it.target, props }, it, text);
+      }
+      selection = null; drawStage();
+    };
+  }
+
   addEventListener("message", e => {
     const m = e.data || {};
     if (m.blaze === "edit" && m.edit && view === "design") {

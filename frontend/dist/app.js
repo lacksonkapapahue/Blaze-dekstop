@@ -881,7 +881,8 @@ on("stopped", d => {
 on("design", d => {
   if (view === "design") { drawDesign(); return; }
   const mode = S.prefs.design_mode || "ask";
-  if (mode === "always") { show("design"); return; }
+  // A 3D mockup is made to be picked and edited, so it opens Design unless the user chose Never.
+  if (mode === "always" || (d && d.three && mode !== "never")) { show("design"); return; }
   $("#designDot").className = "dotnew";
   if (mode === "never") return;
   if (!d || !d.target) return;
@@ -1450,7 +1451,8 @@ function drawSelBar() {
   if (!selection) return;
   const items = selection.items, one = items[items.length - 1];
   const bar = h("div", "selbar");
-  bar.innerHTML = `<div class="sbhead"><span class="label acc">${items.length > 1 ? pad(items.length) + " elements" : "&lt;" + esc(one.tag) + "&gt;"}</span><span class="sbtext">${esc((one.text || "").slice(0, 60))}</span><button class="x" title="Clear">${icon("x", "i sm")}</button></div>
+  const what = items.length > 1 ? pad(items.length) + (items.every(it => it.part) ? " parts" : " elements") : one.part ? "3D part" : "&lt;" + esc(one.tag) + "&gt;";
+  bar.innerHTML = `<div class="sbhead"><span class="label acc">${what}</span><span class="sbtext">${esc((one.text || "").slice(0, 60))}</span><button class="x" title="Clear">${icon("x", "i sm")}</button></div>
     <div class="sbacts"><button data-a="Change">Change</button><button data-a="Remove">Remove</button><button data-a="Restyle">Restyle</button><button data-a="Replace text">Replace text</button><button data-a="Ask">Ask…</button></div>
     <div class="sbform" style="display:none"><input class="field" placeholder=""><button class="btn accent sm go">Do it</button></div>
     <div class="sbtweak" style="display:none">
@@ -1497,7 +1499,10 @@ function designEdit(action, request) {
   if (!selection || busy) return;
   const t = D.target.kind === "url" ? `dev server ${D.target.url} (find the source file)` : D.target.path;
   let text = `[Design edit] ${action}\nFile: ${t}`;
-  selection.items.forEach(it => { text += `\nElement: ${it.selector}\n\`\`\`html\n${it.html}\n\`\`\``; });
+  selection.items.forEach(it => {
+    // A 3D part is an entry in the page's blaze-parts JSON, not a tag in the markup.
+    text += it.part ? `\nPart: ${it.part.id} (${it.part.label || it.part.id})\n\`\`\`json\n${it.html}\n\`\`\`` : `\nElement: ${it.selector}\n\`\`\`html\n${it.html}\n\`\`\``;
+  });
   text += `\nRequest: ${request}`;
   selection = null; selectOn = false;
   drawStage();
@@ -1858,15 +1863,13 @@ function voiceGroup(redraw) {
 
 // Settings › Behaviour › Background agents: how many run at once.
 function agentsGroup(redraw) {
-  const g = group("Background agents & specialists", "Blaze hands long jobs to background agents, and splits big tasks across specialists that work in parallel. More at once finishes sooner but works your computer harder.");
+  const g = group("Background agents & specialists", "Blaze does your tasks itself. It starts a background agent or splits work across specialists only when you ask (and for Design's Directions). More at once finishes sooner but works your computer harder.");
   const row = h("div", "hkrow", `<span class="tt">Run at most</span>`);
   const seg = h("div", "seg");
   const cur = S.prefs.max_agents || (S.info && S.info.cores && S.info.cores <= 2 ? 1 : 3);
   [1, 2, 3, 4, 6].forEach(n => { const b = h("button", cur === n ? "on" : "", `${n} at once`); b.onclick = async () => { S.prefs.max_agents = await API().SetMaxAgents(n); redraw(); }; seg.append(b); });
   row.append(seg);
-  const lw = h("label", "toggle", `<input type="checkbox" id="leadWorks" ${S.prefs.lead_works ? "checked" : ""}><span><span class="tt">Blaze does tasks itself</span><span class="td">Off (recommended): Blaze hands every task to a specialist and only briefs, monitors and steers them, so it's always free to chat. On: Blaze works on tasks itself and you wait. Design edits are always done directly.</span></span>`);
-  $("input", lw).onchange = async e => { S.prefs.lead_works = await API().SetLeadWorks(e.target.checked); };
-  const bx = h("div", "box pad formgrid"); bx.append(lw, row, h("div", "hknote", "Extra agents and specialists wait in a queue and start when one finishes. Specialists that change code each work in their own git worktree (or a copy of the folder) until Blaze reviews and applies their changes."));
+  const bx = h("div", "box pad formgrid"); bx.append(row, h("div", "hknote", "Extra agents and specialists wait in a queue and start when one finishes. Specialists that change code each work in their own git worktree (or a copy of the folder) until Blaze reviews and applies their changes."));
   g.append(bx);
   return g;
 }

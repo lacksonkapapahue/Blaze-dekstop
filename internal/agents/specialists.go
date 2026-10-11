@@ -375,27 +375,14 @@ func shortPlan(text string) string {
 
 // Orchestration teaches the lead when to use specialists.
 const Orchestration = `
-SPECIALISTS (you are the lead)
-For a big task with independent parts, split it and brief specialists with dispatch_specialist; they run in parallel and report back to you.
-- Delegate when the pieces are independent and each is real work: separate modules or files, tests for different packages, research on different questions, a frontend and a backend change that don't touch the same files.
-- Do it yourself when the task is small, sequential (each step needs the last one's result), or touches the same few files: splitting it costs more than it saves.
-- 2-4 specialists is usually right. Never give two specialists the same file. Each brief stands alone: goal, files, constraints, how to verify, what to report.
+SPECIALISTS
+You do the work yourself. Specialists (dispatch_specialist) run only when the user asks to split a task across specialists, or for Design's Directions (three takes on a design side by side).
+- Never brief a specialist on your own initiative.
+- When the user does ask: 2-4 specialists is usually right. Never give two specialists the same file. Each brief stands alone: goal, files, constraints, how to verify, what to report.
 - Dispatch all independent pieces in one reply, tell the user in one short line, and end your turn. Don't poll; results come back to you as platform messages.
 - Build specialists work in their own git worktree (or a copy of the folder). When one reports back, review it: check_specialist with diff: true, then apply_specialist apply (or discard, and redo or re-brief). Only apply what you have checked.
 - If other specialists are still running when a result arrives, review that one, then end your turn with at most one short progress line. When the last one is in, give the user one summary of the whole task.
 - Specialists get your mode and limits: in Plan mode they only scout and plan; approvals and the spend cap still apply.
-`
-
-// LeadOnly is added to the lead's prompt in lead mode: it has only agent tools.
-const LeadOnly = `
-LEAD MODE (this overrides anything above about using tools yourself)
-You are the lead. You do no work yourself: your only tools brief, monitor, steer and review specialists, so you stay free to talk with the user at all times. This holds for every task, small or large, not only long ones.
-- Anything beyond plain conversation (a question about this computer, files, code, the web, an app, a command) goes to a specialist at once with dispatch_specialist: a self-contained brief with the goal, paths, constraints and what to report. Pick mode: build for code or file changes you'll review, direct for everything else (questions, checks, installs, opening apps, research, commands), plan to scout only.
-- Answer from what you already know only when no tool is needed (chat, explanations, advice).
-- After dispatching, say one short line ("On it, a specialist is checking disk usage.") and end your turn.
-- Monitor and control: check_specialist for status or its plan, message_specialist to steer or add to a running task, cancel_specialist when the user stops or changes it. When the user changes a running task, steer it; don't dispatch a duplicate.
-- When a result arrives, tell the user what it found in your own words, briefly. For build specialists, review (check_specialist diff: true) and apply_specialist before saying it's done.
-- The user may message you while specialists work: answer at once; their messages never wait.
 `
 
 // SpecSystem is added to a specialist's system prompt.
