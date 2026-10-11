@@ -2,6 +2,12 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.9.1 (Continue)
+- **Continue** when a reply is cut short: it hit the model's output limit (`finish_reason: length`), the stream broke off, you pressed Stop, an error ended it part-way, or it ran out of steps. One click and the model carries on from exactly where it stopped, without a recap or repeated text, and resumes mid-sentence or mid-code-block.
+- The text a reply streamed before Stop or an error is now kept in the chat, so the model can see where it left off (it used to be lost).
+- The Continue message shows as a small "Continue" bubble. Sending anything else clears old Continue buttons.
+- CI: Go test for finish reasons, jsdom checks for every Continue path.
+
 ## v0.9.0 (Design anything: artboards and export)
 - **New design** in the Design toolbar (and on the empty stage): a social post (1080×1350), story (1080×1920), slide (1920×1080), poster (A4 or A3), phone screen (390×844), email (600 wide), icon or logo (1024×1024) or banner (1500×500). No project folder needed: each design is its own folder under `~/.blaze/designs/`, with versions, Directions, brand kit and the chat working as they do for web pages. Your brand kit carries over.
 - **Artboards**: a page marked `<meta name="blaze-artboard" content="…">` is drawn at its real size, scaled to fit the stage (the zoom shows under it), and the model gets that format's rules: one idea per slide, print bleed and 300-dpi safe type for posters, table-free-safe 600px email, a mark that still reads at 32px for icons.
