@@ -52,7 +52,7 @@ type Lead struct {
 
 // SpecTools are the lead's tools for specialists.
 func SpecTools() []llm.Tool {
-	mode := map[string]any{"type": "string", "enum": []string{"build", "plan"}, "description": "build (default): may change files, in its own isolated copy. plan: read and scout only, returns a plan. Never more than you have: in Plan mode every specialist is plan."}
+	mode := map[string]any{"type": "string", "enum": []string{"build", "direct", "plan"}, "description": "build (default): may change files, in its own isolated copy that you review and apply. direct: works on the real computer with no copy, for anything that isn't a reviewable code change (questions, disk or system checks, installs, opening apps, web research, running commands). plan: read and scout only, returns a plan. Never more than you have: in Plan mode every specialist is plan."}
 	return []llm.Tool{
 		tool("dispatch_specialist", "Brief a specialist for one independent piece of a bigger task. It starts at once and runs in parallel with other specialists (a few at a time; extras queue). For code it works in its own git worktree (or a copy of the folder), so specialists never collide and nothing reaches the user's folder until you review it and call apply_specialist. Its result comes back to you automatically. Dispatch all the independent pieces in one reply.",
 			map[string]any{
@@ -135,6 +135,7 @@ func (m *Manager) dispatchSpecialist(name, brief, workdir, mode string, lead Lea
 		name = strings.Join(f, "-")
 	}
 	mode = strings.ToLower(strings.TrimSpace(mode))
+	direct := mode == "direct"
 	if mode != "plan" {
 		mode = "build"
 	}
@@ -154,19 +155,19 @@ func (m *Manager) dispatchSpecialist(name, brief, workdir, mode string, lead Lea
 			return ToolCall{Result: fmt.Sprintf("Error in dispatch_specialist: the workdir %q isn't a folder.", wd)}
 		}
 	}
-	spec := &Agent{Handle: name, Task: brief, Conv: lead.Conv, Folder: wd, Kind: Specialist, Mode: mode, Workdir: wd, MaxSteps: lead.MaxSteps}
+	spec := &Agent{Handle: name, Task: brief, Conv: lead.Conv, Folder: wd, Kind: Specialist, Mode: mode, Workdir: wd, MaxSteps: lead.MaxSteps, Direct: direct && mode == "build"}
 	h, st, err := m.DispatchAgent(spec)
 	if err != nil {
 		return ToolCall{Result: "Error in dispatch_specialist: " + err.Error()}
 	}
 	m.mu.Lock()
-	iso := m.isoDir != "" && mode == "build" && wd != ""
+	iso := m.isoDir != "" && mode == "build" && wd != "" && !spec.Direct
 	m.mu.Unlock()
 	where := "It reads " + orNone(wd) + " (Plan: read and scout only)."
 	if iso {
 		where = "It works in its own isolated copy of " + wd + " (a git worktree when it's a repo); nothing reaches that folder until you apply_specialist."
 	} else if mode == "build" {
-		where = "It works in " + orNone(wd) + "."
+		where = "It works directly in " + orNone(wd) + " (no copy, nothing to apply)."
 	}
 	if capped {
 		where += " You are in Plan mode, so it is a Plan specialist too."
@@ -189,7 +190,7 @@ func orNone(s string) string {
 // resumed one still has it).
 func (m *Manager) prepare(a *Agent) error {
 	m.mu.Lock()
-	need := a.Kind == Specialist && a.Mode == "build" && a.Workdir != "" && m.isoDir != ""
+	need := a.Kind == Specialist && a.Mode == "build" && !a.Direct && a.Workdir != "" && m.isoDir != ""
 	iso, root := a.Iso, m.isoDir
 	m.mu.Unlock()
 	if !need {
@@ -383,6 +384,18 @@ For a big task with independent parts, split it and brief specialists with dispa
 - Build specialists work in their own git worktree (or a copy of the folder). When one reports back, review it: check_specialist with diff: true, then apply_specialist apply (or discard, and redo or re-brief). Only apply what you have checked.
 - If other specialists are still running when a result arrives, review that one, then end your turn with at most one short progress line. When the last one is in, give the user one summary of the whole task.
 - Specialists get your mode and limits: in Plan mode they only scout and plan; approvals and the spend cap still apply.
+`
+
+// LeadOnly is added to the lead's prompt in lead mode: it has only agent tools.
+const LeadOnly = `
+LEAD MODE (this overrides anything above about using tools yourself)
+You are the lead. You do no work yourself: your only tools brief, monitor, steer and review specialists, so you stay free to talk with the user at all times. This holds for every task, small or large, not only long ones.
+- Anything beyond plain conversation (a question about this computer, files, code, the web, an app, a command) goes to a specialist at once with dispatch_specialist: a self-contained brief with the goal, paths, constraints and what to report. Pick mode: build for code or file changes you'll review, direct for everything else (questions, checks, installs, opening apps, research, commands), plan to scout only.
+- Answer from what you already know only when no tool is needed (chat, explanations, advice).
+- After dispatching, say one short line ("On it, a specialist is checking disk usage.") and end your turn.
+- Monitor and control: check_specialist for status or its plan, message_specialist to steer or add to a running task, cancel_specialist when the user stops or changes it. When the user changes a running task, steer it; don't dispatch a duplicate.
+- When a result arrives, tell the user what it found in your own words, briefly. For build specialists, review (check_specialist diff: true) and apply_specialist before saying it's done.
+- The user may message you while specialists work: answer at once; their messages never wait.
 `
 
 // SpecSystem is added to a specialist's system prompt.
