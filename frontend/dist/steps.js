@@ -331,8 +331,8 @@
       case "connector_tools": { const g = v("group").replace(/^mcp:/, ""); return g ? `Getting ${cap(words(g))} ready` : "Getting your accounts ready"; }
     }
     if (CONN[name]) return CONN[name];
-    // MCP tools are mcp_<server>_<tool>: "Using Linear: list issues".
-    const m = /^mcp_([a-z0-9]+)_(.+)$/i.exec(name || "");
+    // MCP tools are mcp__<server>__<tool> (v0.8.1; mcp_<server>_<tool> before): "Using Linear: list issues".
+    const m = /^mcp__([a-z0-9-]+)__(.+)$/i.exec(name || "") || /^mcp_([a-z0-9]+)_(.+)$/i.exec(name || "");
     if (m) return summary || clip(`Using ${cap(words(m[1]))}: ${words(m[2])}`);
     return summary || (name ? clip("Using " + words(name)) : "Working on it");
   }
