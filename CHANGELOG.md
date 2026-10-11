@@ -2,6 +2,12 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.9.2 (Blaze stays free: specialists do the work, Stop is instant)
+- **Lead mode (on by default)**: Blaze does no work itself. Every task, small or large, goes to a specialist that Blaze briefs, monitors (check_specialist), steers (message_specialist) and stops (cancel_specialist), then reports back. Blaze is always free to chat. New `direct` specialists work on the real computer with no copy, for questions, system checks, installs, apps, research and commands; `build` specialists still work in their own copy for code you review. Design edits are still done directly. Turn it off in Settings › Behaviour › "Blaze does tasks itself".
+- **No more queue**: a message sent while Blaze is answering interrupts that answer (its text so far is kept) and gets answered at once.
+- **Stop is instant**: Stop now kills the running command and everything it started (process group on macOS/Linux, `taskkill /T` on Windows), not only the model call. Before, a long command such as a disk scan kept running until it finished. Specialists' commands stop the same way when they're cancelled.
+- CI: a Windows test that failed while removing its temp folder now retries cleanup; tests for killing a running command, the no-queue path and the setting.
+
 ## v0.9.1 (Continue)
 - **Continue** when a reply is cut short: it hit the model's output limit (`finish_reason: length`), the stream broke off, you pressed Stop, an error ended it part-way, or it ran out of steps. One click and the model carries on from exactly where it stopped, without a recap or repeated text, and resumes mid-sentence or mid-code-block.
 - The text a reply streamed before Stop or an error is now kept in the chat, so the model can see where it left off (it used to be lost).
