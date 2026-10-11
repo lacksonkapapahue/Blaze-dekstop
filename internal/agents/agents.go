@@ -737,10 +737,18 @@ func (m *Manager) view(a *Agent) View {
 
 // ---------------- persistence ----------------
 
+// saveMu orders saves: the state marshalled last is the state written last. Without
+// it a step's save and the finish's save can race on the same .tmp file, and on
+// Windows a rename over a file another save has open fails, so an older "running"
+// state could win over "done".
+var saveMu sync.Mutex
+
 func (m *Manager) save(a *Agent) {
 	if m.dir == "" {
 		return
 	}
+	saveMu.Lock()
+	defer saveMu.Unlock()
 	m.mu.Lock()
 	b, err := json.Marshal(a)
 	m.mu.Unlock()
@@ -749,8 +757,15 @@ func (m *Manager) save(a *Agent) {
 	}
 	_ = os.MkdirAll(m.dir, 0o700)
 	tmp := filepath.Join(m.dir, a.Handle+".json.tmp")
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, filepath.Join(m.dir, a.Handle+".json"))
+	if os.WriteFile(tmp, b, 0o600) != nil {
+		return
+	}
+	dst := filepath.Join(m.dir, a.Handle+".json")
+	for i := 0; i < 5; i++ { // Windows: a reader (Load, antivirus) can hold the file a moment
+		if os.Rename(tmp, dst) == nil {
+			return
+		}
+		time.Sleep(time.Duration(10*(i+1)) * time.Millisecond)
 	}
 }
 
