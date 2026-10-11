@@ -20,7 +20,7 @@ func names(ts []llm.Tool) map[string]bool {
 }
 
 func TestFindToolsActivates(t *testing.T) {
-	t.Setenv("BLAZE_HOME", t.TempDir())
+	testHome(t, t.TempDir())
 	SyncIndex()
 	conv := "chat:test"
 	e := &Env{Conv: func() string { return conv }}
@@ -60,7 +60,7 @@ func schemaTokens(ts []llm.Tool) int {
 // and after (pinned + matching memories, core tools + a names line) for 200 facts
 // and 60 tools. Run with -v to see the numbers.
 func TestTokenSavings(t *testing.T) {
-	t.Setenv("BLAZE_HOME", t.TempDir())
+	testHome(t, t.TempDir())
 	d := DB()
 	subjects := []string{"HomeGlow", "Blaze Desktop", "the Android app", "the Shopify store", "Payoneer", "PayPal", "Coursera", "the CLI", "Kaggle", "TikTok ads"}
 	verbs := []string{"uses", "prefers", "deploys", "tests", "builds", "keeps notes on", "pays for", "checks", "reviews", "plans"}
