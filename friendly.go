@@ -73,8 +73,12 @@ func friendlyTool(name, rawArgs string) string {
 		s = "Saving that to memory"
 	case "schedule":
 		s = "Setting up a schedule"
-	case "use_skill":
+	case "use_skill", "load_skill":
 		s = "Following a saved skill"
+	case "recall":
+		s = "Checking what I remember"
+	case "find_tools":
+		s = "Getting the right tools"
 	case "system_info":
 		s = "Checking your computer"
 	case "forget":

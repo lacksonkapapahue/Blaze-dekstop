@@ -1773,7 +1773,7 @@ async function setAppearance(col, redraw) {
 }
 
 async function setMemory(col) {
-  const g = group("What Blaze remembers", "Lasting facts Blaze saves as you work. Edit freely; it's plain text in ~/.blaze/memory.md.");
+  const g = group("What Blaze remembers", "Lasting facts Blaze saves as you work. Edit freely, one fact per line. Saved in Blaze's local database (~/.blaze/blaze.db); each chat only gets the facts that matter to it.");
   g.id = "memory";
   const mem = h("textarea", "field"); mem.style.minHeight = "260px"; mem.value = S.memory || ""; mem.placeholder = "Nothing yet. Blaze saves lasting facts here as you work, or type your own.";
   const ms = h("button", "btn line sm", "Save"); ms.style.marginTop = "8px"; ms.onclick = async () => { await API().SetMemory(mem.value); ms.textContent = "Saved"; setTimeout(() => ms.textContent = "Save", 1200); };

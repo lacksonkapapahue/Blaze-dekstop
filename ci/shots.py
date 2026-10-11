@@ -330,6 +330,15 @@ with sync_playwright() as p:
             errs.append(f"memory graph is missing data: {st}")
         pg.evaluate("MemoryUI.select(MemoryUI.live.nodes.filter(n => n.kind === 'memory').sort((a, b) => b.deg - a.deg)[0].i)"); pg.wait_for_timeout(600)
         pg.screenshot(path=str(out / f"memory-selected-{theme}.png"))
+        if "In prompts" not in pg.evaluate("(document.querySelector('.mp-meta') || {}).textContent || ''"):
+            errs.append("memory panel is missing the In prompts line")
+        # v0.5.1: search uses the database's word-form search too ("deploying" finds "deploys").
+        pg.evaluate("MemoryUI.select(-1)"); pg.wait_for_timeout(200)
+        pg.fill(".msearch input", "deploying"); pg.wait_for_timeout(500)
+        if not pg.evaluate("MemoryUI.live && MemoryUI.live.match && MemoryUI.live.match.size > 0"):
+            errs.append("memory search found nothing for 'deploying'")
+        pg.screenshot(path=str(out / f"memory-search-{theme}.png"))
+        pg.evaluate("MemoryUI.live.input.value = ''; MemoryUI.live.search('')"); pg.wait_for_timeout(200)
         pg.evaluate("MemoryUI.seek(0.45); MemoryUI.play(4)"); pg.wait_for_timeout(900)
         pg.screenshot(path=str(out / f"memory-replay-{theme}.png"))
         pg.evaluate("MemoryUI.seek(0.93)"); pg.wait_for_timeout(1500)

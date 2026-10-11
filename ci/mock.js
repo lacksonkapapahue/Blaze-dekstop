@@ -106,6 +106,8 @@
       project: /homeglow/i.test(m.t) ? "p1" : /blaze/i.test(m.t) ? "p2" : "", project_name: /homeglow/i.test(m.t) ? "HomeGlow" : /blaze/i.test(m.t) ? "Blaze.ai" : "" };
   });
   memNodes[memNodes.length - 1].created = Date.parse("2026-10-10T19:40:00");
+  // v0.5.1: memories live in blaze.db; a few are pinned (sent with every chat) and each counts its uses.
+  memNodes.forEach((n, i) => { n.uses = (i * 7) % 23; if (i % 13 === 4) n.pinned = true; });
   const skillNodes = [["deploy-site", "Build and push the HomeGlow theme with shopify theme push"], ["pg-docker", "Start Postgres in Docker for local apps"], ["blaze-release", "Bump VERSION, write the docs plan, merge when CI is green"], ["ad-report", "Summarise the week's TikTok and Meta ads spend for HomeGlow"], ["hyprland-float", "Make a window float on Hyprland with a windowrule"]]
     .map(([n, d], i) => ({ id: "skill:" + n, kind: "skill", label: n, text: d, cat: "Skills", created: Date.parse("2026-09-12T10:00:00") + i * 6 * 86400e3, path: "/home/luke/.blaze/skills/" + n + "/SKILL.md" }));
   const projNodes = [{ id: "project:p1", kind: "project", label: "HomeGlow", text: "Shopify theme. Use pnpm. Keep it fast on phones.", cat: "Projects", created: Date.parse("2026-08-30T12:00:00"), project: "p1", project_name: "HomeGlow", path: "/home/luke/code/homeglow" },
@@ -176,6 +178,10 @@
     MemoryGraph: async () => window.__memEmpty ? { nodes: [], edges: [], cats: [] } : window.__memGraph,
     EditMemory: async (id, text) => { const n = window.__memGraph.nodes.find(x => x.id === id); if (n) n.text = text; return { id }; },
     ForgetMemory: async () => "", SortMemories: async () => "", SetMemoryAISort: async () => {},
+    PinMemory: async (id, on) => { const n = window.__memGraph.nodes.find(x => x.id === id); if (n) n.pinned = on; return ""; },
+    // Like the database's porter-stemmed FTS: "deploying" finds "deploys".
+    SearchMemory: async q => { const st = w => w.toLowerCase().replace(/(ing|ed|es|s)$/, ""); const ws = q.split(/\W+/).filter(w => w.length > 2).map(st);
+      return window.__memGraph.nodes.filter(n => n.kind === "memory" && ws.some(w => n.text.split(/\W+/).some(t => st(t) === w))).map(n => n.id); },
     Doctor: async () => [{ name: "Internet", ok: true, detail: "Online" }, { name: "Google Gemini", ok: true, detail: "gemini-3.8-flash answered in 0.9s" }, { name: "Groq", ok: false, detail: "openai/gpt-oss-120b: Groq hit its free limit for now. Blaze will use another model." }, { name: "Shell", ok: true, detail: "bash · /usr/bin/bash" }, { name: "Tray", ok: true, detail: "In the system tray" }, { name: "Shortcut", ok: true, detail: "Press Ctrl+Shift+Space anywhere for quick ask" }, { name: "Start at login", ok: true, detail: "Off (Settings › Behaviour)" }],
   };
   // notify-vision: Settings › Notifications, the privacy indicator, Doctor's lines.

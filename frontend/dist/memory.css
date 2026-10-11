@@ -1,5 +1,5 @@
 /* Memory screen (v0.5): list · canvas graph · detail panel. Square edges, ink + one blue accent. */
-.mem { flex: 1; display: grid; grid-template-columns: 252px minmax(0, 1fr); min-height: 0; background: var(--paper); }
+.mem { flex: 1; display: grid; grid-template-columns: 252px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); min-height: 0; background: var(--paper); }
 .mem.open { grid-template-columns: 252px minmax(0, 1fr) 344px; }
 .mem-load { grid-column: 1 / -1; display: grid; place-items: center; }
 

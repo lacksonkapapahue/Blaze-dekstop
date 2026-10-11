@@ -50,8 +50,9 @@ const MaxCap = 6
 type Runtime struct {
 	// Complete is one model call (the router, budget and fallbacks live behind it).
 	Complete func(ctx context.Context, msgs []llm.Message, tools []llm.Tool) (*llm.Result, error)
-	// Tools lists the tools an agent may call, narrowed by its scope (nil = all).
-	Tools func(scope []string) []llm.Tool
+	// Tools lists the tools an agent may call this step: narrowed by a.Scope when set,
+	// otherwise the core set plus what the agent turned on with find_tools.
+	Tools func(a *Agent) []llm.Tool
 	// Known lists every tool name the gatekeeper should accept.
 	Known func() []string
 	// Exec runs one tool call for an agent. It may block on the user (approvals).
@@ -291,10 +292,9 @@ func (m *Manager) run(ctx context.Context, a *Agent, gen int) {
 		}
 		a.inbox = nil
 		hist := trim(a.History)
-		scope := a.Scope
 		m.mu.Unlock()
 		msgs := append([]llm.Message{{Role: "system", Content: m.rt.System(a)}}, hist...)
-		r, err := m.rt.Complete(ctx, msgs, m.rt.Tools(scope))
+		r, err := m.rt.Complete(ctx, msgs, m.rt.Tools(a))
 		if err != nil {
 			if ctx.Err() != nil {
 				status = Cancelled

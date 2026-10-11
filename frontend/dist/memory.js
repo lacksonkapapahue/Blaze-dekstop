@@ -526,6 +526,7 @@
           <div class="mp-meta">
             <div><span class="label weak">${n.kind === "memory" ? "Saved" : n.kind === "skill" ? "Written" : "Created"}</span><span>${esc(fmtFull(n.created))}</span></div>
             ${n.kind === "memory" ? `<div><span class="label weak">Category</span><span>${esc(cat)} <span class="weak">${n.ai ? "· sorted by AI" : "· guessed from keywords"}</span></span></div>` : ""}
+            ${n.kind === "memory" ? `<div><span class="label weak">In prompts</span><span>${n.pinned ? "Every chat (pinned)" : "When a chat is about it"}${n.uses ? ` <span class="weak">· used ${n.uses}×</span>` : ""}</span></div>` : ""}
             ${n.project_name ? `<div><span class="label weak">Project</span><button class="lnk" data-a="proj">${esc(n.project_name)}</button></div>` : ""}
             ${n.chat ? `<div><span class="label weak">Chat</span><button class="lnk" data-a="chat">${esc(n.chat_title || "Open the chat")}</button></div>` : ""}
             ${n.path ? `<div><span class="label weak">${n.kind === "project" ? "Folder" : "File"}</span><span class="mono small mp-path" title="${esc(n.path)}">${esc(n.path)}</span></div>` : ""}
@@ -557,7 +558,14 @@
           if (err) { note.textContent = err; return; }
           this.burst(n); this.closePanel(); await this.reload();
         };
-        acts.append(save, forget, note);
+        const pin = h("button", "btn ghost sm", n.pinned ? "Unpin" : "Pin");
+        pin.title = n.pinned ? "Stop sending this with every chat" : "Send this with every chat, whatever it's about";
+        pin.onclick = async () => {
+          const err = API().PinMemory ? await API().PinMemory(n.id, !n.pinned) : "";
+          if (err) { note.textContent = err; return; }
+          n.pinned = !n.pinned; this.select(n.i, false);
+        };
+        acts.append(save, forget, pin, note);
       } else if (n.kind === "project") {
         const b = h("button", "btn line sm", `${ic("open")}Open project`); b.onclick = () => show("project", n.project); acts.append(b);
       }
@@ -579,6 +587,14 @@
       else {
         this.match = new Set();
         this.nodes.forEach(n => { const c = this.cats[n.cat]; if ((n.text + " " + n.label + " " + (c ? c.name : "")).toLowerCase().includes(this.query)) this.match.add(n.i); });
+        // v0.5.1: the local database's full-text search adds word-form matches ("deploying" finds "deploys").
+        const q = this.query, api = API();
+        if (api.SearchMemory) Promise.resolve(api.SearchMemory(q)).then(ids => {
+          if (this.query !== q || !this.match || !ids || !ids.length) return;
+          const at = new Map(this.nodes.map(n => [n.id, n.i])); let more = false;
+          ids.forEach(id => { const i = at.get(id); if (i !== undefined && !this.match.has(i)) { this.match.add(i); more = true; } });
+          if (more) { this.drawList(); this.poke(); }
+        }).catch(() => {});
       }
       this.drawList(); this.poke();
     }
