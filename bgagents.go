@@ -212,7 +212,7 @@ func (a *App) agentExec(ctx context.Context, ag *agents.Agent, name, args string
 	if a.conn.Handles(name) {
 		return a.conn.Run(ctx, name, args)
 	}
-	return tools.Run(a.agentEnv(ag), name, args)
+	return tools.RunCtx(ctx, a.agentEnv(ag), name, args)
 }
 
 // agentGate is a sub-agent's approval: Autopilot approves (catastrophic commands stay
