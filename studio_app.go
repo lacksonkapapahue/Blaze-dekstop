@@ -180,7 +180,9 @@ func (a *App) studioPrompt() string {
 	if !a.prefs.Studio.NoTaste {
 		withTaste(func(t *studio.Taste) { b.WriteString(t.Prompt()) })
 	}
-	if a.prefs.Folder != "" {
+	if f, ok := a.artboard(); ok {
+		b.WriteString(f.Prompt())
+	} else if a.prefs.Folder != "" {
 		b.WriteString("PROJECT STACK: " + studio.DetectStack(a.prefs.Folder).Describe() + " (build designs in it)\n")
 	}
 	b.WriteString(`- A message starting with [Critic fix] comes from Blaze's own design critic: fix exactly the listed issues in the source, keep the look, one line on what changed.
