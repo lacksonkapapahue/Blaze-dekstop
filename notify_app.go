@@ -302,21 +302,24 @@ func (a *App) notificationClicked(res wr.NotificationResult) {
 var mdRe = regexp.MustCompile("(?s)```.*?```|:::card[^\n]*|:::|[*_`#>]+")
 
 // afterTurn tells the user an answer is ready when Blaze's window is hidden.
-func (a *App) afterTurn(started time.Time) {
+func (a *App) afterTurn(s *session, started time.Time) {
 	if a.prefs.Notify.Off || a.prefs.Notify.NoTasks || a.ctx == nil {
 		return
 	}
 	a.sh.mu.Lock()
 	visible := a.sh.visible
 	a.sh.mu.Unlock()
-	if visible || time.Since(started) < 3*time.Second {
+	a.mu.Lock()
+	away := a.cur != s // finished in a chat the user left
+	a.mu.Unlock()
+	if (visible && !away) || time.Since(started) < 3*time.Second {
 		return
 	}
 	a.mu.Lock()
-	conv, text := a.convID, ""
-	for i := len(a.history) - 1; i >= 0; i-- {
-		if a.history[i].Role == "assistant" && strings.TrimSpace(a.history[i].Content) != "" {
-			text = a.history[i].Content
+	conv, text := s.id, ""
+	for i := len(s.hist) - 1; i >= 0; i-- {
+		if s.hist[i].Role == "assistant" && strings.TrimSpace(s.hist[i].Content) != "" {
+			text = s.hist[i].Content
 			break
 		}
 	}
