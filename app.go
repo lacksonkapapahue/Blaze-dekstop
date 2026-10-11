@@ -62,6 +62,7 @@ type Prefs struct {
 	Notify    NotifyPrefs   `json:"notify"`               // notifications and proactive suggestions (notify_app.go)
 	Vision    VisionPrefs   `json:"vision"`               // screen reading (vision_app.go)
 	MaxAgents int           `json:"max_agents,omitempty"` // background agents at once (0 = default, bgagents.go)
+	Learn     LearnPrefs    `json:"learn"`                // learn automatically + chat marks (learn_app.go)
 }
 
 type App struct {
@@ -140,6 +141,7 @@ func (a *App) startup(ctx context.Context) {
 	a.startAgents()
 	a.startShell()
 	a.startNotify()
+	a.startLearning()    // bundled skills + proactive memory (learn_app.go)
 	go tools.SyncIndex() // every tool is registered by now (init); index them for find_tools
 }
 
@@ -533,6 +535,7 @@ func (a *App) run(ctx context.Context) {
 		id, hist := a.convID, append([]llm.Message(nil), a.history...)
 		a.mu.Unlock()
 		a.maybeRetitle(id, hist) // background, never blocks the turn
+		a.maybeReflect(id, hist) // end-of-turn learning check (learn_app.go)
 		a.afterTurn(started)
 	}()
 	steps := a.cfg.MaxSteps
@@ -832,6 +835,7 @@ DESIGN TAB
 	b.WriteString(tools.MemoryFor(query))
 	b.WriteString(a.conn.PromptBlock())
 	b.WriteString(tools.SkillsFor(query))
+	b.WriteString(a.learnRules())
 	b.WriteString("\nNow: " + time.Now().Format("Mon 2 Jan 2006 15:04 MST") + "\n")
 	return b.String()
 }

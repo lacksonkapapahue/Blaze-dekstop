@@ -91,7 +91,10 @@ func MemoryFor(query string) string {
 
 func skillsDir() string { return dataDir("skills") }
 
-type Skill struct{ Name, Desc, Path string }
+type Skill struct {
+	Name, Desc, Path string
+	Off              bool // turned off in Settings › Skills: kept on disk, left out of prompts
+}
 
 func parseSkill(path, txt string) Skill {
 	s := Skill{Name: filepath.Base(filepath.Dir(path)), Path: path}
@@ -119,7 +122,7 @@ func skillFiles() []skillFile {
 	var out []skillFile
 	ents, _ := os.ReadDir(skillsDir())
 	for _, en := range ents {
-		if !en.IsDir() {
+		if !en.IsDir() || strings.HasPrefix(en.Name(), ".") {
 			continue
 		}
 		f := filepath.Join(skillsDir(), en.Name(), "SKILL.md")
@@ -162,8 +165,9 @@ func syncSkills(d *store.DB) {
 
 func toSkills(in []store.Skill) []Skill {
 	out := make([]Skill, 0, len(in))
+	off := disabledSkills()
 	for _, s := range in {
-		out = append(out, Skill{s.Name, s.Desc, s.Path})
+		out = append(out, Skill{Name: s.Name, Desc: s.Desc, Path: s.Path, Off: off[filepath.Base(filepath.Dir(s.Path))] || off[s.Name]})
 	}
 	return out
 }
@@ -181,7 +185,12 @@ func Skills() []Skill {
 // SkillsFor is the skills section of the system prompt: the best matches for query
 // (every skill when there are only a few), names and one-line descriptions only.
 func SkillsFor(query string) string {
-	all := Skills()
+	var all []Skill
+	for _, s := range Skills() {
+		if !s.Off {
+			all = append(all, s)
+		}
+	}
 	if len(all) == 0 {
 		return ""
 	}
@@ -189,7 +198,11 @@ func SkillsFor(query string) string {
 	if len(all) > SkillLimit {
 		pick = nil
 		if d := DB(); d != nil {
-			pick = toSkills(d.SearchSkills(query, SkillLimit))
+			for _, s := range toSkills(d.SearchSkills(query, SkillLimit+4)) {
+				if !s.Off && len(pick) < SkillLimit {
+					pick = append(pick, s)
+				}
+			}
 		}
 	}
 	var b strings.Builder
@@ -235,8 +248,8 @@ func memID(s string) (int64, bool) {
 }
 
 func init() {
-	register("remember", "Save a lasting fact about the user or their setup (preferences, project paths, how they like things). Not for one-off task details. Near-duplicates update the existing memory.",
-		[]prop{p("fact", "string", "One short sentence")}, []string{"fact"},
+	register("remember", "Save a lasting fact about the user or their setup (preferences, project paths, how they like things), with its context. Not for one-off task details or secrets. Near-duplicates update the existing memory; pass replaces=#id when the fact supersedes a saved one.",
+		[]prop{p("fact", "string", "One short sentence"), p("replaces", "string", "Optional: the id (#12) of a saved memory this one replaces because it changed")}, []string{"fact"},
 		func(e *Env, a args) string {
 			d := DB()
 			if d == nil {
@@ -245,6 +258,12 @@ func init() {
 			fact := strings.Join(strings.Fields(a.s("fact")), " ")
 			if fact == "" {
 				return "Error in remember: write the fact."
+			}
+			if id, ok := memID(a.s("replaces")); ok {
+				if err := d.Edit(id, fact); err == nil {
+					Learned(LearnEvent{Kind: "memory", Action: "replaced", Text: fact, Ref: fmt.Sprintf("#%d", id)})
+					return fmt.Sprintf("Replaced memory #%d with the new fact.", id)
+				}
 			}
 			memCtx.Lock()
 			pr, ch := memCtx.project, memCtx.chat
@@ -256,9 +275,20 @@ func init() {
 			case st == store.Exists:
 				return fmt.Sprintf("Already remembered (#%d).", id)
 			case st == store.Updated:
+				Learned(LearnEvent{Kind: "memory", Action: "updated", Text: fact, Ref: fmt.Sprintf("#%d", id)})
 				return fmt.Sprintf("Updated memory #%d with the new wording.", id)
 			}
-			return "Remembered."
+			Learned(LearnEvent{Kind: "memory", Action: "saved", Text: fact, Ref: fmt.Sprintf("#%d", id)})
+			out := fmt.Sprintf("Remembered (#%d).", id)
+			// A light nudge against stale duplicates: show what looks like the same subject.
+			if rel := d.Related(fact, 0.34, 3, id); len(rel) > 0 {
+				out += " Similar saved memories:"
+				for _, m := range rel {
+					out += fmt.Sprintf(" #%d %q;", m.ID, m.Text)
+				}
+				out += " If one is now wrong, forget it (or next time use remember with replaces=#id)."
+			}
+			return out
 		})
 
 	register("recall", "Search everything you've saved about the user (your prompt only shows the memories that match this conversation). Use before asking the user something you may already know.",
@@ -290,12 +320,18 @@ func init() {
 				return "Error: Blaze's memory database can't be opened."
 			}
 			if id, ok := memID(a.s("text")); ok {
+				m, _ := d.Memory(id)
 				if err := d.Delete(id); err != nil {
 					return fmt.Sprintf("No memory #%d.", id)
 				}
+				Learned(LearnEvent{Kind: "memory", Action: "forgot", Text: m.Text, Ref: fmt.Sprintf("#%d", id)})
 				return fmt.Sprintf("Forgot memory #%d.", id)
 			}
-			return fmt.Sprintf("Forgot %d fact(s).", len(d.ForgetMatching(a.s("text"))))
+			gone := d.ForgetMatching(a.s("text"))
+			for _, m := range gone {
+				Learned(LearnEvent{Kind: "memory", Action: "forgot", Text: m.Text, Ref: fmt.Sprintf("#%d", m.ID)})
+			}
+			return fmt.Sprintf("Forgot %d fact(s).", len(gone))
 		})
 
 	register("load_skill", "Load a skill's full instructions (listed in your prompt) before doing that kind of task.",
@@ -305,16 +341,20 @@ func init() {
 	register("use_skill", "Same as load_skill.", []prop{p("name", "string", "Skill name")}, []string{"name"},
 		func(e *Env, a args) string { return loadSkill(a.s("name")) })
 
-	register("write_skill", "Save a reusable skill (a SKILL.md with name, description and steps) so next time the task goes faster.",
-		[]prop{p("name", "string", "kebab-case name"), p("description", "string", "When to use it, one line"), p("body", "string", "Markdown steps")},
+	register("write_skill", "Create or rewrite a reusable skill (~/.blaze/skills/<name>/SKILL.md) so the next task of that kind goes faster. Use when a multi-step workflow repeats, the user teaches a method, or you found a better way for an existing skill (load_skill it first, then write the whole improved body under the same name).",
+		[]prop{p("name", "string", "kebab-case name, e.g. deploy-homeglow"), p("description", "string", "When to use it, one line"), p("body", "string", "Markdown: numbered steps, exact commands, checks, pitfalls"), p("tags", "string", "Optional comma-separated tags")},
 		[]string{"name", "description", "body"},
 		func(e *Env, a args) string {
-			d := filepath.Join(skillsDir(), a.s("name"))
-			_ = os.MkdirAll(d, 0o755)
-			txt := "---\nname: " + a.s("name") + "\ndescription: " + a.s("description") + "\n---\n\n" + a.s("body") + "\n"
-			if err := os.WriteFile(filepath.Join(d, "SKILL.md"), []byte(txt), 0o644); err != nil {
+			name := strings.ToLower(strings.TrimSpace(a.s("name")))
+			created, err := WriteSkill(name, a.s("description"), splitTags(a.s("tags")), a.s("body"))
+			if err != nil {
 				return "Error: " + err.Error()
 			}
-			return "Saved skill " + a.s("name") + "."
+			if created {
+				Learned(LearnEvent{Kind: "skill", Action: "created", Text: name, Ref: name})
+				return "Saved skill " + name + ". Tell the user in one short line."
+			}
+			Learned(LearnEvent{Kind: "skill", Action: "edited", Text: name, Ref: name})
+			return "Updated skill " + name + ". Tell the user in one short line what changed."
 		})
 }

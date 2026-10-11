@@ -491,6 +491,32 @@ with sync_playwright() as p:
             errs.append("privacy indicator did not hide")
         pg.evaluate("""fire('suggest', {id: 'n3', kind: 'suggest', title: 'pnpm test fails in price.ts', body: 'Expected 19.99, got 19.989999. I can fix the rounding.', prompt: 'Fix the failing price test'})"""); pg.wait_for_timeout(300)
         pg.screenshot(path=str(out / f"suggest-{theme}.png"))
+        # v0.7: bundled skill library (Settings › Skills), Learning settings, and the "learned" marks in chat.
+        pg.evaluate("show('settings','skills')"); pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"skills-library-{theme}.png"))
+        if pg.evaluate("document.querySelectorAll('.skrows .skr').length") < 15:
+            errs.append("Settings › Skills lists fewer than 15 skills")
+        pg.evaluate("document.querySelector('.sksearch').value='design'; document.querySelector('.sksearch').oninput(); [...document.querySelectorAll('.skacts .btn')].find(b => b.textContent === 'View').click()"); pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"skills-filter-{theme}.png"))
+        pg.evaluate("show('settings','behaviour')"); pg.wait_for_timeout(500)
+        pg.evaluate("[...document.querySelectorAll('.group')].find(g => /Learn automatically/.test(g.textContent)).scrollIntoView({block: 'start'})"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"skills-learning-settings-{theme}.png"))
+        if not pg.evaluate("/Learn automatically/.test(document.querySelector('#view').textContent)"):
+            errs.append("Settings › Behaviour has no Learning group")
+        pg.evaluate("""newChat().then(() => { sendText('From now on deploy HomeGlow with pnpm and the Shopify CLI - here is how: build, push the theme, then purge the CDN.', []);
+          fire('route', {route: 'Google Gemini · gemini-3.8-flash'});
+          fire('tool', {id: 'l1', name: 'remember', args: '{"fact":"Deploys HomeGlow with pnpm and the Shopify CLI"}'});
+          fire('learned', {kind: 'memory', action: 'saved', text: 'Deploys HomeGlow with pnpm and the Shopify CLI', ref: '#41'});
+          fire('tool_done', {id: 'l1', result: 'Remembered (#41).'});
+          fire('tool', {id: 'l2', name: 'write_skill', args: '{"name":"deploy-homeglow"}'});
+          fire('learned', {kind: 'skill', action: 'created', text: 'deploy-homeglow', ref: 'deploy-homeglow'});
+          fire('tool_done', {id: 'l2', result: 'Saved skill deploy-homeglow.'});
+          fire('delta', 'Got it. Next time I deploy HomeGlow I will run `pnpm build`, `shopify theme push` and purge the CDN.\n\nSaved this as the **deploy-homeglow** skill.');
+          fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 3.1});
+          fire('learned', {kind: 'memory', action: 'replaced', text: 'Prefers pnpm over npm in every project', ref: '#12', auto: true}); })"""); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"skills-learned-chat-{theme}.png"))
+        if pg.evaluate("document.querySelectorAll('.learnmark').length") != 3:
+            errs.append("learned marks missing in the chat")
         # The indicator in the orb.
         pg.set_viewport_size({"width": 400, "height": 560})
         pg.evaluate("newChat().then(() => { fire('orb', true); fire('screen', {on: true, how: 'pixels'}); })"); pg.wait_for_timeout(700)

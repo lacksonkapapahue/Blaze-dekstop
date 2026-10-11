@@ -22,7 +22,7 @@ func TestMemoryFacts(t *testing.T) {
 		t.Error("memory.md should be kept as a backup")
 	}
 	SetMemoryContext("p1", "c1")
-	if r := Run(&Env{}, "remember", `{"fact":"Deploys HomeGlow with  pnpm deploy"}`); r != "Remembered." {
+	if r := Run(&Env{}, "remember", `{"fact":"Deploys HomeGlow with  pnpm deploy"}`); !strings.HasPrefix(r, "Remembered") {
 		t.Fatal(r)
 	}
 	if r := Run(&Env{}, "remember", `{"fact":"deploys homeglow with pnpm deploy."}`); !strings.HasPrefix(r, "Already remembered") {
