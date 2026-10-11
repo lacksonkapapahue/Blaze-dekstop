@@ -126,7 +126,7 @@ func (a *App) startAgents() {
 		a.mu.Lock()
 		delete(a.envs, v.Handle)
 		a.mu.Unlock()
-		a.main.Submit(agents.Input{Kind: "agent", Text: agents.ResultMessage(v), Handle: v.Handle, Conv: v.Conv})
+		a.deliverResult(agents.Input{Kind: "agent", Text: agents.ResultMessage(v), Handle: v.Handle, Conv: v.Conv})
 	}
 	a.agents.Load()
 	a.agents.Prune(7 * 24 * time.Hour)
@@ -349,25 +349,17 @@ func (a *App) SetMaxAgents(n int) int {
 
 // ---------------- the main turn queue ----------------
 
-// turn runs one main-agent turn for an input from the Mainline: a user message, a
-// background agent's result, or a retry. Inputs that arrive mid-turn wait their turn.
-func (a *App) turn(in agents.Input) {
+// turn runs one main-agent turn in chat s for an input from s's Mainline: a user
+// message, a background agent's result, or a retry. The chat may be on screen or not:
+// a turn keeps going when the user switches to another chat (sessions.go).
+func (a *App) turn(s *session, in agents.Input) {
 	a.mu.Lock()
 	switch in.Kind {
 	case "agent":
-		if in.Conv != "" && in.Conv != a.convID {
-			// The user moved to another chat: file the result there; the agent's
-			// card in that chat carries the report.
-			a.mu.Unlock()
-			appendToConv(in.Conv, llm.Message{Role: "user", Content: in.Text})
-			a.emit("toast", map[string]string{"text": "Background agent " + in.Handle + " finished in another chat", "kind": "ok"})
-			a.agentElsewhere(in.Handle, in.Conv) // native notification when Blaze is hidden (notify_app.go)
-			return
-		}
-		a.history = append(a.history, llm.Message{Role: "user", Content: in.Text})
+		s.hist = append(s.hist, llm.Message{Role: "user", Content: in.Text})
 	case "retry":
 		last := -1
-		for i, m := range a.history {
+		for i, m := range s.hist {
 			if m.Role == "user" {
 				last = i
 			}
@@ -376,18 +368,17 @@ func (a *App) turn(in agents.Input) {
 			a.mu.Unlock()
 			return
 		}
-		a.history = a.history[:last+1]
+		s.hist = s.hist[:last+1]
 	default:
-		a.history = append(a.history, llm.Message{Role: "user", Content: in.Text, Attach: in.Attach})
+		s.hist = append(s.hist, llm.Message{Role: "user", Content: in.Text, Attach: in.Attach})
 	}
 	ctx, cancel := context.WithCancel(a.ctx)
-	a.cancel = cancel
-	a.busy = true
-	a.tagMemoryTurn()
-	conv := a.convID
+	a.startSession(s, cancel)
+	a.tagMemoryTurn(s)
+	conv := s.id
 	a.mu.Unlock()
-	a.emit("turn", map[string]any{"kind": in.Kind, "handle": in.Handle, "conv": conv})
-	a.run(ctx)
+	a.temit(s, "turn", map[string]any{"kind": in.Kind, "handle": in.Handle, "conv": conv})
+	a.run(ctx, s)
 }
 
 // appendToConv adds a message to a saved chat that isn't open.
