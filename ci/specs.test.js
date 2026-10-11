@@ -65,6 +65,27 @@ const ok = (cond, msg) => { n++; if (!cond) { fails++; console.log("FAIL " + msg
     A.SendWith = sw; A.Send = s1;
   }
 
+  // v0.9.3 chats run on their own: switching chats mid-answer is allowed and the answer keeps going.
+  {
+    const A = w.go.main.App, oc = A.OpenConversation;
+    if (typeof w.show === "function") { w.show("work"); await tick(60); }
+    await w.eval('sendText("long task", [], [])'); await tick(30);
+    ok(w.eval("busy") === true, "background chats: a turn is running");
+    let opened = "";
+    A.OpenConversation = async id => { opened = id; return { id, messages: [{ role: "user", content: "older chat" }, { role: "assistant", content: "old answer" }] }; };
+    await w.eval('openChat("c2")'); await tick(40);
+    ok(opened === "c2" && w.eval("busy") === false, "background chats: you can open another chat while one is answering");
+    w.fire("live", ["c1"]); await tick(10);
+    w.eval('$("#chats").innerHTML = \'<button class="chat" data-id="c1"><span class="t">x</span></button>\'; markLive()');
+    ok(d.querySelector('#chats .chat[data-id="c1"]').classList.contains("live"), "background chats: the sidebar marks the working chat");
+    A.OpenConversation = async id => ({ id, running: true, messages: [{ role: "user", content: "long task" }, { role: "assistant", content: "Half way" }] });
+    await w.eval('openChat("c1")'); await tick(40);
+    ok(w.eval("busy") === true && !!w.eval("current"), "background chats: going back picks the live answer up");
+    w.fire("delta", "and finished."); w.fire("done", { route: "x" }); await tick(30);
+    ok(w.eval("busy") === false && /finished/.test(d.querySelector("#log").textContent), "background chats: the answer finishes on screen");
+    A.OpenConversation = oc;
+  }
+
   // v0.9.2 no queue: a message sent mid-answer is sent at once (Go interrupts), never shown as queued.
   {
     const sent = []; const A = w.go.main.App, sw = A.SendWith;

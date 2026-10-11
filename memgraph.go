@@ -73,13 +73,11 @@ func (a *App) memAISort() bool { return a.prefs.MemoryAISort == nil || *a.prefs.
 func (a *App) SetMemoryAISort(on bool) { a.prefs.MemoryAISort = &on; a.savePrefs() }
 
 // tagMemoryTurn gives the turn a chat id up front so memories saved in it link to
-// their chat. Called from start() with a.mu held.
-func (a *App) tagMemoryTurn() {
-	if a.convID == "" {
-		a.convID = time.Now().Format("20060102-150405") + "-" + newID()[:4]
-	}
-	tools.SetMemoryContext(a.prefs.Project, a.convID)
-	a.conv.Store(a.convID)
+// their chat. Called from turn() with a.mu held.
+func (a *App) tagMemoryTurn(s *session) {
+	a.nameSession(s)
+	tools.SetMemoryContext(a.prefs.Project, s.id)
+	a.conv.Store(s.id)
 }
 
 // convKey names the current chat for tools turned on with find_tools. It never

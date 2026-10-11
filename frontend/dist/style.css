@@ -548,3 +548,8 @@ body.orb .acard .atitle { padding-left: 12px; }
 .cutrow { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 8px 10px 8px 12px; border: 1px solid var(--hair2); box-shadow: inset 3px 0 0 var(--acc); }
 .cutrow .label { color: var(--sub); }
 .msg.user.cont .bubble { display: inline-flex; align-items: center; gap: 6px; color: var(--sub); font-size: 12.5px; }
+
+/* A chat whose answer is still running in the background (v0.9.3). */
+.chat.live .t::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; vertical-align: 1px; border-radius: 50%; background: var(--accent); animation: livepulse 1.2s ease-in-out infinite; }
+@keyframes livepulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .chat.live .t::before { animation: none; } }
