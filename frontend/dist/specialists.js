@@ -16,7 +16,12 @@ const Specs = (() => {
   const has = h => !!recs[h];
   const claims = v => !!v && (v.kind === "specialist" || has(v.handle));
   const rec = h => recs[h] || (recs[h] = { v: { handle: h, status: "queued", n: 0, kind: "specialist" }, steps: [], el: null, open: false });
-  const mine = () => Object.values(recs).filter(r => r.v.conv && r.v.conv === convId);
+  // Finished = nothing left to do or decide (not running, queued, waiting or awaiting review).
+  const finished = r => !active(r.v.status) && r.v.review !== "pending";
+  const mine = () => Object.values(recs).filter(r => r.v.conv && r.v.conv === convId && !r.gone);
+  let hideTimer = null;
+  const HIDE_AFTER = 6000; // a finished round stays this long, then the strip tucks away
+  function clearFinished() { mine().forEach(r => { if (finished(r)) { r.gone = true; r.open = false; } }); render(true); }
 
   function stateWord(v) {
     const st = v.status;
@@ -32,8 +37,11 @@ const Specs = (() => {
     if (!wrap) return null;
     strip = h("div", "specs");
     strip.id = "specs";
-    strip.innerHTML = `<button class="sp-hd" title="Show or hide the specialists"><span class="label ink">Specialists</span><span class="label sp-sum"></span><span class="grow"></span><svg class="i sm chev" viewBox="0 0 16 16">${IC.down}</svg></button><div class="sp-list"></div>`;
+    strip.innerHTML = `<button class="sp-hd" title="Show or hide the specialists"><span class="label ink">Specialists</span><span class="label sp-sum"></span><span class="grow"></span><span class="label sp-clear" role="button" tabindex="0" title="Hide the finished specialists">Clear</span><svg class="i sm chev" viewBox="0 0 16 16">${IC.down}</svg></button><div class="sp-list"></div>`;
     $(".sp-hd", strip).onclick = () => { folded = !folded; render(true); };
+    const clr = $(".sp-clear", strip);
+    clr.onclick = e => { e.stopPropagation(); clearFinished(); };
+    clr.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); clearFinished(); } };
     wrap.insertBefore(strip, $(".inbox", wrap));
     return strip;
   }
@@ -125,8 +133,15 @@ const Specs = (() => {
     const list = mine();
     const s = ensureStrip();
     if (!s) return;
-    if (!list.length) { s.style.display = "none"; sig = ""; return; }
+    if (!list.length) { s.style.display = "none"; sig = ""; clearTimeout(hideTimer); hideTimer = null; return; }
     s.style.display = "";
+    // When the whole round is finished, show the outcome briefly, then hide it, unless a
+    // row is open (being read). Anything still running or awaiting review keeps it up.
+    const allDone = list.every(finished);
+    s.classList.toggle("all-done", allDone);
+    if (allDone && !list.some(r => r.open)) {
+      if (!hideTimer) hideTimer = setTimeout(() => { hideTimer = null; if (mine().every(finished) && !mine().some(r => r.open)) clearFinished(); }, HIDE_AFTER);
+    } else if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
     s.classList.toggle("folded", folded);
     const c = { run: 0, q: 0, wait: 0, rev: 0, done: 0 };
     list.forEach(r => { const st = r.v.status; if (st === "running") c.run++; else if (st === "queued") c.q++; else if (st === "waiting") c.wait++; else if (r.v.review === "pending") c.rev++; else c.done++; });
@@ -148,6 +163,7 @@ const Specs = (() => {
     const r = rec(v.handle);
     if (v.started && !v.ended) v.skew = (v.seconds || 0) - (Date.now() - v.started) / 1000;
     r.v = { ...r.v, ...v };
+    if (active(r.v.status) || r.v.review === "pending") r.gone = false; // resumed or new work shows again
     if (v.steps) r.steps = v.steps.slice();
     render();
     draw(r);
@@ -166,7 +182,8 @@ const Specs = (() => {
 
   // A saved chat's specialists (from Agents.load).
   function load(list) {
-    (list || []).forEach(v => { const r = rec(v.handle); r.v = { ...v }; r.steps = (v.steps || []).slice(); r.line = null; });
+    // A reopened chat shows only specialists that still need something; finished ones stay hidden.
+    (list || []).forEach(v => { const r = rec(v.handle); r.v = { ...v }; r.steps = (v.steps || []).slice(); r.line = null; r.gone = finished(r); });
     render(true);
   }
 
