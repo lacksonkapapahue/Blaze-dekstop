@@ -76,6 +76,15 @@
     ["Pulled `postgres:17-alpine` (82 MB).", "Created the volume `pgdata` so data survives restarts.", "Started the container `blaze-pg` with `POSTGRES_PASSWORD` from your `.env`.", "Mapped port 5432 to localhost only, not your whole network.", "Waited for `pg_isready` to answer (2.1s).", "Created the database `homeglow` and the user `app`.", "Ran your migrations in `db/migrations` (14 files).", "Seeded 40 test products from `db/seed.sql`.", "Added `DATABASE_URL` to `.env.local`.", "Checked a query: `select count(*) from products` → 40."].map((x, i) => `${i + 1}. ${x}`).join("\n") +
     "\n\n```bash\ndocker run -d --name blaze-pg -p 127.0.0.1:5432:5432 \\\n  -v pgdata:/var/lib/postgresql/data \\\n  -e POSTGRES_PASSWORD=$POSTGRES_PASSWORD postgres:17-alpine\n```\n\nWant me to add it to `docker-compose.yml` too?";
 
+  // v0.4.6: plain-words steps. A turn whose raw commands must never reach the live line.
+  window.__stepsTurn = [
+    { name: "run_shell", args: { command: "cat ~/Projects/blaze/package.json; echo ===; ls ~/Projects/blaze" }, result: "exit 0 · cwd /home/luke/Projects/blaze\n{\n  \"name\": \"blaze\",\n  \"scripts\": { \"build\": \"vite build\", \"test\": \"vitest run\" }\n}\n===\nREADME.md  index.html  package.json  src  vite.config.ts" },
+    { name: "file_search", args: { pattern: "sourcemap" }, result: "vite.config.ts:12:    sourcemap: true," },
+    { name: "web_search", args: { query: "vite production sourcemap slow build" }, result: "5 results\n1. Build Options | Vite: build.sourcemap…" },
+    { name: "file_edit", args: { path: "/home/luke/Projects/blaze/vite.config.ts" }, result: "Edited /home/luke/Projects/blaze/vite.config.ts (1 replacement)." },
+    { name: "run_shell", args: { command: "cd ~/Projects/blaze && pnpm test 2>&1 | tail -20" }, result: "exit 1 · cwd /home/luke/Projects/blaze\nFAIL src/price.test.ts > total rounds to cents\n  expected 19.99, got 19.989999" },
+    { name: "run_shell", args: { command: "pnpm build 2>&1 | tail -5" }, result: "exit 0 · cwd /home/luke/Projects/blaze\nvite v6.2.0 building for production...\n✓ 412 modules transformed.\n✓ built in 9.8s" }];
+
   // v0.5: Memory graph. ~60 memories in 6 categories, plus skills and projects; links are
   // inferred here the same cheap way Go does it (shared rare words, same chat, project mentions).
   const memCats = {
@@ -136,7 +145,9 @@
     Quota: async () => ({ rows: [{ label: "Status", value: "Working · gemini-3.8-flash" }], note: "Google shows exact per-model limits only in AI Studio.", page: "https://aistudio.google.com/" }),
     TestModel: async p => ({ name: p, ok: true, detail: "answered in 0.9s" }),
     ConnectOpenRouter: async () => ({ ok: false, error: "Sign-in didn't finish." }),
-    UseFreeStack: async () => state.chain, CheckUpdate: async () => ({ current: "v0.4.1", latest: "v0.4.1", available: false }),
+    UseFreeStack: async () => state.chain, CheckUpdate: async () => window.__upd || ({ current: "v0.4.1", latest: "v0.4.1", available: false }),
+    // v0.4.8: /update in the chat. Progress events; never "restarts" so the shot can catch it.
+    InstallUpdate: () => new Promise(() => { [8, 42].forEach((p, i) => setTimeout(() => fire("update", { stage: "download", pct: p, text: "" }), 150 + i * 150)); }),
     Files: async () => ["assets/theme.css", "design/option-a.html", "design/option-b.html", "layout/theme.liquid", "package.json", "sections/hero.liquid"],
     Design: async () => ({ base: window.__sample, target: { kind: "file", path: "index.html" }, files: ["index.html", "design/option-a.html"], versions: [{ n: 1, summary: "First pass at the landing page", when: "21:02" }, { n: 2, summary: "Warmer palette and rounded cards", when: "21:10" }, { n: 3, summary: "Bigger hero headline", when: "21:18" }] }),
     SetHotkey: async id => ({ ...state.desktop, hotkey: id }), RetryHotkey: async () => state.desktop, SetAutostart: async () => "",
@@ -176,6 +187,22 @@
        { name: "Screen reading", ok: true, detail: "AT-SPI · 14 apps readable" },
        { name: "Screenshots", ok: false, detail: "grim · Install grim for screenshots (Arch: sudo pacman -S grim)" },
        { name: "Proactive suggestions", ok: true, detail: "Every 10 min at most, 3 an hour, quiet 22:00–08:00 · Checked 10:52 · nothing worth interrupting" }]);
+  // v0.4.7: background agents. A saved chat whose agent was interrupted by a restart.
+  const now0 = Date.now();
+  window.__agentSteps = [
+    { id: "s1", name: "file_read", args: '{"path":"package.json"}', plain: "Reading package.json", result: "Read package.json (48 lines)", done: true },
+    { id: "s2", name: "run_shell", args: '{"command":"pnpm build"}', plain: "Running a command", result: "exit 1 · build failed\nError: Cannot find module './hero.css'", bad: true, done: true },
+    { id: "s3", name: "file_search", args: '{"pattern":"hero.css"}', plain: "Searching your files for \"hero.css\"", result: "sections/hero.liquid:3 · assets/Hero.css", done: true },
+    { id: "s4", name: "file_edit", args: '{"path":"sections/hero.liquid"}', plain: "Editing hero.liquid", result: "Edited sections/hero.liquid (1 replacement).", done: true },
+    { id: "s5", name: "run_shell", args: '{"command":"pnpm build"}', plain: "Running a command", result: "exit 0 · built in 9.8s", done: true },
+    { id: "s6", name: "run_shell", args: '{"command":"pnpm test"}', plain: "Running a command", result: "exit 0 · 42 passed", done: true }];
+  window.__agentConv = { id: "c8", title: "Ship the hero fix", folder: "/home/luke/code/homeglow", messages: [
+    { role: "user", content: "Fix the build and get the tests green, I'll keep working on copy." },
+    { role: "assistant", content: "", tool_calls: [{ id: "d1", function: { name: "dispatch_agent", arguments: '{"handle":"fix-build","task":"Fix the HomeGlow build"}' } }] },
+    { role: "tool", tool_call_id: "d1", content: 'started: agent "fix-build" is working in the background.' },
+    { role: "assistant", content: "On it. I'll report back when the build is green." }],
+    agents: [{ handle: "fix-build", task: "Fix the failing HomeGlow build (pnpm build), then run pnpm test and make sure all tests pass. Report what was wrong.", conv: "c8", status: "interrupted", now: "", n: 3, steps: window.__agentSteps.slice(0, 3), started: now0 - 300000, ended: 0, seconds: 95 }] };
+  Object.assign(A, { Agents: async () => [], AgentStop: async () => "", AgentResume: async () => "", AgentDiscard: async () => "", AnswerAgent: async () => {}, SetMaxAgents: async n => n });
   window.go = { main: { App: new Proxy(A, { get: (t, k) => t[k] || (async () => "") }) } };
   // Events are captured so the screenshot script can play a turn: fire("tool", {...}).
   window.__ev = {};

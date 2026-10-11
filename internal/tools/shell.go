@@ -38,8 +38,8 @@ func NewShell(kind, path, cwd string) *Shell {
 	return &Shell{cwd: cwd, kind: kind, path: path}
 }
 
-func (s *Shell) Cwd() string { s.mu.Lock(); defer s.mu.Unlock(); return s.cwd }
-func (s *Shell) Kind() string { return s.kind }
+func (s *Shell) Cwd() string        { s.mu.Lock(); defer s.mu.Unlock(); return s.cwd }
+func (s *Shell) Kind() string       { return s.kind }
 func (s *Shell) IsPowerShell() bool { return s.kind == "pwsh" || s.kind == "powershell" }
 
 const cwdMark = "__BLAZE_CWD__"
@@ -215,7 +215,11 @@ func (js *Jobs) Get(id int) *job {
 	return nil
 }
 
-func (js *Jobs) List() []*job { js.mu.Lock(); defer js.mu.Unlock(); return append([]*job(nil), js.all...) }
+func (js *Jobs) List() []*job {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+	return append([]*job(nil), js.all...)
+}
 
 func (js *Jobs) StopAll() {
 	for _, j := range js.List() {
@@ -238,7 +242,7 @@ var portRe = regexp.MustCompile(`(?i)(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::\]
 
 func init() {
 	register("run_shell", "Run a command in the user's shell on this PC (cd and exported variables stick between calls). Returns exit code, cwd and output. For servers or anything over ~2 minutes set background=true and follow with job_log. Not for writing files (file_write) or quick Python/Node snippets (run_code).",
-		[]prop{p("command", "string", "The command"), p("background", "boolean", "Run as a background job (servers, watchers, long builds)"), p("timeout_s", "integer", "Foreground timeout, default 120, max 1800")},
+		[]prop{p("command", "string", "The command"), p("background", "boolean", "Run as a background job (servers, watchers, long builds)"), p("timeout_s", "integer", "Foreground timeout, default 120, max 1800"), p("summary", "string", "Optional: 2-5 plain words the user sees while it runs, e.g. \"Checking disk space\". No commands or paths.")},
 		[]string{"command"}, func(e *Env, a args) string {
 			cmd := strings.TrimSpace(a.s("command"))
 			if cmd == "" {

@@ -328,6 +328,21 @@ func (a *App) afterTurn(started time.Time) {
 	_, _ = a.send(notify.Note{Title: "Blaze finished", Body: body, Kind: "task", Chat: conv})
 }
 
+// agentElsewhere: a background agent finished in a chat that isn't open. The toast
+// covers a visible window; a hidden one gets a native notification that opens that chat.
+func (a *App) agentElsewhere(handle, conv string) {
+	if a.prefs.Notify.Off || a.prefs.Notify.NoTasks || a.ctx == nil {
+		return
+	}
+	a.sh.mu.Lock()
+	visible := a.sh.visible
+	a.sh.mu.Unlock()
+	if visible {
+		return
+	}
+	_, _ = a.send(notify.Note{Title: "Background agent finished", Body: "Agent " + handle + " finished its task. Open the chat for its report.", Kind: "task", Chat: conv})
+}
+
 // jobDone: a background job (server, build, watcher) ended after a while.
 func (a *App) jobDone(id int, cmd string, code int, took float64) {
 	if a.prefs.Notify.Off || a.prefs.Notify.NoTasks || took < 30 {
