@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/lacksonkapapahue/blaze-desktop/internal/config"
+	"github.com/lacksonkapapahue/blaze-desktop/internal/studio"
 )
 
 //go:embed picker.js
@@ -38,13 +39,44 @@ type Version struct {
 	Summary string            `json:"summary"`
 	When    string            `json:"when"`
 	Target  DesignTarget      `json:"target"`
-	Files   map[string]string `json:"files,omitempty"` // rel path -> content, every tracked design file at that moment
+	Files   map[string]string `json:"files,omitempty"`  // rel path -> content, every tracked design file at that moment
+	Parent  int               `json:"parent,omitempty"` // the version it was made from (the timeline branches on restore)
+	Kind    string            `json:"kind,omitempty"`   // chat | edit | restore | fix | mix
+	Card    *studio.Card      `json:"card,omitempty"`   // the critic's score card
 }
 
 type DesignState struct {
 	Target   DesignTarget `json:"target"`
 	Versions []Version    `json:"versions"`
 	Tracked  []string     `json:"tracked"`
+	Head     int          `json:"head,omitempty"` // the version the live files are (new versions branch from it)
+
+	Brand    studio.Brand `json:"brand"`              // the project's brand kit (studio_app.go)
+	SiteID   string       `json:"site_id,omitempty"`  // shared-comments id for shipped pages
+	Comments []Comment    `json:"comments,omitempty"` // pinned comments from the phone preview
+	Shipped  []Shipped    `json:"shipped,omitempty"`  // where it was published
+}
+
+// Comment is a pin left on the preview (phone tap-to-comment or a shared page).
+type Comment struct {
+	ID       string  `json:"id"`
+	Sel      string  `json:"sel"`
+	Text     string  `json:"text"`
+	X        float64 `json:"x"` // where on the page, 0..1 of its width
+	Y        float64 `json:"y"` // px from the top of the page
+	Path     string  `json:"path,omitempty"`
+	Who      string  `json:"who,omitempty"`
+	When     string  `json:"when"`
+	Resolved bool    `json:"resolved,omitempty"`
+	From     string  `json:"from,omitempty"` // phone | share
+}
+
+// Shipped is one publish.
+type Shipped struct {
+	Provider string `json:"provider"`
+	URL      string `json:"url"`
+	When     string `json:"when"`
+	Version  int    `json:"version,omitempty"`
 }
 
 type preview struct {
@@ -52,6 +84,13 @@ type preview struct {
 	port   int
 	folder string
 	state  DesignState
+
+	live    map[chan string]bool // hot-reload listeners (/__blaze/live)
+	lan     net.Listener         // the phone preview server, when on
+	lanPort int
+	token   string                     // the phone preview's secret
+	dirPath func(handle string) string // a Directions branch's folder (studio_app.go)
+	onNote  func(c Comment)            // a new comment arrived
 }
 
 var designExt = regexp.MustCompile(`(?i)\.(html?|css|scss|svg|jsx|tsx|vue|svelte)$`)
@@ -110,10 +149,29 @@ func (p *preview) serve(w http.ResponseWriter, r *http.Request) {
 		w.Write(pickerJS)
 		return
 	}
+	if p.special(w, r) {
+		return
+	}
 	p.mu.Lock()
 	st := p.state
 	folder := p.folder
 	p.mu.Unlock()
+	// A Directions branch: /__dir/<handle>/<path> serves from that specialist's copy.
+	if strings.HasPrefix(r.URL.Path, "/__dir/") && p.dirPath != nil {
+		rest := strings.TrimPrefix(r.URL.Path, "/__dir/")
+		h, sub, _ := strings.Cut(rest, "/")
+		if d := p.dirPath(h); d != "" {
+			folder = d
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/" + sub
+			r = r2
+			st.Versions = nil
+			st.Target = DesignTarget{Kind: "file", Path: st.Target.Path}
+		} else {
+			http.Error(w, "that direction is gone", 404)
+			return
+		}
+	}
 
 	if st.Target.Kind == "url" && st.Target.URL != "" {
 		p.proxy(w, r, st.Target.URL)
@@ -238,6 +296,19 @@ func (p *preview) noteTurn(changed []string, urls []string, summary string) (boo
 			p.state.Target = DesignTarget{Kind: "file", Path: "index.html"}
 		}
 	}
+	kind := "chat"
+	switch {
+	case strings.HasPrefix(summary, "[Critic fix]"):
+		kind, summary = "fix", "Critic fix: "+strings.TrimSpace(strings.TrimPrefix(summary, "[Critic fix]"))
+	case strings.HasPrefix(summary, "[Directions mix]"):
+		kind, summary = "mix", "Mixed directions: "+strings.TrimSpace(strings.TrimPrefix(summary, "[Directions mix]"))
+	}
+	p.recordLocked(summary, kind)
+	return true, p.state
+}
+
+// recordLocked saves the tracked files as a new version on top of Head.
+func (p *preview) recordLocked(summary, kind string) Version {
 	files := map[string]string{}
 	for _, t := range p.state.Tracked {
 		if b, err := os.ReadFile(filepath.Join(p.folder, filepath.FromSlash(t))); err == nil && len(b) < 2<<20 {
@@ -252,12 +323,35 @@ func (p *preview) noteTurn(changed []string, urls []string, summary string) (boo
 	if len(summary) > 90 {
 		summary = summary[:90] + "…"
 	}
-	p.state.Versions = append(p.state.Versions, Version{N: n, Summary: summary, When: time.Now().Format("15:04"), Target: p.state.Target, Files: files})
+	parent := p.state.Head
+	if parent == 0 && len(p.state.Versions) > 0 {
+		parent = p.state.Versions[len(p.state.Versions)-1].N
+	}
+	v := Version{N: n, Summary: summary, When: time.Now().Format("15:04"), Target: p.state.Target, Files: files, Parent: parent, Kind: kind}
+	if kind == "fix" {
+		if pv := p.versionLocked(parent); pv != nil && pv.Card != nil {
+			pv.Card.Fixed = true
+			v.Card = &studio.Card{FixOf: parent}
+		}
+	}
+	p.state.Versions = append(p.state.Versions, v)
 	if len(p.state.Versions) > 60 {
 		p.state.Versions = p.state.Versions[len(p.state.Versions)-60:]
 	}
+	p.state.Head = n
+	learnTaste(p.state.Versions)
 	p.saveLocked()
-	return true, p.state
+	go p.broadcast("reload")
+	return v
+}
+
+func (p *preview) versionLocked(n int) *Version {
+	for i := range p.state.Versions {
+		if p.state.Versions[i].N == n {
+			return &p.state.Versions[i]
+		}
+	}
+	return nil
 }
 
 func containsStr(s []string, v string) bool {
@@ -277,13 +371,14 @@ type DesignView struct {
 	Versions []Version    `json:"versions"` // without file bodies
 	Files    []string     `json:"files"`    // previewable files in the project
 	Tracked  []string     `json:"tracked"`  // files this project's chats changed (the Current tab)
+	Head     int          `json:"head"`     // the version the live files are
 }
 
 func (a *App) Design() DesignView {
 	a.pv.mu.Lock()
 	st := a.pv.state
 	a.pv.mu.Unlock()
-	v := DesignView{Base: a.pv.base(), Target: st.Target, Tracked: st.Tracked}
+	v := DesignView{Base: a.pv.base(), Target: st.Target, Tracked: st.Tracked, Head: st.Head}
 	for _, x := range st.Versions {
 		x.Files = nil
 		v.Versions = append(v.Versions, x)
@@ -336,6 +431,9 @@ func (a *App) RestoreVersion(n int) string {
 	defer a.pv.mu.Unlock()
 	for _, v := range a.pv.state.Versions {
 		if v.N == n {
+			if cur := a.pv.versionLocked(a.pv.state.Head); cur != nil && cur.N != n {
+				tasteUndo(joinFiles(cur.Files), joinFiles(v.Files))
+			}
 			for rel, c := range v.Files {
 				full := filepath.Join(a.pv.folder, filepath.FromSlash(rel))
 				_ = os.MkdirAll(filepath.Dir(full), 0o755)
@@ -344,7 +442,9 @@ func (a *App) RestoreVersion(n int) string {
 				}
 			}
 			a.pv.state.Target = v.Target
+			a.pv.state.Head = n
 			a.pv.saveLocked()
+			go a.pv.broadcast("reload")
 			return "ok"
 		}
 	}
