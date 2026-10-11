@@ -45,10 +45,12 @@ func (a *App) startAgents() {
 		Complete: func(ctx context.Context, msgs []llm.Message, ts []llm.Tool) (*llm.Result, error) {
 			return llm.CompleteWith(ctx, a.cfg, msgs, ts, llm.Opts{})
 		},
-		Tools:    a.agentTools,
-		Known:    func() []string { return append(append(tools.Names(), a.conn.Known()...), "ask_user") },
-		Exec:     a.agentExec,
-		System:   func(ag *agents.Agent) string { return a.system() + agents.SubSystem(ag.Handle) },
+		Tools: a.agentTools,
+		Known: func() []string { return append(append(tools.Names(), a.conn.Known()...), "ask_user") },
+		Exec:  a.agentExec,
+		System: func(ag *agents.Agent) string {
+			return a.system(ag.Task) + tools.ExtraLine(agentConv(ag.Handle)) + agents.SubSystem(ag.Handle)
+		},
 		Describe: friendlyTool,
 		MaxSteps: steps,
 	}, agentsDir(), a.agentCap())
@@ -82,17 +84,24 @@ func (a *App) emit(ev string, d any) {
 	}
 }
 
-// agentTools is a sub-agent's tool list: everything the main agent has except the
-// agent-control tools, plus ask_user, optionally narrowed to the dispatch's scope.
-func (a *App) agentTools(scope []string) []llm.Tool {
-	all := append(tools.All(), a.conn.Tools()...)
+// agentConv is the find_tools key of a background agent (each agent turns on its own tools).
+func agentConv(handle string) string { return "agent:" + handle }
+
+// agentTools is a sub-agent's tool list, built the same way as the main agent's:
+// the core set plus what it turned on with find_tools, plus connectors and
+// ask_user, without the agent-control tools. A dispatch's scope narrows it to
+// exactly those tools (searched in every tool, not just the core).
+func (a *App) agentTools(ag *agents.Agent) []llm.Tool {
+	scope := ag.Scope
+	all := append(tools.Select(agentConv(ag.Handle)), a.conn.Tools()...)
 	if len(scope) > 0 {
+		every := append(tools.All(), a.conn.Tools()...)
 		want := map[string]bool{}
 		for _, s := range scope {
 			want[strings.TrimSpace(s)] = true
 		}
 		var out []llm.Tool
-		for _, t := range all {
+		for _, t := range every {
 			if want[t.Function.Name] {
 				out = append(out, t)
 			}
@@ -119,6 +128,7 @@ func (a *App) agentEnv(ag *agents.Agent) *tools.Env {
 	}
 	h := ag.Handle
 	e := &tools.Env{Info: &a.info, Root: root, Yolo: a.env.Yolo, Shell: tools.NewShell(a.info.Shell, a.info.ShellPath, root), Jobs: a.env.Jobs}
+	e.Conv = func() string { return agentConv(h) }
 	e.Confirm = func(title, detail string) bool { return a.agentGate(h, title, detail) }
 	e.Status = func(s string) { a.agents.Status(h, s) }
 	a.envs[h] = e

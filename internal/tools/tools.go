@@ -25,6 +25,7 @@ type Env struct {
 	Status  func(line string) // one-line progress ("Running: npm test")
 	Shell   *Shell
 	Jobs    *Jobs
+	Conv    func() string // the conversation key tools turned on by find_tools belong to
 }
 
 type handler func(e *Env, a args) string
@@ -117,6 +118,9 @@ func Run(e *Env, name, rawArgs string) (out string) {
 		if err := json.Unmarshal([]byte(rawArgs), &a); err != nil {
 			return "Error in " + name + ": the arguments weren't valid JSON (" + err.Error() + "). Call it again with a JSON object."
 		}
+	}
+	if !core[name] && !hidden[name] && name != "find_tools" {
+		Activate(e.conv(), name) // called by exact name: keep it on for this conversation
 	}
 	defer func() {
 		if r := recover(); r != nil {

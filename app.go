@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	wr "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -64,6 +65,7 @@ type Prefs struct {
 }
 
 type App struct {
+	conv  atomic.Value // the current chat id, for convKey (read without a.mu)
 	ctx   context.Context
 	cfg   *config.Config
 	info  sysinfo.Info
@@ -138,6 +140,7 @@ func (a *App) startup(ctx context.Context) {
 	a.startAgents()
 	a.startShell()
 	a.startNotify()
+	go tools.SyncIndex() // every tool is registered by now (init); index them for find_tools
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -173,6 +176,7 @@ func (a *App) newEnv() {
 		Shell: tools.NewShell(a.info.Shell, a.info.ShellPath, a.prefs.Folder),
 		Jobs:  jobs,
 	}
+	a.env.Conv = a.convKey
 	a.env.Confirm = a.gate
 	a.env.Status = func(s string) { wr.EventsEmit(a.ctx, "status", s) }
 }
@@ -264,9 +268,8 @@ func (a *App) SetYolo(v bool)         { a.cfg.AutoApprove = v; _ = a.cfg.Save() 
 func (a *App) SetTheme(t string)      { a.prefs.Theme = t; a.savePrefs() }
 func (a *App) SetDesignMode(m string) { a.prefs.Design = m; a.savePrefs() }
 
-func (a *App) SetMemory(text string) {
-	_ = os.WriteFile(filepath.Join(config.Dir(), "memory.md"), []byte(strings.TrimSpace(text)+"\n"), 0o600)
-}
+// SetMemory replaces the saved memories with the lines of the Settings textarea.
+func (a *App) SetMemory(text string) { tools.SetMemoryText(text) }
 
 // OpenURL opens a link in the user's browser.
 func (a *App) OpenURL(u string) { wr.BrowserOpenURL(a.ctx, u) }
@@ -557,14 +560,16 @@ func (a *App) run(ctx context.Context) {
 		a.mu.Lock()
 		hist := trim(a.history)
 		a.mu.Unlock()
-		sys := a.system() + agents.Delegation
+		conv := a.convKey()
+		sys := a.system(recentQuery(hist)) + tools.ExtraLine(conv) + agents.Delegation
 		if note != "" {
 			sys += "\nABOUT YOUR LAST REPLY\n" + note + "\n"
 		}
 		msgs := append([]llm.Message{{Role: "system", Content: sys}}, hist...)
 		// Connector tools join only when connected and enabled, and a group's tools
 		// only after the model loads it, so the list stays small.
-		all := append(append(append(tools.All(), a.conn.Tools()...), agents.MainTools()...), updateBlazeTool())
+		// Blaze's own tools: the core set plus what find_tools turned on in this chat.
+		all := append(append(append(tools.Select(conv), a.conn.Tools()...), agents.MainTools()...), updateBlazeTool())
 		known := append(append(append(tools.Names(), a.conn.Known()...), agents.MainToolNames...), "update_blaze")
 		wr.EventsEmit(a.ctx, "thinking", step)
 		r, err := llm.CompleteWith(ctx, a.cfg, msgs, a.modeTools(all), llm.Opts{
@@ -753,7 +758,36 @@ func (a *App) SetPersonality(mode, custom string) {
 // DefaultPersonality is shown in Settings so the user can start a custom one from it.
 func (a *App) DefaultPersonality() string { return defaultPersonality }
 
-func (a *App) system() string {
+// recentQuery is what the memory and skill search looks for this turn: the last
+// few user messages and the last reply, oldest first (the search favours the newest words).
+func recentQuery(h []llm.Message) string {
+	var parts []string
+	users, replies := 0, 0
+	for i := len(h) - 1; i >= 0 && users < 3; i-- {
+		m := h[i]
+		c := m.Content
+		switch {
+		case m.Role == "user":
+			users++
+		case m.Role == "assistant" && replies == 0 && c != "":
+			replies++
+			if len(c) > 400 {
+				c = c[:400]
+			}
+		default:
+			continue
+		}
+		if len(c) > 800 {
+			c = c[len(c)-800:]
+		}
+		parts = append([]string{c}, parts...)
+	}
+	return strings.Join(parts, "\n")
+}
+
+// system is the system prompt for a turn whose conversation is about query: it
+// carries only the memories and skills that match (v0.5.1), not all of them.
+func (a *App) system(query string) string {
 	var b strings.Builder
 	b.WriteString(`You are Blaze, a capable assistant in a desktop app on the user's own computer. You act, not just advise: use your tools to run commands, read and edit files, write and run code, use git, search the web and install what's missing.
 
@@ -762,7 +796,8 @@ RULES
 - Write commands for THIS shell (PowerShell syntax on Windows, POSIX elsewhere).
 - Look before you change: file_list / file_read / git status first. Make the smallest correct change, then run it or its tests to check.
 - Servers, watchers and long builds go in run_shell background=true; then job_log. open_url shows a local server or file to the user.
-- Missing program? install_tool (the user approves it). Never use sudo or admin rights without asking.
+- Missing program? install_tool (the user approves it).
+- Only your core tools are loaded each turn. MORE TOOLS below lists the rest by name: call find_tools(query) to turn them on (or call one by its exact name). Memories and skills are also picked per turn: recall(query) and load_skill(name) reach the rest. Never use sudo or admin rights without asking.
 - Be honest about failures. Never claim something worked without checking.
 - Answers: short, direct, Markdown. Lead with the result.
 `)
@@ -793,16 +828,9 @@ DESIGN TAB
 	if _, err := os.Stat(filepath.Join(a.env.Root, ".git")); err == nil {
 		b.WriteString("The project folder is a git repository.\n")
 	}
-	if m := tools.Memory(); m != "" {
-		b.WriteString("\nWHAT YOU KNOW ABOUT THE USER\n" + m + "\n")
-	}
+	b.WriteString(tools.MemoryFor(query))
 	b.WriteString(a.conn.PromptBlock())
-	if sk := tools.Skills(); len(sk) > 0 {
-		b.WriteString("\nSKILLS (load with use_skill first)\n")
-		for _, s := range sk {
-			b.WriteString("- " + s.Name + ": " + s.Desc + "\n")
-		}
-	}
+	b.WriteString(tools.SkillsFor(query))
 	b.WriteString("\nNow: " + time.Now().Format("Mon 2 Jan 2006 15:04 MST") + "\n")
 	return b.String()
 }

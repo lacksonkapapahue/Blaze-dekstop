@@ -183,7 +183,8 @@ var planTools = map[string]bool{
 	"file_read": true, "file_list": true, "file_search": true,
 	"web_search": true, "fetch_page": true, "system_info": true,
 	"git":     true, // read-only subcommands only (planGit)
-	"job_log": true, "use_skill": true,
+	"job_log": true, "use_skill": true, "load_skill": true,
+	"recall": true, "find_tools": true, // searching memory / turning tools on changes nothing (Plan still filters what find_tools turns on)
 	"see_screen": true, "screen_read": true, "read_screen": true, "screen_info": true,
 	"notify":      true, // a notification changes nothing on disk
 	"list_agents": true, // background agents: Plan may look, not start or steer them

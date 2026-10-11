@@ -35,6 +35,8 @@ type MemNode struct {
 	ChatTitle string `json:"chat_title,omitempty"`
 	Path      string `json:"path,omitempty"`
 	AI        bool   `json:"ai,omitempty"` // category came from the model
+	Pinned    bool   `json:"pinned,omitempty"`
+	Uses      int    `json:"uses,omitempty"` // times it was put in a prompt or recalled
 }
 
 type MemEdge struct {
@@ -76,6 +78,14 @@ func (a *App) tagMemoryTurn() {
 		a.convID = time.Now().Format("20060102-150405") + "-" + newID()[:4]
 	}
 	tools.SetMemoryContext(a.prefs.Project, a.convID)
+	a.conv.Store(a.convID)
+}
+
+// convKey names the current chat for tools turned on with find_tools. It never
+// takes a.mu, so tools can ask for it from anywhere.
+func (a *App) convKey() string {
+	s, _ := a.conv.Load().(string)
+	return "chat:" + s
 }
 
 // ---------------- local categories ----------------
@@ -195,36 +205,7 @@ func shortLabel(s string) string {
 // MemoryGraph returns every memory, skill and project with inferred links.
 func (a *App) MemoryGraph() MemGraph {
 	facts := tools.Facts()
-	ix := tools.LoadMemIndex()
 	g := MemGraph{AISort: a.memAISort(), CanSort: len(llm.Targets(a.cfg, false)) > 0}
-
-	// Backfill metadata for facts written before v0.5 (or by hand), once.
-	missing := false
-	for _, f := range facts {
-		if m := ix.Items[f.ID]; m == nil || m.Created.IsZero() {
-			missing = true
-		}
-	}
-	if missing {
-		tools.UpdateMemIndex(func(x *tools.MemIndex) {
-			for _, f := range facts {
-				if m := x.Items[f.ID]; m == nil || m.Created.IsZero() {
-					d := f.Date
-					if d.IsZero() {
-						d = time.Now().Add(-time.Hour)
-					}
-					// Facts from the same day keep their file order.
-					d = d.Add(time.Duration(f.Line) * time.Minute)
-					if m == nil {
-						x.Items[f.ID] = &tools.MemMeta{Created: d}
-					} else {
-						m.Created = d
-					}
-				}
-			}
-			ix = *x
-		})
-	}
 
 	projects := loadProjects()
 	projName := map[string]string{}
@@ -234,7 +215,7 @@ func (a *App) MemoryGraph() MemGraph {
 	chatTitle := map[string]string{}
 	needChats := false
 	for _, f := range facts {
-		if m := ix.Items[f.ID]; m != nil && m.Chat != "" {
+		if f.Chat != "" {
 			needChats = true
 		}
 	}
@@ -257,20 +238,16 @@ func (a *App) MemoryGraph() MemGraph {
 
 	var toks [][]string
 	for _, f := range facts {
-		m := ix.Items[f.ID]
 		t := linkTokens(f.Text)
 		name, ai := localCategory(t), false
-		if m != nil && m.Category != "" {
-			name, ai = m.Category, true
+		if f.Category != "" {
+			name, ai = f.Category, true
 		} else {
 			g.Unsorted++
 		}
-		n := MemNode{ID: f.ID, Kind: "memory", Label: shortLabel(f.Text), Text: f.Text, Cat: cat(name), AI: ai}
-		if m != nil {
-			n.Created = m.Created.UnixMilli()
-			n.Project, n.Chat = m.Project, m.Chat
-			n.ProjName, n.ChatTitle = projName[m.Project], chatTitle[m.Chat]
-		}
+		n := MemNode{ID: f.ID, Kind: "memory", Label: shortLabel(f.Text), Text: f.Text, Cat: cat(name), AI: ai,
+			Created: f.Date.UnixMilli(), Project: f.Project, Chat: f.Chat, ProjName: projName[f.Project], ChatTitle: chatTitle[f.Chat],
+			Pinned: f.Pinned, Uses: f.Uses}
 		g.Nodes = append(g.Nodes, n)
 		toks = append(toks, t)
 	}
@@ -319,7 +296,7 @@ func (a *App) MemoryGraph() MemGraph {
 	}
 
 	// Lazy model sort: only new, unsorted memories, at most every 6 hours, in the background.
-	if g.AISort && g.CanSort && g.Unsorted >= 3 && time.Since(ix.SortedAt) > 6*time.Hour {
+	if g.AISort && g.CanSort && g.Unsorted >= 3 && time.Since(tools.MemSortedAt()) > 6*time.Hour {
 		go a.sortMemories(false)
 	}
 	memSort.Lock()
@@ -452,16 +429,27 @@ func (a *App) ForgetMemory(id string) string {
 }
 
 // SetMemoryCategory pins a memory to a category by hand.
-func (a *App) SetMemoryCategory(id, category string) {
-	category = strings.TrimSpace(category)
-	tools.UpdateMemIndex(func(ix *tools.MemIndex) {
-		m := ix.Items[id]
-		if m == nil {
-			m = &tools.MemMeta{Created: time.Now()}
-			ix.Items[id] = m
-		}
-		m.Category = category
-	})
+func (a *App) SetMemoryCategory(id, category string) { _ = tools.SetFactCategory(id, category) }
+
+// PinMemory pins a memory so it goes into every prompt (or unpins it). Returns "" or a plain error.
+func (a *App) PinMemory(id string, on bool) string {
+	if err := tools.PinFact(id, on); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+// SearchMemory returns the ids of the memories matching q, best first (the Memory screen's search box).
+func (a *App) SearchMemory(q string) []string {
+	d := tools.DB()
+	if d == nil {
+		return nil
+	}
+	var out []string
+	for _, m := range d.Search(q, 200) {
+		out = append(out, tools.FactID(m.ID))
+	}
+	return out
 }
 
 // SortMemories asks the model to sort memories into categories now (all of them).
@@ -489,14 +477,12 @@ func (a *App) sortMemories(all bool) {
 			wr.EventsEmit(a.ctx, "memory", "sorted")
 		}
 	}()
-	tools.UpdateMemIndex(func(ix *tools.MemIndex) { ix.SortedAt = time.Now() })
-	ix := tools.LoadMemIndex()
+	tools.SetMemSortedAt(time.Now())
 	existing := map[string]bool{}
 	var todo []tools.Fact
 	for _, f := range tools.Facts() {
-		m := ix.Items[f.ID]
-		if m != nil && m.Category != "" {
-			existing[m.Category] = true
+		if f.Category != "" {
+			existing[f.Category] = true
 			if !all {
 				continue
 			}
@@ -540,21 +526,14 @@ func (a *App) sortMemories(all bool) {
 		if !ok {
 			return
 		}
-		tools.UpdateMemIndex(func(ix *tools.MemIndex) {
-			for _, f := range batch {
-				c, _ := res[f.ID].(string)
-				c = strings.TrimSpace(c)
-				if c == "" || len(c) > 32 {
-					continue
-				}
-				m := ix.Items[f.ID]
-				if m == nil {
-					m = &tools.MemMeta{Created: f.Date}
-					ix.Items[f.ID] = m
-				}
-				m.Category = c
+		for _, f := range batch {
+			c, _ := res[f.ID].(string)
+			c = strings.TrimSpace(c)
+			if c == "" || len(c) > 32 {
+				continue
 			}
-		})
+			_ = tools.SetFactCategory(f.ID, c)
+		}
 	}
 }
 
