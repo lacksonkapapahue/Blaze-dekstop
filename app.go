@@ -539,8 +539,8 @@ func (a *App) run(ctx context.Context) {
 		msgs := append([]llm.Message{{Role: "system", Content: sys}}, hist...)
 		// Connector tools join only when connected and enabled, and a group's tools
 		// only after the model loads it, so the list stays small.
-		all := append(append(tools.All(), a.conn.Tools()...), agents.MainTools()...)
-		known := append(append(tools.Names(), a.conn.Known()...), agents.MainToolNames...)
+		all := append(append(append(tools.All(), a.conn.Tools()...), agents.MainTools()...), updateBlazeTool())
+		known := append(append(append(tools.Names(), a.conn.Known()...), agents.MainToolNames...), "update_blaze")
 		wr.EventsEmit(a.ctx, "thinking", step)
 		r, err := llm.CompleteWith(ctx, a.cfg, msgs, all, llm.Opts{
 			OnText:   func(s string) { wr.EventsEmit(a.ctx, "delta", s) },
@@ -595,6 +595,9 @@ func (a *App) run(ctx context.Context) {
 				out := a.agents.HandleMainTool(tc.Function.Name, tc.Function.Arguments, conv, a.prefs.Folder)
 				res = out.Result
 				dispatched = dispatched || out.Dispatched != ""
+			} else if tc.Function.Name == "update_blaze" {
+				onlyAgentTools = false
+				res = a.selfUpdate()
 			} else if a.conn.Handles(tc.Function.Name) {
 				onlyAgentTools = false
 				res = a.conn.Run(ctx, tc.Function.Name, tc.Function.Arguments)

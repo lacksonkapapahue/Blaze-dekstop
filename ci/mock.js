@@ -145,7 +145,9 @@
     Quota: async () => ({ rows: [{ label: "Status", value: "Working · gemini-3.8-flash" }], note: "Google shows exact per-model limits only in AI Studio.", page: "https://aistudio.google.com/" }),
     TestModel: async p => ({ name: p, ok: true, detail: "answered in 0.9s" }),
     ConnectOpenRouter: async () => ({ ok: false, error: "Sign-in didn't finish." }),
-    UseFreeStack: async () => state.chain, CheckUpdate: async () => ({ current: "v0.4.1", latest: "v0.4.1", available: false }),
+    UseFreeStack: async () => state.chain, CheckUpdate: async () => window.__upd || ({ current: "v0.4.1", latest: "v0.4.1", available: false }),
+    // v0.4.8: /update in the chat. Progress events; never "restarts" so the shot can catch it.
+    InstallUpdate: () => new Promise(() => { [8, 42].forEach((p, i) => setTimeout(() => fire("update", { stage: "download", pct: p, text: "" }), 150 + i * 150)); }),
     Files: async () => ["assets/theme.css", "design/option-a.html", "design/option-b.html", "layout/theme.liquid", "package.json", "sections/hero.liquid"],
     Design: async () => ({ base: window.__sample, target: { kind: "file", path: "index.html" }, files: ["index.html", "design/option-a.html"], versions: [{ n: 1, summary: "First pass at the landing page", when: "21:02" }, { n: 2, summary: "Warmer palette and rounded cards", when: "21:10" }, { n: 3, summary: "Bigger hero headline", when: "21:18" }] }),
     SetHotkey: async id => ({ ...state.desktop, hotkey: id }), RetryHotkey: async () => state.desktop, SetAutostart: async () => "",

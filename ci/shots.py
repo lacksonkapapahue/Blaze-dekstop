@@ -234,6 +234,29 @@ with sync_playwright() as p:
             errs.append("orb agents indicator missing")
         pg.evaluate("""['laptops', 'price-check'].forEach(h => fire('agent', {handle: h, status: 'cancelled', ended: Date.now()}))""")
         pg.evaluate("fire('orb', false)"); pg.set_viewport_size({"width": 1280, "height": 820}); pg.wait_for_timeout(300)
+        # v0.4.8: the sun/moon theme switch in the top bar, flipped once and back.
+        pg.evaluate("show('work')"); pg.wait_for_timeout(200)
+        pg.evaluate("document.querySelector('#themeBtn').click()"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"theme-flipped-{theme}.png"))
+        flipped = pg.evaluate("document.documentElement.dataset.theme")
+        if flipped == theme:
+            errs.append("theme button didn't switch the theme")
+        pg.evaluate("document.querySelector('#themeBtn').click()"); pg.wait_for_timeout(400)
+        # v0.4.8: /update updates Blaze right in the chat (no Settings screen).
+        pg.evaluate("newChat()"); pg.wait_for_timeout(300)
+        pg.evaluate("""window.__upd = {current: 'v0.4.7', latest: 'v0.4.8', available: true, can_auto: true, method: 'Blaze downloads the setup and restarts.', page: ''};
+          document.querySelector('#input').value = '/upd'; onType();""")
+        pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"update-command-{theme}.png"))
+        pg.evaluate("pickMenu(0)"); pg.wait_for_timeout(900)
+        pg.screenshot(path=str(out / f"update-chat-{theme}.png"))
+        if "42%" not in pg.evaluate("(document.querySelector('.selfupd .work') || {}).textContent || ''"):
+            errs.append("/update progress line missing")
+        if pg.evaluate("view") != "work":
+            errs.append("/update left the chat")
+        pg.evaluate("newChat(); window.__upd = {current: 'v0.4.8', latest: 'v0.4.8', available: false}; SelfUpdate.run()"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"update-latest-{theme}.png"))
+        pg.evaluate("window.__upd = null")
         # v0.5: Memory graph. Overview, the best-linked memory selected, mid-replay, sorting into categories.
         pg.evaluate("show('memory')"); pg.wait_for_timeout(700)
         pg.evaluate("MemoryUI.settle()"); pg.wait_for_timeout(500)

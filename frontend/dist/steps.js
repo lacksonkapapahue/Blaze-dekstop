@@ -326,6 +326,7 @@
         const L = { python: "Python", py: "Python", node: "JavaScript", javascript: "JavaScript", js: "JavaScript", typescript: "TypeScript", ts: "TypeScript", bash: "a shell", sh: "a shell", powershell: "a PowerShell" };
         return summary || `Running a ${L[lang] || "quick"} script`;
       }
+      case "update_blaze": return "Checking for a Blaze update";
       case "install_tool": return "Installing " + (place(v("name")) || "a tool");
       case "connector_tools": { const g = v("group").replace(/^mcp:/, ""); return g ? `Getting ${cap(words(g))} ready` : "Getting your accounts ready"; }
     }
