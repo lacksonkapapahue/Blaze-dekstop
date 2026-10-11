@@ -63,6 +63,7 @@ type Prefs struct {
 	Vision    VisionPrefs   `json:"vision"`               // screen reading (vision_app.go)
 	MaxAgents int           `json:"max_agents,omitempty"` // background agents at once (0 = default, bgagents.go)
 	Learn     LearnPrefs    `json:"learn"`                // learn automatically + chat marks (learn_app.go)
+	Studio    StudioPrefs   `json:"studio"`               // Design studio: critic, taste, shared comments (studio_app.go)
 }
 
 type App struct {
@@ -134,6 +135,7 @@ func (a *App) startup(ctx context.Context) {
 	a.pv = &preview{}
 	a.pv.start()
 	a.pv.load(a.prefs.Folder)
+	a.startStudio()
 	a.newEnv()
 	a.startConnectors()
 	a.startCloud()
@@ -819,8 +821,9 @@ DESIGN TAB
 - Build anything visual (pages, screens, components, logos) as real files in the project: plain HTML/CSS/SVG, or the project's own framework. The app previews them live in its Design tab and saves a version after each turn.
 - For a framework app, start its dev server with run_shell background=true; the app finds the localhost URL. Don't open_url it.
 - A message starting with [Design edit] names one element (CSS selector + its HTML). Change ONLY that element in the source file, keep everything else identical, then say in one line what changed.
-- When asked for directions, make 2-3 clearly different options as separate files (e.g. design/option-a.html, option-b.html, option-c.html), each self-contained.
+- When asked for directions, make 2-3 clearly different options as separate files (e.g. design/option-a.html, option-b.html, option-c.html), each self-contained. (The Directions button runs them as live branches instead.)
 `)
+	b.WriteString(a.studioPrompt())
 	if p := a.project(); p != nil {
 		b.WriteString("\nPROJECT: " + p.Name + "\n")
 		if p.Instructions != "" {
