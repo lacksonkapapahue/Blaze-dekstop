@@ -511,7 +511,7 @@ with sync_playwright() as p:
           fire('tool', {id: 'l2', name: 'write_skill', args: '{"name":"deploy-homeglow"}'});
           fire('learned', {kind: 'skill', action: 'created', text: 'deploy-homeglow', ref: 'deploy-homeglow'});
           fire('tool_done', {id: 'l2', result: 'Saved skill deploy-homeglow.'});
-          fire('delta', 'Got it. Next time I deploy HomeGlow I will run `pnpm build`, `shopify theme push` and purge the CDN.\n\nSaved this as the **deploy-homeglow** skill.');
+          fire('delta', 'Got it. Next time I deploy HomeGlow I will run `pnpm build`, `shopify theme push` and purge the CDN.\\n\\nSaved this as the **deploy-homeglow** skill.');
           fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 3.1});
           fire('learned', {kind: 'memory', action: 'replaced', text: 'Prefers pnpm over npm in every project', ref: '#12', auto: true}); })"""); pg.wait_for_timeout(500)
         pg.screenshot(path=str(out / f"skills-learned-chat-{theme}.png"))
