@@ -250,6 +250,25 @@
       ]
     },
     {
+      "name": "three-d-design",
+      "description": "Design anything 3D (a product, furniture, a printable part, a building, a character) as a Three.js mockup in the Design tab that the user can orbit, pick and edit part by part, then build it in the program they named (Blender, FreeCAD, OpenSCAD, Fusion 360, Unity) from the same parts. Use for any 3D model, 3D design, CAD or 3D printing request.",
+      "tags": [
+        "3d",
+        "design",
+        "threejs",
+        "cad",
+        "blender",
+        "modeling",
+        "mockup"
+      ],
+      "version": 1,
+      "sha256": "a4c4d85e4d5321c3b001a0e5b523fdd531b4f1f0fc57caa38999b546dc5db5d1",
+      "files": [
+        "SKILL.md",
+        "assets/mockup.html"
+      ]
+    },
+    {
       "name": "web-audit",
       "description": "Audit a website or web app for accessibility, performance, SEO and basic security, then fix the top issues - with Lighthouse, axe, browser devtools and manual keyboard/screen-reader checks. Use when a page is slow, before launch, when the user asks \"is my site good/accessible/fast\", or after building a page.",
       "tags": [

@@ -17,10 +17,11 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Chat that works on your computer**: streaming answers with plain-English steps, Plan and Build modes, Auto or Autopilot approvals, and a daily spend cap.
 - **Any model**: pick a provider and model or use Auto, a free model router with live health, several keys per provider, and usage per model.
 - **Design studio**: live preview at phone, tablet and desktop widths, edits that write back to your source, Directions as live branches, brand kit, the critic, visual history, phone preview, and one-click ship to Cloudflare or GitHub Pages.
-- **Specialists**: big tasks split across parallel agents, each on its own git worktree, reviewed before anything lands.
+- **3D mockups**: any 3D request starts as a Three.js mockup in Design. Click a part to recolour, scale, turn or nudge it, with every change written back to the file. When you named a program (Blender, FreeCAD, OpenSCAD and others), Blaze builds it there next, from the same parts.
+- **Specialists on request**: Blaze does your tasks itself. Ask it to split a big task and parallel agents each work on their own git worktree, reviewed before anything lands.
 - **Lives in the background**: tray icon, quick ask from anywhere (Ctrl+Shift+Space, Option+Space on a Mac), native notifications, and optional proactive suggestions.
 - **Sees and hears**: reads the front window, attaches images, files and folders, and turns speech into text with Whisper on your own PC.
-- **Memory and skills**: learns facts and workflows as you go, with 19 bundled skills you can edit or turn off.
+- **Memory and skills**: learns facts and workflows as you go, with 20 bundled skills you can edit or turn off.
 - **Connected**: one-click Google, GitHub, Spotify, Notion and Slack, MCP servers shared with Blaze CLI (`~/.blaze/mcp.json`), and keys that sync through your Blaze account.
 - **Updates itself** from GitHub releases.
 

@@ -62,7 +62,6 @@ type Prefs struct {
 	Notify    NotifyPrefs   `json:"notify"`               // notifications and proactive suggestions (notify_app.go)
 	Vision    VisionPrefs   `json:"vision"`               // screen reading (vision_app.go)
 	MaxAgents int           `json:"max_agents,omitempty"` // background agents at once (0 = default, bgagents.go)
-	LeadWorks bool          `json:"lead_works,omitempty"` // Blaze does tasks itself; off (default) = every task goes to a specialist (lead.go)
 	Learn     LearnPrefs    `json:"learn"`                // learn automatically + chat marks (learn_app.go)
 	Studio    StudioPrefs   `json:"studio"`               // Design studio: critic, taste, shared comments (studio_app.go)
 }
@@ -541,7 +540,7 @@ func (a *App) run(ctx context.Context, s *session) {
 	a.mu.Unlock()
 	defer func() {
 		if ok, st := a.pv.noteTurn(changed, urls, prompt); ok {
-			a.temit(s, "design", map[string]any{"target": st.Target, "versions": len(st.Versions)})
+			a.temit(s, "design", map[string]any{"target": st.Target, "versions": len(st.Versions), "three": a.pv.threeD(st)})
 		}
 	}()
 	defer func() {
@@ -583,11 +582,7 @@ func (a *App) run(ctx context.Context, s *session) {
 		hist := trim(s.hist)
 		a.mu.Unlock()
 		conv := "chat:" + s.id
-		lead := a.leadOnly(design)
 		sys := a.system(recentQuery(hist)) + tools.ExtraLine(conv) + agents.Delegation + agents.Orchestration
-		if lead {
-			sys += agents.LeadOnly
-		}
 		if note != "" {
 			sys += "\nABOUT YOUR LAST REPLY\n" + note + "\n"
 		}
@@ -597,9 +592,6 @@ func (a *App) run(ctx context.Context, s *session) {
 		// Blaze's own tools: the core set plus what find_tools turned on in this chat.
 		all := append(append(append(tools.Select(conv), a.conn.Tools()...), agents.MainTools()...), updateBlazeTool())
 		known := append(append(append(tools.Names(), a.conn.Known()...), agents.MainToolNames...), "update_blaze")
-		if lead { // the lead only briefs, steers and reviews specialists; it stays free to chat
-			all, known = agents.MainTools(), agents.MainToolNames
-		}
 		a.temit(s, "thinking", step)
 		var partial strings.Builder // what streamed, kept if the reply breaks off
 		r, err := llm.CompleteWith(ctx, a.cfg, msgs, a.modeTools(all), llm.Opts{
@@ -869,7 +861,8 @@ DESIGN TAB
 - Build anything visual (pages, screens, components, logos) as real files in the project: plain HTML/CSS/SVG, or the project's own framework. The app previews them live in its Design tab and saves a version after each turn.
 - For a framework app, start its dev server with run_shell background=true; the app finds the localhost URL. Don't open_url it.
 - A message starting with [Continue] means your last reply was cut off (output limit, the user pressed Stop, an error, or the step limit). Carry on exactly where it stopped: no recap and no apology, don't repeat text already written, and if it broke mid-sentence or mid-code-block, resume there (reopen the code fence first). If tools were mid-way, check what already happened before redoing it.
-- A message starting with [Design edit] names one element (CSS selector + its HTML). Change ONLY that element in the source file, keep everything else identical, then say in one line what changed.
+- A message starting with [Design edit] names one element (CSS selector + its HTML), or a 3D part ("Part: <id>" + its blaze-parts JSON). Change ONLY that element or part in the source file (for a part: its entry in the blaze-parts block, plus its build code only if the shape itself changes), keep everything else identical, then say in one line what changed.
+- 3D: any request for a 3D model or 3D design (a product, furniture, a printable part, a building, a character, a scene), including one to be made in 3D or CAD software, starts with a Three.js mockup in Design, built with the three-d-design skill (load it first). The mockup is the blueprint: the user picks and edits its parts in Design. If they named a program (Blender, FreeCAD, Fusion 360, OpenSCAD, SketchUp, Unity, …), build it there only after the mockup, from the same parts.
 - When asked for directions, make 2-3 clearly different options as separate files (e.g. design/option-a.html, option-b.html, option-c.html), each self-contained. (The Directions button runs them as live branches instead.)
 `)
 	b.WriteString(a.studioPrompt())

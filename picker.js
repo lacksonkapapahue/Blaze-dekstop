@@ -1,6 +1,7 @@
 // Injected into design previews by Blaze: hover outlines, click to select, live style tweaks,
 // and (v0.8.0) direct edits that write back to the source (retype, drag, resize), the
 // critic's in-page audit, the states board (?__state=…), hot reload and phone comments.
+// 3D mockups (three-d-design skill) can also pick, tweak and nudge their parts.
 (function () {
   if (window.__blazePicker) return;
   window.__blazePicker = true;
@@ -56,6 +57,11 @@
   }
   function send() {
     boxes.forEach(b => b.remove()); boxes = [];
+    if (parts.length) { // 3D parts: the outline lives in the scene, the bar sits under the canvas
+      const r = scene3d().renderer.domElement.getBoundingClientRect();
+      post({ blaze: "selected", items: picked.map(info).concat(parts.map(info3d)), rect: { left: r.left, top: r.top, bottom: r.bottom, width: r.width } });
+      return;
+    }
     picked.forEach(el => { const b = mk("#1F4BD8", "rgba(31,75,216,.10)"); place(b, el); boxes.push(b); });
     drawHandles();
     const r = picked.length ? picked[picked.length - 1].getBoundingClientRect() : null;
@@ -119,15 +125,114 @@
     el.addEventListener("keydown", key, true); el.addEventListener("blur", blur, true);
   }
 
+  // ---- 3D parts (three-d-design skill) ----
+  // A mockup exposes window.__blazeScene = { THREE, scene, camera, renderer, parts, spec }, and
+  // every part's root object carries userData.part = its id in the page's blaze-parts JSON.
+  // Clicks on the canvas are raycast to a part; orbit drags are left alone.
+  let parts = [], hoverPart = null, helpers = [], hoverHelper = null, down = null, nudged = null;
+  const scene3d = () => { const z = window.__blazeScene; return z && z.THREE && z.scene && z.camera && z.renderer ? z : null; };
+  const onCanvas = el => { const z = scene3d(); return !!(z && el === z.renderer.domElement); };
+  function partAt(e) {
+    const z = scene3d(); if (!z) return null;
+    const r = z.renderer.domElement.getBoundingClientRect();
+    const ray = new z.THREE.Raycaster();
+    ray.setFromCamera(new z.THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), z.camera);
+    for (const hit of ray.intersectObjects(z.scene.children, true)) {
+      let o = hit.object;
+      if (!o.visible || o.userData.blazeUI) continue;
+      while (o && !(o.userData && o.userData.part)) o = o.parent;
+      if (o) return o;
+    }
+    return null;
+  }
+  function spec3d(o) {
+    const z = scene3d(), id = o.userData.part;
+    return ((z.spec && z.spec.parts) || []).find(p => p.id === id) || null;
+  }
+  function hex3d(o) {
+    let c = null;
+    o.traverse(m => { if (!c && m.material && m.material.color) c = m.material.color; });
+    return c ? "rgb(" + [c.r, c.g, c.b].map(v => Math.round(v * 255)).join(", ") + ")" : "";
+  }
+  function info3d(o) {
+    const sp = spec3d(o) || { id: o.userData.part };
+    const label = sp.label || o.userData.label || o.name || sp.id;
+    return { selector: "part#" + sp.id, tag: "part", text: label, html: JSON.stringify(sp, null, 1), leaf: false,
+      part: { id: sp.id, label, position: sp.position || null, rotation: sp.rotation || null, scale: sp.scale || null, units: (scene3d().spec || {}).units || "" },
+      target: { tag: "part", id: sp.id, classes: [], text: label, index: 0 },
+      styles: { color: hex3d(o), background: "", fontSize: "", padding: "", borderRadius: "", gap: "", fontFamily: "", width: "", height: "" } };
+  }
+  function helper(o, color) {
+    const z = scene3d(), h = new z.THREE.BoxHelper(o, color);
+    h.userData.blazeUI = true; h.raycast = () => {}; z.scene.add(h); return h;
+  }
+  function drawParts() {
+    const z = scene3d(); if (!z) return;
+    helpers.forEach(h => { z.scene.remove(h); h.geometry.dispose(); }); helpers = parts.map(o => helper(o, 0x1F4BD8));
+  }
+  (function follow() { // keep outlines on parts that move or animate
+    helpers.forEach(h => h.update()); if (hoverHelper) hoverHelper.update();
+    requestAnimationFrame(follow);
+  })();
+  function hover3d(o) {
+    const z = scene3d(); if (!z || o === hoverPart) return;
+    if (hoverHelper) { z.scene.remove(hoverHelper); hoverHelper.geometry.dispose(); hoverHelper = null; }
+    hoverPart = o;
+    if (o && !parts.includes(o)) hoverHelper = helper(o, 0x6B8CFF);
+    z.renderer.domElement.style.cursor = o ? "pointer" : "";
+  }
+  function clear3d() { parts = []; drawParts(); hover3d(null); }
+  // Live tweaks from the selection bar (colour, scale %, rotation), shown before they're saved.
+  function tweak3d(prop, value) {
+    parts.forEach(o => {
+      const sp = spec3d(o) || {};
+      if (prop === "color") o.traverse(m => { if (m.material && m.material.color) m.material.color.set(value); });
+      if (prop === "scale") { const k = (+value || 100) / 100, b = sp.scale || [1, 1, 1]; o.scale.set(b[0] * k, b[1] * k, b[2] * k); }
+      if (prop === "rotate-y") { const b = sp.rotation || [0, 0, 0]; o.rotation.y = (b[1] + (+value || 0)) * Math.PI / 180; }
+    });
+  }
+  // Arrow keys nudge the picked part in the mockup's units (Shift ×10); PageUp/PageDown raise and
+  // lower it. The new position is saved to the blaze-parts block once the keys go quiet.
+  addEventListener("keydown", e => {
+    if (!on || parts.length !== 1 || editing) return;
+    const step = (e.shiftKey ? 10 : 1) * ((scene3d().spec || {}).nudge || 10);
+    const d = { ArrowLeft: [-step, 0, 0], ArrowRight: [step, 0, 0], ArrowUp: [0, 0, -step], ArrowDown: [0, 0, step], PageUp: [0, step, 0], PageDown: [0, -step, 0] }[e.key];
+    if (!d) return;
+    e.preventDefault();
+    const o = parts[0], sp = spec3d(o); if (!sp) return;
+    const p0 = nudged ? nudged.pos : (sp.position || [0, 0, 0]).slice();
+    const pos = p0.map((v, i) => Math.round((v + d[i]) * 1000) / 1000);
+    o.position.set(pos[0], pos[1], pos[2]); // part roots sit in mockup units under the scaled model
+    clearTimeout(nudged && nudged.t);
+    nudged = { pos, t: setTimeout(() => {
+      sp.position = pos; nudged = null;
+      post({ blaze: "edit", edit: { kind: "part", target: { tag: "part", id: sp.id, classes: [], text: sp.label || sp.id, index: 0 }, props: { position: JSON.stringify(pos) } }, html: JSON.stringify(sp, null, 1), selector: "part#" + sp.id });
+      send();
+    }, 600) };
+  }, true);
+
   document.addEventListener("mousemove", e => {
     if (!on || editing) return;
+    if (onCanvas(e.target)) { if (hoverBox) hoverBox.style.display = "none"; if (!e.buttons) hover3d(partAt(e)); return; }
+    if (hoverPart) hover3d(null);
     hoverBox = hoverBox || mk("#6B8CFF", "rgba(107,140,255,.08)");
     const el = e.target; if (el === document.documentElement || el === document.body || isUI(el)) { hoverBox.style.display = "none"; return; }
     place(hoverBox, el);
   }, true);
+  addEventListener("pointerdown", e => { down = { x: e.clientX, y: e.clientY }; }, true);
   document.addEventListener("click", e => {
     if (!on || isUI(e.target)) return;
     if (editing) { if (editing.contains(e.target)) return; }
+    if (onCanvas(e.target)) {
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) return; // that was an orbit drag
+      e.preventDefault(); e.stopPropagation();
+      const o = partAt(e);
+      if (e.shiftKey && o) { const i = parts.indexOf(o); i >= 0 ? parts.splice(i, 1) : parts.push(o); }
+      else { parts = o ? [o] : []; picked = []; }
+      hover3d(null); drawParts(); send();
+      return;
+    }
+    if (parts.length && !e.shiftKey) clear3d();
     e.preventDefault(); e.stopPropagation();
     const el = e.target;
     if (e.shiftKey) { const i = picked.indexOf(el); i >= 0 ? picked.splice(i, 1) : picked.push(el); }
@@ -135,7 +240,7 @@
     send();
   }, true);
   document.addEventListener("dblclick", e => {
-    if (!on || isUI(e.target)) return;
+    if (!on || isUI(e.target) || onCanvas(e.target)) return;
     e.preventDefault(); e.stopPropagation();
     const el = e.target; picked = [el]; send();
     if (info(el).leaf && (el.innerText || "").trim()) retype(el);
@@ -145,10 +250,11 @@
     const m = e.data || {};
     if (m.blaze === "mode") {
       on = !!m.on;
-      if (!on) { picked = []; boxes.forEach(b => b.remove()); boxes = []; if (hoverBox) hoverBox.style.display = "none"; drawHandles(); }
+      if (!on) { picked = []; boxes.forEach(b => b.remove()); boxes = []; if (hoverBox) hoverBox.style.display = "none"; clear3d(); drawHandles(); }
       document.documentElement.style.cursor = on ? "crosshair" : "";
     }
-    if (m.blaze === "clear") { picked = []; send(); }
+    if (m.blaze === "clear") { picked = []; clear3d(); send(); }
+    if (m.blaze === "style3d") tweak3d(m.prop, m.value);
     if (m.blaze === "style") { picked.forEach(el => el.style.setProperty(m.prop, m.value)); boxes.forEach((b, i) => place(b, picked[i])); drawHandles(); }
     if (m.blaze === "retype") { if (picked[0]) retype(picked[0]); }
     if (m.blaze === "theme") { document.documentElement.style.colorScheme = m.value; }

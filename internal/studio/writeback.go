@@ -31,7 +31,7 @@ type Target struct {
 
 // Edit is one change to make in the source.
 type Edit struct {
-	Kind    string            `json:"kind"` // text | style | attr | remove
+	Kind    string            `json:"kind"` // text | style | attr | remove | part (a 3D part, parts.go)
 	Target  Target            `json:"target"`
 	OldText string            `json:"old_text,omitempty"`
 	NewText string            `json:"new_text,omitempty"`
@@ -390,6 +390,9 @@ func containsStr(s []string, v string) bool {
 
 // Apply makes one edit in src and returns the new source.
 func Apply(src string, lang Lang, e Edit) (string, error) {
+	if e.Kind == "part" { // a 3D mockup part lives in the page's blaze-parts JSON, not in the markup
+		return ApplyPart(src, e.Target.ID, e.Props)
+	}
 	n, err := locate(src, lang, e.Target)
 	if err != nil {
 		return src, err

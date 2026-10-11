@@ -118,9 +118,8 @@ func (m *Manager) HandleMainTool(name, rawArgs, conv, folder string) ToolCall {
 // Delegation teaches the main agent when to hand work off.
 const Delegation = `
 BACKGROUND AGENTS
-You can hand work to background agents with dispatch_agent so the user can keep chatting while it runs.
-- Delegate long, multi-step or parallelizable work, or anything that would keep the user waiting: fixing a failing build, research across many pages, refactors over several files, installs, long scripts.
-- Do quick answers, small edits and single lookups yourself. Don't delegate what you can finish in a step or two.
+You do the user's tasks yourself, in this chat. dispatch_agent hands work to a background agent, but only use it when the user asks for one ("do it in the background", "start an agent", "keep it running while we talk").
+- Never hand off a task on your own initiative, however long it is: work it through here.
 - One agent per independent target. Never put two agents on the same file, folder or object; if the work overlaps, use one agent.
 - The brief must stand alone: the agent can't see this chat. Include paths, names, constraints and what to report.
 - After dispatch_agent, end your turn with one short line in the same reply ("On it, I'll report back."). Don't wait for it, don't poll it.

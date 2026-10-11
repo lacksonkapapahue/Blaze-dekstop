@@ -2,6 +2,14 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.9.4 (3D mockups in Design, Blaze does the work itself)
+- **3D starts in Design**: any request for a 3D model or 3D design (a product, furniture, a printable part, a building, a character) starts as a Three.js mockup built with the new bundled **three-d-design** skill. Each part lives in one `blaze-parts` JSON block in the page, so the scene and its numbers never drift apart. The page lists the parts with their sizes, every code block is annotated, and **Download .glb** exports the model.
+- **Pick and edit parts**: in Design, click a part in the 3D view (orbit drags are left alone; Shift-click adds more parts). **Adjust** changes colour, scale and turn live, and **Apply** writes them to that part's JSON entry as a one-line diff with Undo. Arrow keys nudge the part by the mockup's step (Shift ×10), and Page Up/Down raise or lower it, saved the same way. Change, Ask and Hold to talk send the part's JSON to the model, which edits only that part.
+- **Mockups open themselves**: a turn that produces a 3D mockup opens Design unless *Design tab* is set to Never.
+- **Then the real program**: when the request names one (Blender, FreeCAD, OpenSCAD, Fusion 360, SketchUp, Unity, Godot…), Blaze makes the mockup first and builds there next, from the same parts: a `bpy` or FreeCAD script, a `.scad` file, STEP, STL or .glb.
+- **Lead mode removed**: Blaze does your tasks itself again. Background agents and specialists start only when you ask for them, or for Design's Directions. The *Blaze does tasks itself* setting is gone.
+- Tests: Go tests for the part write-back (`internal/studio/parts_test.go`); the jsdom spec checks that Settings no longer offers lead mode.
+
 ## v0.9.3 (switch chats while Blaze works)
 - **Chats run on their own**: you can open another chat, start a new one or switch projects while Blaze is answering. The answer keeps going in the background, in its own folder and project, and saves into its own chat. The sidebar shows a pulsing dot on chats that are still working. Open one again and you pick up the live answer. When it finishes in a chat you left, you get a notification.
 - Each chat has its own turn runner, so a chat never waits on another. Stop and new messages only affect the chat on screen. Background agents' results go to their own chat even while it's running in the background.

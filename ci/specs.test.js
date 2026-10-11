@@ -102,10 +102,7 @@ const ok = (cond, msg) => { n++; if (!cond) { fails++; console.log("FAIL " + msg
     w.fire("done", { route: "x" }); await tick(20);
     A.SendWith = sw;
     const g = w.agentsGroup(() => {}); d.body.append(g);
-    const lw = g.querySelector("#leadWorks");
-    ok(lw && !lw.checked && /specialist/.test(g.textContent), "lead mode: Settings shows 'Blaze does tasks itself', off by default");
-    lw.checked = true; lw.dispatchEvent(new w.Event("change")); await tick(20);
-    ok(w.eval("S.prefs.lead_works") === true, "lead mode: the toggle saves");
+    ok(!g.querySelector("#leadWorks") && /only when you ask/.test(g.textContent), "no lead mode: Blaze does tasks itself, specialists only on request");
     g.remove();
   }
 
