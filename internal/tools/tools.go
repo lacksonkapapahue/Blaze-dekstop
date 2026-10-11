@@ -3,6 +3,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,6 +27,24 @@ type Env struct {
 	Shell   *Shell
 	Jobs    *Jobs
 	Conv    func() string // the conversation key tools turned on by find_tools belong to
+	// Ctx ends with the turn: Stop cancels it and a running command is killed (with its
+	// children) at once. nil = never cancelled.
+	Ctx context.Context
+}
+
+func (e *Env) ctx() context.Context {
+	if e == nil || e.Ctx == nil {
+		return context.Background()
+	}
+	return e.Ctx
+}
+
+// RunCtx is Run for a turn that Stop can end: commands the tool started are killed
+// when ctx is cancelled.
+func RunCtx(ctx context.Context, e *Env, name, rawArgs string) string {
+	ec := *e
+	ec.Ctx = ctx
+	return Run(&ec, name, rawArgs)
 }
 
 type handler func(e *Env, a args) string
