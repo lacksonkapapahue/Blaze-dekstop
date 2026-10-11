@@ -79,6 +79,18 @@ func Open(path string) (*DB, error) {
 
 func (d *DB) Close() error { return d.sql.Close() }
 
+// CloseDefault closes the shared database Default opened, if any; the next Default
+// opens it again. Windows can't delete a file that is still open, so tests call it
+// before their temporary BLAZE_HOME is removed.
+func CloseDefault() {
+	defMu.Lock()
+	defer defMu.Unlock()
+	if defDB != nil {
+		_ = defDB.Close()
+		defDB, defErr = nil, nil
+	}
+}
+
 // ---------------- schema ----------------
 
 var migrations = []string{
