@@ -276,13 +276,14 @@ type DesignView struct {
 	Target   DesignTarget `json:"target"`
 	Versions []Version    `json:"versions"` // without file bodies
 	Files    []string     `json:"files"`    // previewable files in the project
+	Tracked  []string     `json:"tracked"`  // files this project's chats changed (the Current tab)
 }
 
 func (a *App) Design() DesignView {
 	a.pv.mu.Lock()
 	st := a.pv.state
 	a.pv.mu.Unlock()
-	v := DesignView{Base: a.pv.base(), Target: st.Target}
+	v := DesignView{Base: a.pv.base(), Target: st.Target, Tracked: st.Tracked}
 	for _, x := range st.Versions {
 		x.Files = nil
 		v.Versions = append(v.Versions, x)

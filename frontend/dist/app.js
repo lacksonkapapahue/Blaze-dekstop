@@ -1225,24 +1225,54 @@ function targetLabel() {
   return (D && D.files && D.files.length) ? "Choose a page…" : "Nothing to preview yet";
 }
 
+// The Preview picker shows the pages this task works on first. Tabs: Current (files the
+// chat changed, plus what's being previewed), Other (the rest of the folder), All.
+let pvTab = "current";
+function previewGroups() {
+  const files = (D && D.files) || [], t = (D && D.target) || {};
+  const tracked = new Set((D && D.tracked) || []);
+  if (t.kind === "file" && t.path) tracked.add(t.path);
+  let current = files.filter(f => tracked.has(f));
+  // Nothing tracked yet: the previewed page's own folder counts as current.
+  if (!current.length && t.kind === "file" && t.path) {
+    const dir = t.path.includes("/") ? t.path.slice(0, t.path.lastIndexOf("/") + 1) : "";
+    current = files.filter(f => dir ? f.startsWith(dir) && !f.slice(dir.length).includes("/") : !f.includes("/"));
+  }
+  const cur = new Set(current);
+  return { all: files, current, other: files.filter(f => !cur.has(f)) };
+}
+
 function targetPopover() {
   openPop($("#dtarget"), p => {
-    p.innerHTML = `<div class="phd"><span class="label">Preview</span></div><div class="pbody"></div>`;
-    const body = $(".pbody", p), t = (D && D.target) || {};
-    const files = (D && D.files) || [];
-    if (files.length > 10) {
-      const q = h("input", "field psearch"); q.placeholder = `Search ${files.length} files`;
-      q.oninput = () => $$(".opt.f", body).forEach(r => r.style.display = r.dataset.f.toLowerCase().includes(q.value.toLowerCase()) ? "" : "none");
-      body.append(q);
-    }
-    files.forEach(f => {
-      const cur = t.kind === "file" && t.path === f;
-      const o = h("button", "opt f" + (cur ? " sel" : ""), `<span class="on-mark">${cur ? icon("check", "i sm") : icon("file", "i sm")}</span><span class="col2"><span class="om" style="color:var(--ink)">${esc(f)}</span></span>`);
-      o.dataset.f = f;
-      o.onclick = async () => { closePop(); D = await API().SetDesignTarget("file", f); viewing = 0; drawDesign(); };
-      body.append(o);
+    p.innerHTML = `<div class="phd"><span class="label">Preview</span></div><div class="ptabs"></div><div class="pbody"></div>`;
+    const body = $(".pbody", p), tabs = $(".ptabs", p), t = (D && D.target) || {};
+    const g = previewGroups();
+    if (!g.current.length && pvTab === "current") pvTab = g.all.length ? "all" : "current";
+    const seg = h("div", "seg ptabseg");
+    [["all", "All"], ["current", "Current"], ["other", "Other"]].forEach(([k, l]) => {
+      const b = h("button", pvTab === k ? "on" : "", `${l} <span class="pcount">${g[k].length}</span>`);
+      b.onclick = e => { e.stopPropagation(); pvTab = k; draw(); };
+      seg.append(b);
     });
-    if (!files.length) body.append(h("div", "pnote", "No HTML or SVG files in this folder yet."));
+    tabs.append(seg);
+    const q = h("input", "field psearch");
+    q.oninput = () => $$(".opt.f", body).forEach(r => r.style.display = r.dataset.f.toLowerCase().includes(q.value.toLowerCase()) ? "" : "none");
+    function draw() {
+      $$("button", seg).forEach((b, i) => b.classList.toggle("on", ["all", "current", "other"][i] === pvTab));
+      body.innerHTML = "";
+      const files = g[pvTab];
+      if (files.length > 10) { q.placeholder = `Search ${files.length} files`; body.append(q); }
+      files.forEach(f => {
+        const cur = t.kind === "file" && t.path === f;
+        const o = h("button", "opt f" + (cur ? " sel" : ""), `<span class="on-mark">${cur ? icon("check", "i sm") : icon("file", "i sm")}</span><span class="col2"><span class="om" style="color:var(--ink)">${esc(f)}</span></span>`);
+        o.dataset.f = f;
+        o.onclick = async () => { closePop(); D = await API().SetDesignTarget("file", f); viewing = 0; drawDesign(); };
+        body.append(o);
+      });
+      if (q.value) q.oninput();
+      if (!files.length) body.append(h("div", "pnote", !g.all.length ? "No HTML or SVG files in this folder yet." : pvTab === "current" ? "This task hasn't touched a page yet. Check Other or All." : "Nothing else here: every page belongs to this task."));
+    }
+    draw();
     const form = h("div", "urlform", `<input class="field mono" placeholder="localhost:5173" value="${esc(t.kind === "url" ? t.url : "")}"><button class="btn accent sm">Preview</button>`);
     const go = async () => { const v = $("input", form).value.trim(); if (!v) return; closePop(); D = await API().SetDesignTarget("url", v); viewing = 0; drawDesign(); };
     $("button", form).onclick = go; $("input", form).onkeydown = e => { if (e.key === "Enter") go(); };
@@ -1353,7 +1383,15 @@ function directions() {
 addEventListener("message", e => {
   const m = e.data || {};
   if (m.blaze === "selected") { selection = m.items.length ? m : null; drawSelBar(); }
+  if (m.blaze === "down") { closePop(); closeMenu(); }
 });
+// Clicking into the preview (or any iframe) moves focus out of the app's document:
+// treat it as a click outside and collapse open popovers. Covers pages the picker
+// script couldn't be injected into (e.g. a dev server that blocks it).
+addEventListener("blur", () => setTimeout(() => {
+  const a = document.activeElement;
+  if (a && a.tagName === "IFRAME") { closePop(); closeMenu(); }
+}, 0));
 addEventListener("keydown", e => { if (e.key === "Escape" && view === "design" && selectOn) { selectOn = false; selection = null; drawStage(); } });
 
 function drawSelBar() {

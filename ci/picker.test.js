@@ -116,6 +116,32 @@ eq(F.hl("slide-<deck>", [0, 1, 2]), '<mark class="hit">sli</mark>de-&lt;deck&gt;
   ok(!!menuEl().querySelector(".mi .mn mark.hit"), "@files: highlights the match");
   await key("Escape");
 
+  // Design › Preview picker (v0.7.6): tabs All / Current / Other, Current first, and it
+  // collapses when you click outside it, including inside the preview iframe.
+  w.eval('show("design")'); await tick(150);
+  const tgt = d.querySelector("#dtarget");
+  ok(!!tgt, "design: preview picker button is up");
+  if (tgt) {
+    const pop = () => d.querySelector(".pop");
+    const rows = () => [...pop().querySelectorAll(".opt.f")].map(x => x.dataset.f);
+    const tab = name => [...pop().querySelectorAll(".ptabseg button")].find(b => b.textContent.trim().startsWith(name));
+    tgt.click(); await tick(60);
+    ok(!!pop(), "preview: picker opens");
+    ok(tab("All") && tab("Current") && tab("Other"), "preview: has All, Current and Other tabs");
+    ok(tab("Current").classList.contains("on"), "preview: Current is the default tab");
+    eq(rows(), ["index.html"], "preview: Current shows only this task's page");
+    tab("Other").click(); await tick(30);
+    ok(!!pop(), "preview: switching tabs keeps the picker open");
+    eq(rows(), ["design/option-a.html"], "preview: Other shows the rest");
+    tab("All").click(); await tick(30);
+    eq(rows(), ["index.html", "design/option-a.html"], "preview: All shows every page");
+    w.dispatchEvent(new w.MessageEvent("message", { data: { blaze: "down" } })); await tick(30);
+    ok(!pop(), "preview: a press inside the preview iframe collapses the picker");
+    tgt.click(); await tick(60);
+    d.querySelector(".dsplit, #dstage, body").dispatchEvent(new w.MouseEvent("click", { bubbles: true })); await tick(30);
+    ok(!pop(), "preview: a click elsewhere on the Design page collapses the picker");
+  }
+
   if (process.env.DEBUG) console.log(errs.join("\n"));
   const real = errs.filter(e => !/Could not load|Not implemented|canvas|getContext|ResizeObserver/i.test(e));
   ok(!real.length, "no page errors" + (real.length ? ": " + real.slice(0, 3).join(" | ") : ""));

@@ -164,6 +164,10 @@ select.field { appearance: none; padding-right: 30px; background-image: linear-g
 .opt .chev { color: var(--weak); }
 .opt.sel .ot { color: var(--accent); }
 .psearch { margin: 6px 10px; height: 30px; }
+.ptabs { padding: 8px 10px 2px; }
+.ptabseg { display: flex; width: 100%; }
+.ptabseg button { flex: 1; justify-content: center; }
+.ptabseg .pcount { font-family: var(--mono, ui-monospace, monospace); font-size: 10.5px; opacity: .6; }
 .models { border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); background: var(--paper); max-height: 260px; overflow-y: auto; }
 .mrow { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 12px 6px 36px; min-height: 30px; }
 .mrow:hover { background: var(--faint2); }
