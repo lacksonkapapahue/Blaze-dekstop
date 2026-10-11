@@ -42,7 +42,7 @@ jobs:
         shell: bash
         run: |
           exec > >(tee -a build.log) 2>&1
-          go test ./internal/notify/ ./internal/screen/
+          go test ./...
           choco install nsis -y --no-progress
           export PATH="$PATH:/c/Program Files (x86)/NSIS"
           go install $WAILS
@@ -60,6 +60,12 @@ jobs:
         run: |
           { echo "### ${{ github.job }} failed on ${GITHUB_SHA::7}"; echo '```'; tail -n 70 build.log; echo '```'; } > tail.md
           gh issue create -R ${{ github.repository }} --title "CI ${{ github.job }} failed ${GITHUB_SHA::7}" --body-file tail.md
+      - name: Show the error on the PR
+        if: failure() && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          echo "::error::$(grep -E -B1 -A4 -- '--- FAIL|panic:' build.log | head -n 60 | tr '\n' '|')"
+          echo "::error::$(tail -n 15 build.log | tr '\n' '|')"
       - uses: actions/upload-artifact@v4
         with: { name: windows, path: dist/ }
 
@@ -73,7 +79,7 @@ jobs:
         shell: bash
         run: |
           exec > >(tee -a build.log) 2>&1
-          go test ./internal/notify/ ./internal/screen/
+          go test ./...
           go install $WAILS
           V=$(cat VERSION)
           wails build -platform darwin/universal -ldflags "-X main.version=v$V"

@@ -9,7 +9,7 @@ import (
 
 func TestMemoryFacts(t *testing.T) {
 	d := t.TempDir()
-	t.Setenv("BLAZE_HOME", d)
+	testHome(t, d)
 	_ = os.WriteFile(filepath.Join(d, "memory.md"), []byte("# Notes\n- Uses pnpm, not npm (2026-10-09)\n- Likes short answers\n\n- Likes short answers\n"), 0o600)
 	fs := Facts() // opening the database imports memory.md
 	if len(fs) != 2 {
@@ -69,7 +69,7 @@ func TestMemoryFacts(t *testing.T) {
 
 func TestSkillsIndexFollowsFolder(t *testing.T) {
 	d := t.TempDir()
-	t.Setenv("BLAZE_HOME", d)
+	testHome(t, d)
 	for i, n := range []string{"deploy-site", "pg-docker", "ad-report", "a1", "a2", "a3", "a4", "a5", "a6", "a7"} {
 		_ = os.MkdirAll(filepath.Join(d, "skills", n), 0o755)
 		desc := "Generic helper number " + string(rune('a'+i))
