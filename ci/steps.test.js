@@ -64,6 +64,8 @@ const tools = [
   [["gmail_search", '{"q":"from:gloria"}'], "Searching your email"],
   [["connector_tools", '{"group":"mcp:linear"}'], "Getting Linear ready"],
   [["mcp_linear_list_issues", "{}"], "Using Linear: list issues"],
+  [["mcp__linear__list_issues", "{}"], "Using Linear: list issues"],
+  [["mcp__my-files__read_file", "{}"], "Using My files: read file"],
   [["read_screen", "{}"], "Reading your screen"],
   [["mystery_tool", "{}"], "Using mystery tool"],
   [["run_shell", '{"command":"frobnicate --all","summary":"Tidying the downloads folder"}'], "Tidying the downloads folder"],

@@ -13,6 +13,14 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Debian/Ubuntu**: `sudo apt install ./blaze-desktop_*_amd64.deb`.
 - **Other Linux**: unpack the tar.gz and run `blaze-desktop` (needs GTK 3 + WebKitGTK 4.1).
 
+## What's in v0.8.1 (MCP servers shared with Blaze CLI)
+
+- **One MCP list for both apps**: servers live in `~/.blaze/mcp.json` in the standard shape (`{"mcpServers": {name: {command, args, env} | {url, headers}}}`, plus `"type": "sse"` and `"disabled": true`). Blaze CLI reads and writes the same file; Desktop picks up edits made there (or by hand) on the next look, and keeps keys and fields it doesn't own. Servers Desktop had before move into the file once.
+- **Transports**: local commands over stdio (with `env`), Streamable HTTP and the older HTTP+SSE (with `headers`). `${VAR}` in env values and headers reads your environment, so the file can name a secret without holding it; a token typed into Desktop stays in the system keychain.
+- **Tools as `mcp__<server>__<tool>`**, the name Blaze CLI and other MCP hosts use.
+- **Approvals**: every MCP tool asks first until you set it to Always allow (a server's own read-only hint no longer skips the card); Off hides it.
+- **Settings › MCP servers**: add (remote URL with token and headers, or a local command with environment), turn on or off, check all, open a server for its tools and per-tool approval.
+
 ## What's in v0.8.0 (the Design studio)
 - **Edits that write back.** Double-click text to retype it, drag the MOVE tab or the corner to move or resize, use the
   style controls or **Swap colour › Everywhere**: Blaze changes the real file (HTML, Vue, Svelte, Astro templates and

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -543,9 +544,15 @@ func dialSSE(ctx context.Context, hc *http.Client, rawURL string, hdr map[string
 }
 
 // dialStdio starts a local server: newline-delimited JSON on stdin/stdout.
-func dialStdio(command string, argv []string, dir string) (*streamPeer, *ringBuf, error) {
+func dialStdio(command string, argv []string, dir string, env map[string]string) (*streamPeer, *ringBuf, error) {
 	cmd := exec.Command(command, argv...)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = os.Environ()
+		for k, v := range expandEnv(env) {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+	}
 	hideWindow(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -622,7 +629,8 @@ func (r *ringBuf) String() string {
 	return string(r.b)
 }
 
-// mcpToolName is how a server's tool appears to the model: mcp_<server>_<tool>.
+// mcpToolName is how a server's tool appears to the model: mcp__<server>__<tool>
+// (the convention Blaze CLI and other MCP hosts use; server ids never contain "_").
 func mcpToolName(server, tool string) string {
 	var b strings.Builder
 	for _, r := range tool {
@@ -632,9 +640,12 @@ func mcpToolName(server, tool string) string {
 			b.WriteRune('_')
 		}
 	}
-	n := "mcp_" + server + "_" + b.String()
+	n := mcpPrefix(server) + b.String()
 	if len(n) > 64 {
 		n = n[:64]
 	}
 	return n
 }
+
+// mcpPrefix starts every tool name of one server.
+func mcpPrefix(server string) string { return "mcp__" + server + "__" }

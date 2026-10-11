@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -187,24 +188,28 @@ type ConnectorView struct {
 }
 
 type MCPView struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	Transport string     `json:"transport"`
-	URL       string     `json:"url"`
-	Command   string     `json:"command"`
-	Args      []string   `json:"args"`
-	Header    string     `json:"header"`
-	HasToken  bool       `json:"has_token"`
-	Enabled   bool       `json:"enabled"`
-	Status    string     `json:"status"` // ready | error | unchecked | disabled
-	Error     string     `json:"error"`
-	Tools     []ToolView `json:"tools"`
-	Checked   string     `json:"checked"`
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	Transport  string     `json:"transport"`
+	URL        string     `json:"url"`
+	Command    string     `json:"command"`
+	Args       []string   `json:"args"`
+	Header     string     `json:"header"`
+	EnvKeys    []string   `json:"env_keys,omitempty"`    // names only: values may be secrets
+	HeaderKeys []string   `json:"header_keys,omitempty"` // names only
+	HasToken   bool       `json:"has_token"`
+	Enabled    bool       `json:"enabled"`
+	Status     string     `json:"status"` // ready | error | unchecked | disabled
+	Error      string     `json:"error"`
+	Tools      []ToolView `json:"tools"`
+	Checked    string     `json:"checked"`
 }
 
 type View struct {
 	Connectors []ConnectorView `json:"connectors"`
 	MCP        []MCPView       `json:"mcp"`
+	MCPFile    string          `json:"mcp_file,omitempty"`  // the shared ~/.blaze/mcp.json
+	MCPError   string          `json:"mcp_error,omitempty"` // a problem reading it
 	Loopback   string          `json:"loopback"`
 	Scheme     string          `json:"scheme"`
 }
@@ -258,6 +263,7 @@ func (m *Manager) Views() View {
 	for _, c := range m.conns {
 		v.Connectors = append(v.Connectors, m.connView(c))
 	}
+	v.MCPFile, v.MCPError = m.store.MCPConfigFile(), m.store.MCPConfigError()
 	for _, s := range m.store.MCPList() {
 		v.MCP = append(v.MCP, m.mcpView(s))
 	}
@@ -315,6 +321,27 @@ func (m *Manager) connView(c *Connector) ConnectorView {
 	return cv
 }
 
+// mcpMode is a server tool's approval mode. MCP tools ask first (a server's own
+// read-only hint is its claim, not the user's choice) unless the user set Always allow.
+func mcpMode(override string) string {
+	if override == "ask" || override == "always" || override == "off" {
+		return override
+	}
+	return "ask"
+}
+
+func sortedKeys(m map[string]string) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func mcpRisk(t MCPTool) Risk {
 	switch {
 	case t.Destructive:
@@ -327,7 +354,7 @@ func mcpRisk(t MCPTool) Risk {
 
 func (m *Manager) mcpView(s MCPServer) MCPView {
 	v := MCPView{ID: s.ID, Name: s.Name, Transport: s.Transport, URL: s.URL, Command: s.Command, Args: s.Args, Header: s.Header,
-		HasToken: m.store.MCPToken(s.ID) != "", Enabled: !s.Disabled, Error: s.Error}
+		HasToken: m.store.MCPToken(s.ID) != "", Enabled: !s.Disabled, Error: s.Error, EnvKeys: sortedKeys(s.Env), HeaderKeys: sortedKeys(s.Headers)}
 	switch {
 	case s.Disabled:
 		v.Status = "disabled"
@@ -343,7 +370,7 @@ func (m *Manager) mcpView(s MCPServer) MCPView {
 	}
 	for _, t := range s.Tools {
 		r := mcpRisk(t)
-		v.Tools = append(v.Tools, ToolView{Name: t.Name, Desc: clip(t.Description, 240), Group: "mcp:" + s.ID, Risk: r, Mode: effMode(s.Modes[t.Name], r), Default: defMode(r)})
+		v.Tools = append(v.Tools, ToolView{Name: t.Name, Desc: clip(t.Description, 240), Group: "mcp:" + s.ID, Risk: r, Mode: mcpMode(s.Modes[t.Name]), Default: "ask"})
 	}
 	return v
 }
@@ -1021,7 +1048,7 @@ func (m *Manager) NoteUsed(name, raw string) {
 		}
 	case strings.HasPrefix(name, "mcp_"):
 		for _, s := range m.store.MCPList() {
-			if strings.HasPrefix(name, "mcp_"+s.ID+"_") {
+			if strings.HasPrefix(name, mcpPrefix(s.ID)) {
 				m.markLoaded("mcp:" + s.ID)
 			}
 		}
@@ -1092,7 +1119,7 @@ func (m *Manager) groupTools(g string) []llm.Tool {
 			return nil
 		}
 		for _, t := range s.Tools {
-			if effMode(s.Modes[t.Name], mcpRisk(t)) == "off" {
+			if mcpMode(s.Modes[t.Name]) == "off" {
 				continue
 			}
 			lt := llm.Tool{Type: "function"}
@@ -1366,7 +1393,24 @@ type MCPSpec struct {
 	Header    string `json:"header"`
 	Token     string `json:"token"`
 	Command   string `json:"command"`
-	Args      string `json:"args"` // space separated; "quoted parts" stay together
+	Args      string `json:"args"`    // space separated; "quoted parts" stay together
+	Env       string `json:"env"`     // stdio: KEY=value per line
+	Headers   string `json:"headers"` // http/sse: Name: value per line
+}
+
+// parsePairs reads "KEY=value" (sep "=") or "Name: value" (sep ":") lines.
+func parsePairs(s, sep string) map[string]string {
+	out := map[string]string{}
+	for _, ln := range strings.Split(s, "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(ln), sep)
+		if k = strings.TrimSpace(k); ok && k != "" {
+			out[k] = strings.TrimSpace(v)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func splitArgs(s string) []string {
@@ -1423,21 +1467,24 @@ func (m *Manager) AddMCP(sp MCPSpec) (MCPView, error) {
 	default:
 		return MCPView{}, errors.New("transport must be http, sse or stdio")
 	}
-	id := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(sp.Name), ""), "")
-	if len(id) > 12 {
-		id = id[:12]
-	}
-	if id == "" {
-		id = "srv"
-	}
+	id := MCPID(sp.Name)
 	base := id
 	for i := 2; ; i++ {
 		if _, ok := m.store.MCP(id); !ok {
 			break
 		}
-		id = fmt.Sprintf("%s%d", base, i)
+		id = fmt.Sprintf("%s-%d", base, i)
 	}
 	s := MCPServer{ID: id, Name: sp.Name, Transport: sp.Transport, URL: sp.URL, Header: strings.TrimSpace(sp.Header), Command: sp.Command, Args: splitArgs(sp.Args)}
+	if s.Name != id {
+		s.Key = id // the file uses the id as the name: stable, and the same in Blaze CLI
+		s.Name = id
+	}
+	if sp.Transport == "stdio" {
+		s.Env = parsePairs(sp.Env, "=")
+	} else {
+		s.Headers = parsePairs(sp.Headers, ":")
+	}
 	if err := m.store.SetMCPToken(id, sp.Token); err != nil {
 		return MCPView{}, err
 	}
@@ -1483,6 +1530,9 @@ func (m *Manager) dropClient(id string) {
 
 func (m *Manager) mcpHeaders(s MCPServer) map[string]string {
 	h := map[string]string{}
+	for k, v := range expandEnv(s.Headers) {
+		h[k] = v
+	}
 	tok := m.store.MCPToken(s.ID)
 	if tok == "" {
 		return h
@@ -1517,7 +1567,7 @@ func (m *Manager) client(ctx context.Context, s MCPServer) (*mcpClient, error) {
 		}
 		tr = p
 	case "stdio":
-		p, logs, err := dialStdio(s.Command, s.Args, m.host.Dir())
+		p, logs, err := dialStdio(s.Command, s.Args, m.host.Dir(), s.Env)
 		if err != nil {
 			return nil, err
 		}
@@ -1593,7 +1643,7 @@ func (m *Manager) runMCP(ctx context.Context, name string, a args) string {
 		return "Error: the user turned the MCP server " + srv.Name + " off."
 	}
 	r := mcpRisk(*tool)
-	mode := effMode(srv.Modes[tool.Name], r)
+	mode := mcpMode(srv.Modes[tool.Name])
 	if mode == "off" {
 		return "Error: the user turned " + tool.Name + " off in Connectors."
 	}
@@ -1638,4 +1688,11 @@ func (m *Manager) ConnectedCount() int {
 		}
 	}
 	return n
+}
+
+// SetMCPConfig shares MCP servers through the file Blaze CLI reads too (~/.blaze/mcp.json).
+func (m *Manager) SetMCPConfig(path string) error {
+	err := m.store.SetMCPConfig(path)
+	m.changed()
+	return err
 }

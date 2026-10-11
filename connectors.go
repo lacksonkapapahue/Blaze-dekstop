@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,6 +31,10 @@ func (a *App) startConnectors() {
 		Dir:     func() string { return a.prefs.Folder },
 		Version: version,
 	})
+	// MCP servers are shared with Blaze CLI through ~/.blaze/mcp.json (v0.8.1).
+	if err := a.conn.SetMCPConfig(connect.MCPConfigPath(config.Dir())); err != nil {
+		fmt.Fprintln(os.Stderr, "blaze: mcp.json:", err)
+	}
 	// Launched by a blaze:// link (Windows and Linux pass it as an argument).
 	for _, arg := range os.Args[1:] {
 		a.routeURL(arg)

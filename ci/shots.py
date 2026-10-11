@@ -513,6 +513,9 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"settings-vision-{theme}.png"))
         if not pg.evaluate("/Proactive suggestions/.test(document.querySelector('#view').textContent)"):
             errs.append("Settings › Notifications did not render")
+        # v0.8.1: Settings › MCP servers (shared with Blaze CLI via ~/.blaze/mcp.json).
+        pg.evaluate("show('settings','mcp')"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"settings-mcp-{theme}.png"))
         # The privacy indicator while the screen is read, then a clicked suggestion in the chat.
         pg.evaluate("loadConv(window.__conv); show('work'); fire('screen', {on: true, how: 'text'})"); pg.wait_for_timeout(300)
         pg.screenshot(path=str(out / f"screen-indicator-{theme}.png"))
