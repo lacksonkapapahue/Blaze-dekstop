@@ -87,7 +87,7 @@ addEventListener("keydown", e => { if (!e.defaultPrevented) modeKeys(e); }, true
 
 function hintText(p = pane) {
   const el = p && $("#hint", p); if (!el) return;
-  if (busy) { el.textContent = (MODES.approval === "autopilot" ? "Autopilot is working…" : "Working…") + " keep typing to queue a message · Stop ends this answer"; return; }
+  if (busy) { el.textContent = (MODES.approval === "autopilot" ? "Autopilot is working…" : "Working…") + " send a message to interrupt · Stop ends this answer"; return; }
   el.innerHTML = `/ commands · @ files · + attach · Shift+Enter new line<span class="hk"><span class="kbd">Ctrl Tab</span> ${MODES.work_mode === "plan" ? "Plan" : "Build"} · <span class="kbd">Shift Tab</span> ${MODES.approval === "autopilot" ? "Autopilot" : "Auto"}</span>`;
 }
 

@@ -237,7 +237,7 @@ func init() {
 				}
 			}
 			e.status("git " + a.s("args"))
-			return e.Shell.Run(cmd, 10*time.Minute)
+			return e.Shell.RunCtx(e.ctx(), cmd, 10*time.Minute)
 		})
 
 	register("install_tool", "Install a program (git, python, node, go, docker, ollama, or any package name) with this PC's package manager. Always asks the user first.",
@@ -257,7 +257,7 @@ func init() {
 				return "The user did NOT approve installing " + name + "."
 			}
 			e.status("Installing " + name)
-			r := e.Shell.Run(cmd, 20*time.Minute)
+			r := e.Shell.RunCtx(e.ctx(), cmd, 20*time.Minute)
 			fresh := sysinfo.Detect()
 			*e.Info = fresh
 			return r + "\n(PC profile refreshed.)"
@@ -341,7 +341,7 @@ func runCode(e *Env, a args) string {
 		}
 		if _, err := os.Stat(vpy); err != nil && len(pkgs) > 0 {
 			e.status("Creating a Python venv")
-			if r := e.Shell.Run(py+" -m venv "+q(venv), 5*time.Minute); !strings.HasPrefix(r, "exit 0") {
+			if r := e.Shell.RunCtx(e.ctx(), py+" -m venv "+q(venv), 5*time.Minute); !strings.HasPrefix(r, "exit 0") {
 				return "Couldn't create the venv:\n" + r
 			}
 		}
@@ -353,14 +353,14 @@ func runCode(e *Env, a args) string {
 		}
 		if len(pkgs) > 0 {
 			e.status("pip install " + strings.Join(pkgs, " "))
-			if r := e.Shell.Run(py+" -m pip install -q "+strings.Join(pkgs, " "), 10*time.Minute); !strings.HasPrefix(r, "exit 0") {
+			if r := e.Shell.RunCtx(e.ctx(), py+" -m pip install -q "+strings.Join(pkgs, " "), 10*time.Minute); !strings.HasPrefix(r, "exit 0") {
 				return "Package install failed:\n" + r
 			}
 		}
 		f := filepath.Join(tmp, "snippet.py")
 		_ = os.WriteFile(f, []byte(code), 0o644)
 		e.status("Running Python")
-		return e.Shell.Run(py+" "+q(f), to)
+		return e.Shell.RunCtx(e.ctx(), py+" "+q(f), to)
 	case "node", "javascript", "js":
 		if _, ok := e.Info.Tools["node"]; !ok {
 			return "Node.js isn't installed. " + installHint(e, "node")
@@ -368,14 +368,14 @@ func runCode(e *Env, a args) string {
 		nd := dataDir("node")
 		if len(pkgs) > 0 {
 			e.status("npm install " + strings.Join(pkgs, " "))
-			if r := e.Shell.Run("npm install --prefix "+q(nd)+" --silent "+strings.Join(pkgs, " "), 10*time.Minute); !strings.HasPrefix(r, "exit 0") {
+			if r := e.Shell.RunCtx(e.ctx(), "npm install --prefix "+q(nd)+" --silent "+strings.Join(pkgs, " "), 10*time.Minute); !strings.HasPrefix(r, "exit 0") {
 				return "Package install failed:\n" + r
 			}
 		}
 		f := filepath.Join(nd, "snippet.cjs")
 		_ = os.WriteFile(f, []byte(code), 0o644)
 		e.status("Running Node")
-		return e.Shell.Run("node "+q(f), to)
+		return e.Shell.RunCtx(e.ctx(), "node "+q(f), to)
 	case "powershell", "ps", "pwsh":
 		f := filepath.Join(tmp, "snippet.ps1")
 		_ = os.WriteFile(f, []byte(code), 0o644)
@@ -383,13 +383,13 @@ func runCode(e *Env, a args) string {
 		if _, err := exec.LookPath("pwsh"); err == nil {
 			exe = "pwsh"
 		}
-		return e.Shell.Run(exe+" -NoProfile -ExecutionPolicy Bypass -File "+q(f), to)
+		return e.Shell.RunCtx(e.ctx(), exe+" -NoProfile -ExecutionPolicy Bypass -File "+q(f), to)
 	default:
 		if isWindows() && !strings.Contains(e.Shell.Kind(), "sh") {
 			return "On this PC use language=powershell for shell scripts."
 		}
 		f := filepath.Join(tmp, "snippet.sh")
 		_ = os.WriteFile(f, []byte(code), 0o755)
-		return e.Shell.Run("sh "+q(f), to)
+		return e.Shell.RunCtx(e.ctx(), "sh "+q(f), to)
 	}
 }

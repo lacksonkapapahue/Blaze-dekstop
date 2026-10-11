@@ -105,6 +105,7 @@ type Agent struct {
 	Mode     string     `json:"mode,omitempty"`      // plan | build (never more than the lead had)
 	Workdir  string     `json:"workdir,omitempty"`   // the folder the lead asked for (original)
 	Iso      *Isolation `json:"iso,omitempty"`       // its own worktree / copy (Build + workdir)
+	Direct   bool       `json:"direct,omitempty"`    // a build specialist that works on the real folder, no copy
 	Plan     string     `json:"plan,omitempty"`      // its short plan (first reply)
 	Review   string     `json:"review,omitempty"`    // "" | pending | applied | discarded | none
 	Changes  []Change   `json:"changes,omitempty"`   // what it changed in its copy

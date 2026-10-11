@@ -62,6 +62,7 @@ type Prefs struct {
 	Notify    NotifyPrefs   `json:"notify"`               // notifications and proactive suggestions (notify_app.go)
 	Vision    VisionPrefs   `json:"vision"`               // screen reading (vision_app.go)
 	MaxAgents int           `json:"max_agents,omitempty"` // background agents at once (0 = default, bgagents.go)
+	LeadWorks bool          `json:"lead_works,omitempty"` // Blaze does tasks itself; off (default) = every task goes to a specialist (lead.go)
 	Learn     LearnPrefs    `json:"learn"`                // learn automatically + chat marks (learn_app.go)
 	Studio    StudioPrefs   `json:"studio"`               // Design studio: critic, taste, shared comments (studio_app.go)
 }
@@ -462,8 +463,11 @@ func (a *App) SendWith(text string, files []string, att []llm.Attach) string {
 		fmt.Fprintf(&b, "\n\n<attached path=\"%s\">\n%s\n</attached>", f, data)
 	}
 	att = inlineAttach(&b, att)
-	// A message sent mid-turn waits its turn instead of being refused (the main
-	// agent stays free for chat while background agents work).
+	// No queue: a message sent mid-answer stops that answer (its text so far is kept) and
+	// is answered at once. The work itself runs in specialists, which keep going.
+	if a.main.Busy() {
+		a.Stop()
+	}
 	if a.main.Submit(agents.Input{Kind: "user", Text: b.String(), Attach: att}) {
 		return "queued"
 	}
@@ -566,7 +570,11 @@ func (a *App) run(ctx context.Context) {
 		hist := trim(a.history)
 		a.mu.Unlock()
 		conv := a.convKey()
+		lead := a.leadOnly(design)
 		sys := a.system(recentQuery(hist)) + tools.ExtraLine(conv) + agents.Delegation + agents.Orchestration
+		if lead {
+			sys += agents.LeadOnly
+		}
 		if note != "" {
 			sys += "\nABOUT YOUR LAST REPLY\n" + note + "\n"
 		}
@@ -576,6 +584,9 @@ func (a *App) run(ctx context.Context) {
 		// Blaze's own tools: the core set plus what find_tools turned on in this chat.
 		all := append(append(append(tools.Select(conv), a.conn.Tools()...), agents.MainTools()...), updateBlazeTool())
 		known := append(append(append(tools.Names(), a.conn.Known()...), agents.MainToolNames...), "update_blaze")
+		if lead { // the lead only briefs, steers and reviews specialists; it stays free to chat
+			all, known = agents.MainTools(), agents.MainToolNames
+		}
 		wr.EventsEmit(a.ctx, "thinking", step)
 		var partial strings.Builder // what streamed, kept if the reply breaks off
 		r, err := llm.CompleteWith(ctx, a.cfg, msgs, a.modeTools(all), llm.Opts{
@@ -654,7 +665,7 @@ func (a *App) run(ctx context.Context) {
 				res = a.conn.Run(ctx, tc.Function.Name, tc.Function.Arguments)
 			default:
 				onlyAgentTools = false
-				res = tools.Run(a.env, tc.Function.Name, tc.Function.Arguments)
+				res = tools.RunCtx(ctx, a.env, tc.Function.Name, tc.Function.Arguments)
 			}
 			changed, urls = a.designTouch(tc.Function.Name, tc.Function.Arguments, res, changed, urls)
 			wr.EventsEmit(a.ctx, "tool_done", map[string]string{"id": tc.ID, "result": res})

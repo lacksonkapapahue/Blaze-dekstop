@@ -53,6 +53,7 @@ func (s *Shell) command(ctx context.Context, cmd string, track bool) *exec.Cmd {
 		}
 		c := exec.CommandContext(ctx, s.path, "-NoProfile", "-NonInteractive", "-Command", script)
 		c.Dir = s.Cwd()
+		killTree(c)
 		return c
 	}
 	script := cmd
@@ -61,6 +62,7 @@ func (s *Shell) command(ctx context.Context, cmd string, track bool) *exec.Cmd {
 	}
 	c := exec.CommandContext(ctx, s.path, "-c", script)
 	c.Dir = s.Cwd()
+	killTree(c)
 	return c
 }
 
@@ -79,7 +81,16 @@ var hints = []struct {
 
 // Run executes cmd with a timeout and returns "exit N · cwd X" plus the output.
 func (s *Shell) Run(cmd string, timeout time.Duration) string {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	return s.RunCtx(context.Background(), cmd, timeout)
+}
+
+// RunCtx is Run that also ends when parent is cancelled (the user pressed Stop): the
+// shell and everything it started are killed, and it returns at once.
+func (s *Shell) RunCtx(parent context.Context, cmd string, timeout time.Duration) string {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	c := s.command(ctx, cmd, true)
 	c.Stdin = nil
@@ -92,6 +103,9 @@ func (s *Shell) Run(cmd string, timeout time.Duration) string {
 	code := 0
 	if c.ProcessState != nil {
 		code = c.ProcessState.ExitCode()
+	}
+	if parent.Err() != nil {
+		return "exit 130 · stopped by the user\n" + tail(out, 2000)
 	}
 	if ctx.Err() == context.DeadlineExceeded {
 		return fmt.Sprintf("exit 124 · timed out after %s\n%s\n[hint: long work or servers belong in run_shell background=true, then job_log]", timeout, tail(out, 6000))

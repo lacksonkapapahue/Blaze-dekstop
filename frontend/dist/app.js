@@ -645,8 +645,9 @@ async function sendText(text, files, att) {
   const bubble = userMsg(text + (files || []).map(f => `\n<attached path="${f}"></attached>`).join(""), att);
   col.append(bubble);
   if (busy) {
-    // Blaze is mid-answer: the message waits its turn (Go starts it when this one ends).
-    bubble.classList.add("queued"); scrollDown(true); sendLabel();
+    // Blaze is mid-answer: no queue. Go stops that answer (keeping its text) and answers
+    // this at once; the "turn" event opens the new answer.
+    scrollDown(true);
     await API().SendWith(text, files || [], att || []);
     return;
   }
@@ -1846,7 +1847,9 @@ function agentsGroup(redraw) {
   const cur = S.prefs.max_agents || (S.info && S.info.cores && S.info.cores <= 2 ? 1 : 3);
   [1, 2, 3, 4, 6].forEach(n => { const b = h("button", cur === n ? "on" : "", `${n} at once`); b.onclick = async () => { S.prefs.max_agents = await API().SetMaxAgents(n); redraw(); }; seg.append(b); });
   row.append(seg);
-  const bx = h("div", "box pad formgrid"); bx.append(row, h("div", "hknote", "Extra agents and specialists wait in a queue and start when one finishes. Specialists that change code each work in their own git worktree (or a copy of the folder) until Blaze reviews and applies their changes."));
+  const lw = h("label", "toggle", `<input type="checkbox" id="leadWorks" ${S.prefs.lead_works ? "checked" : ""}><span><span class="tt">Blaze does tasks itself</span><span class="td">Off (recommended): Blaze hands every task to a specialist and only briefs, monitors and steers them, so it's always free to chat. On: Blaze works on tasks itself and you wait. Design edits are always done directly.</span></span>`);
+  $("input", lw).onchange = async e => { S.prefs.lead_works = await API().SetLeadWorks(e.target.checked); };
+  const bx = h("div", "box pad formgrid"); bx.append(lw, row, h("div", "hknote", "Extra agents and specialists wait in a queue and start when one finishes. Specialists that change code each work in their own git worktree (or a copy of the folder) until Blaze reviews and applies their changes."));
   g.append(bx);
   return g;
 }
