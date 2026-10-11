@@ -374,6 +374,40 @@ with sync_playwright() as p:
         for v, arg in [("connector", "google"), ("connector", "spotify"), ("mcp", "linear")]:
             pg.evaluate(f"show('{v}', '{arg}')"); pg.wait_for_timeout(500)
             pg.screenshot(path=str(out / f"{v}-{arg}-{theme}.png"))
+        # v0.5.0: one-click connectors through blaze-auth, and Blaze accounts.
+        pg.set_viewport_size({"width": 1280, "height": 900})
+        pg.evaluate("show('connector', 'slack')"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"connector-oneclick-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('.oneclick .btn.accent')"):
+            errs.append("one-click Connect box missing on the Slack page")
+        if pg.evaluate("!!document.querySelector('.csetupwrap[open]')"):
+            errs.append("manual setup should be folded away when one-click is available")
+        pg.evaluate("document.querySelector('.oneclick .btn.accent').click()"); pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"connector-oneclick-waiting-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('.pend .waitline') && !document.querySelector('.pend details.paste')"):
+            errs.append("one-click waiting box wrong (no wait line, or a paste box it doesn't need)")
+        pg.evaluate("document.querySelector('.chead .acts .btn').click()"); pg.wait_for_timeout(400)
+        pg.evaluate("show('accounts', 'all')"); pg.wait_for_timeout(700)
+        pg.screenshot(path=str(out / f"accounts-oneclick-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('.ucard.out')"):
+            errs.append("signed-out account card missing on Accounts")
+        pg.evaluate("show('signin')"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"account-signin-{theme}.png"))
+        if pg.evaluate("document.querySelectorAll('.signbox .obtn').length") != 2:
+            errs.append("sign-in screen should offer Google and GitHub")
+        pg.evaluate("document.querySelector('.signbox .sw').click()"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"account-signup-{theme}.png"))
+        pg.fill(".signform input[name=email]", "kapapaluckson75@gmail.com"); pg.fill(".signform input[name=password]", "correct-horse-battery")
+        pg.evaluate("document.querySelector('.signform .go').click()"); pg.wait_for_timeout(900)
+        pg.screenshot(path=str(out / f"account-signed-in-{theme}.png"))
+        if pg.evaluate("(document.querySelector('.ucard .un') || {}).textContent") != "Lackson Kapapa":
+            errs.append("Settings › Account doesn't show the signed-in user")
+        pg.evaluate("show('accounts', 'all')"); pg.wait_for_timeout(700)
+        pg.screenshot(path=str(out / f"accounts-signed-in-{theme}.png"))
+        pg.evaluate("Object.assign(window.__acct, {signed_in: false, user: null}); show('settings', 'account')"); pg.wait_for_timeout(500)
+        pg.evaluate("document.querySelector('.signbox .obtn').click()"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"account-signin-waiting-{theme}.png"))
+        pg.evaluate("window.__acct.pending = ''; document.querySelector('#toasts') && document.querySelector('#toasts').remove()")
         pg.set_viewport_size({"width": 1280, "height": 820})
         pg.evaluate("""show('work'); loadConv(window.__conv);
           fire('connector_reauth', {id: 'github', name: 'GitHub'});

@@ -172,3 +172,51 @@ body.onboarding #app { visibility: hidden; }
 .obbody .anote { max-width: 600px; }
 @media (max-width: 900px) { #onboard { grid-template-columns: 1fr; } .obrail { display: none; } .obtour { grid-template-columns: 1fr; } .obfacts { grid-template-columns: 1fr; } .obfacts > div + div { border-left: 0; border-top: 1px solid var(--hair); } }
 @media (prefers-reduced-motion: reduce) { #onboard { animation: none; } }
+
+/* ---------------- Blaze account (v0.5.0) ---------------- */
+.signpage .col { max-width: 440px; }
+.signbox { border: 1px solid var(--hair2); background: var(--raised); padding: 28px; display: grid; gap: 14px; box-shadow: inset 3px 0 0 var(--accent); }
+.signbox h2 { font: 600 22px/1.2 var(--display); color: var(--ink); letter-spacing: -.02em; margin: -4px 0 0; }
+.signbox > .sub { margin-top: -6px; }
+.spage .signbox { max-width: 460px; }
+.oauthbtns { display: grid; gap: 8px; }
+.obtn { height: 42px; justify-content: flex-start; gap: 12px; padding: 0 12px 0 5px; font-weight: 500; }
+.obtn .blogo { width: 30px; height: 30px; border: 0; }
+.obtn .soon { margin-left: auto; letter-spacing: .1em; }
+.obtn:disabled { opacity: .55; cursor: default; }
+.obtn:disabled:hover { border-color: var(--hair2); }
+.ordiv { display: flex; align-items: center; gap: 10px; }
+.ordiv::before, .ordiv::after { content: ""; flex: 1; height: 1px; background: var(--hair); }
+.signform { gap: 12px; }
+.signform .go { height: 38px; justify-content: center; margin-top: 2px; }
+.signform .out:empty { display: none; }
+.signbox .switch { display: flex; align-items: center; gap: 4px; border-top: 1px solid var(--hair); padding-top: 12px; }
+.uav { width: 40px; height: 40px; flex: none; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); font: 600 15px var(--display); overflow: hidden; }
+.uav img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.uav.big { width: 56px; height: 56px; font-size: 20px; }
+.uav.off { background: var(--faint2); color: var(--sub); border: 1px solid var(--hair2); }
+.uav.off svg.i { width: 18px; height: 18px; }
+.ucard { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; border: 1px solid var(--hair2); background: var(--raised); padding: 18px 20px; }
+.ucard:not(.compact) { align-items: start; box-shadow: inset 3px 0 0 var(--accent); }
+.ucard.compact { padding: 13px 16px; margin-bottom: 18px; }
+.ucard.click { cursor: pointer; transition: background .12s; } .ucard.click:hover { background: var(--faint); }
+.ucard .um { min-width: 0; display: grid; gap: 2px; }
+.ucard .un { color: var(--ink); font: 600 16px/1.3 var(--display); letter-spacing: -.01em; }
+.ucard.compact .un { font-size: 14px; }
+.ucard .ue { color: var(--sub); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ucard .ue.mono { font: 12px var(--mono); }
+.ucard .upills { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.ucard .uacts { display: flex; gap: 8px; }
+.dangerrow { justify-content: space-between; gap: 16px; }
+.acctnote { line-height: 1.6; }
+/* One-click connect */
+.oneclick { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; box-shadow: inset 3px 0 0 var(--accent); }
+.oneclick .t { color: var(--ink); font-weight: 500; }
+.oneclick .s { color: var(--sub); font-size: 12.5px; margin-top: 2px; }
+.ocbadge { display: inline-flex; align-items: center; gap: 6px; font: 500 10.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.ocbadge .dot { width: 6px; height: 6px; }
+.manualwrap { margin-top: 0; }
+.manualwrap > .csetup, .manualwrap > .box { border: 0; border-top: 1px solid var(--hair); }
+.signform .fg[hidden] { display: none; }
+.spage .ucard:not(.compact), .ucard:not(.compact) { margin-bottom: 24px; }
+.callout.soonnote { margin-bottom: 22px; }
