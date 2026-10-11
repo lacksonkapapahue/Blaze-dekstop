@@ -87,7 +87,7 @@ addEventListener("keydown", e => { if (!e.defaultPrevented) modeKeys(e); }, true
 
 function hintText(p = pane) {
   const el = p && $("#hint", p); if (!el) return;
-  if (busy) { el.textContent = MODES.approval === "autopilot" ? "Autopilot is working… Stop ends the task" : "Working… Stop ends the task"; return; }
+  if (busy) { el.textContent = (MODES.approval === "autopilot" ? "Autopilot is working…" : "Working…") + " keep typing to queue a message · Stop ends this answer"; return; }
   el.innerHTML = `/ commands · @ files · + attach · Shift+Enter new line<span class="hk"><span class="kbd">Ctrl Tab</span> ${MODES.work_mode === "plan" ? "Plan" : "Build"} · <span class="kbd">Shift Tab</span> ${MODES.approval === "autopilot" ? "Autopilot" : "Auto"}</span>`;
 }
 
@@ -132,10 +132,11 @@ function drawAttach() {
   a.innerHTML = "";
   attachments.forEach((f, i) => { const c = h("span", "fchip", `@ ${esc(f)} <button title="Remove">×</button>`); $("button", c).onclick = () => { attachments.splice(i, 1); drawAttach(); }; a.append(c); });
   ATT.forEach((x, i) => a.append(attachChip(x, () => { ATT.splice(i, 1); drawAttach(); })));
+  if (typeof sendLabel === "function") sendLabel();
   const warn = $("#visionwarn", pane);
   const imgs = ATT.some(x => x.kind === "image");
   if (warn) {
-    warn.style.display = imgs && S && !S.vision ? "" : "none";
+    warn.style.display = imgs && S && !S.vision_model ? "" : "none";
     warn.innerHTML = `${cmIcon("image")}<span>None of your models can see images, so Blaze sends them as file paths. Add a free Gemini key to let it see them.</span><a class="go">Add a model</a>`;
     const g = $(".go", warn); if (g) g.onclick = () => show("settings", "providers");
   }

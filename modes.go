@@ -185,6 +185,8 @@ var planTools = map[string]bool{
 	"git":     true, // read-only subcommands only (planGit)
 	"job_log": true, "use_skill": true,
 	"see_screen": true, "screen_read": true, "read_screen": true, "screen_info": true,
+	"notify":      true, // a notification changes nothing on disk
+	"list_agents": true, // background agents: Plan may look, not start or steer them
 }
 
 var gitReadOnly = map[string]bool{

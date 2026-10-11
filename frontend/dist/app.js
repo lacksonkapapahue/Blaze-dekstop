@@ -92,7 +92,7 @@ function updateCard() {
     <div>Blaze <span class="mono ink">${esc(u.latest)}</span> is out. You have <span class="mono">${esc(u.current)}</span>.</div>
     <div class="sub small" style="margin-top:4px">${esc(u.method || "")}</div><div class="label weak updstatus" style="margin-top:8px"></div>
     <div class="actions"><button class="btn accent sm yes">${u.can_auto ? "Update now" : "Open release page"}</button><button class="btn line sm no">Later</button><button class="btn ghost sm skip">Skip this version</button></div>`);
-  card.querySelector(".yes").onclick = () => u.can_auto ? installUpdate(card) : API().OpenURL(u.page);
+  card.querySelector(".yes").onclick = () => { if (!u.can_auto) return API().OpenURL(u.page); card.remove(); SelfUpdate.run(); };
   card.querySelector(".no").onclick = () => card.remove();
   card.querySelector(".skip").onclick = async () => { await API().SkipUpdate(u.latest); UPD.skipped = true; $("#updCount").textContent = ""; card.remove(); };
   $("#log .col", pane).append(card); scrollDown(true);
@@ -153,9 +153,14 @@ document.addEventListener("click", e => {
   const c = e.target.closest(".copy");
   if (c) { navigator.clipboard.writeText(c.closest(".code").querySelector("pre").textContent); c.textContent = "Copied"; setTimeout(() => c.textContent = "Copy", 1200); }
   const st = e.target.closest(".step .head");
-  if (st) st.parentElement.classList.toggle("open");
+  if (st) st.setAttribute("aria-expanded", st.parentElement.classList.toggle("open"));
   if (!e.target.closest("#menu") && !e.target.closest("#plus")) closeMenu();
   if (!e.target.closest(".pop") && !e.target.closest("#route") && !e.target.closest("[data-pop]")) closePop();
+});
+
+document.addEventListener("keydown", e => {
+  const st = (e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest(".step .head");
+  if (st) { e.preventDefault(); st.click(); }
 });
 
 // ---------- popovers ----------
@@ -348,9 +353,10 @@ function buildPane() {
     <div class="hintline"><span class="label weak" id="hint"></span></div>
   </div></div>`;
   const input = $("#input", p);
-  input.addEventListener("input", () => { grow(); onType(); });
+  input.addEventListener("input", () => { grow(); onType(); sendLabel(); });
   input.addEventListener("keydown", onKey);
-  $("#send", p).onclick = () => busy ? API().Stop() : submit();
+  // Mid-answer the button stops the answer, unless there's a message to send: that one queues.
+  $("#send", p).onclick = () => busy && !input.value.trim() && !ATT.length ? API().Stop() : submit();
   $("#plus", p).onclick = () => menuOpen() ? closeMenu() : openMenu("plus", plusItems(), "Attach");
   initComposer(p);
   return p;
@@ -396,19 +402,40 @@ function loadConv(conv) {
   let turn = null;
   const turns = [];
   const results = {};
+  const anchors = {}; // agent handle -> the turn that dispatched it (its card goes right after)
   conv.messages.forEach(m => { if (m.role === "tool") results[m.tool_call_id] = m.content; });
   conv.messages.forEach(m => {
-    if (m.role === "user") { col.append(userMsg(m.content, m.attach)); turn = null; }
+    if (m.role === "user" && isAgentResult(m.content)) { col.append(agentNote(m.content)); turn = null; }
+    else if (m.role === "user") { col.append(userMsg(m.content, m.attach)); turn = null; }
     else if (m.role === "assistant") {
       if (!turn) { turn = blazeMsg(); turns.push(turn); col.append(turn.el); }
-      (m.tool_calls || []).forEach(tc => { const s = addStep(turn, tc.id, tc.function.name, tc.function.arguments); finishStep(turn, s, results[tc.id] || ""); });
+      (m.tool_calls || []).forEach(tc => {
+        if (Agents.isMainTool(tc.function.name)) {
+          const hm = /agent "([^"]+)"/.exec(results[tc.id] || "");
+          if (tc.function.name === "dispatch_agent" && hm) anchors[hm[1]] = turn.el;
+          return;
+        }
+        const s = addStep(turn, tc.id, tc.function.name, tc.function.arguments); finishStep(turn, s, results[tc.id] || "");
+      });
       if (m.content && m.content !== "…") turn.text += (turn.text ? "\n\n" : "") + m.content;
     }
   });
   turns.forEach(t => renderAnswer(t, true));
-  // Saved chats: steps collapsed behind "Worked · N steps".
-  turns.forEach(t => { const n = t.order.length; finishWork(t, null, `Worked · ${n} step${n > 1 ? "s" : ""}`); });
+  // Background agents: each card right after the turn that started it.
+  const seen = new Set();
+  Object.keys(anchors).forEach(k => { const v = (conv.agents || []).find(a => a.handle === k); if (v) { Agents.load([v], col, { [k]: anchors[k] }); seen.add(k); } });
+  Agents.load((conv.agents || []).filter(a => !seen.has(a.handle)), col);
+  // Saved chats: steps collapsed behind "Worked · N steps" (no timing is saved).
+  turns.forEach(t => finishWork(t, null, STEPS.workedLine(t.order.length, null)));
   scrollDown(true);
+}
+
+// Where a background agent's result came back into the chat (a platform message, not the user).
+const isAgentResult = c => String(c || "").startsWith("[Background agent result");
+function agentNote(content) {
+  const m = /^\[Background agent result · ([^·\]]+) · (\w+)/.exec(content) || [];
+  const word = { done: "finished", failed: "couldn't finish" }[(m[2] || "").trim()] || "reported back";
+  return h("div", "agnote", `<span class="label">Agent · <b>${esc((m[1] || "").trim())}</b> ${esc(word)}</span>`);
 }
 
 // User bubbles hide attached file bodies and long design-edit context.
@@ -432,6 +459,9 @@ function userMsg(content, att) {
 }
 
 function blazeMsg() {
+  // A new answer starts while the previous one is still live (autopilot's autoreply, retry):
+  // close the previous one's working line so it never shimmers forever.
+  if (current && current.workEl && !current.finished) finishWork(current);
   const el = h("div", "msg blaze");
   el.append(h("div", "who", `<span class="mk"></span><span class="label">Blaze</span>`));
   // One quiet status line per turn (Settings › Behaviour › Show every step turns the raw list back on).
@@ -446,6 +476,7 @@ function blazeMsg() {
     turn.open = !turn.open;
     workEl.classList.toggle("open", turn.open);
     stepsEl.style.display = turn.open && turn.order.length ? "" : "none";
+    workEl.setAttribute("aria-expanded", turn.open);
   };
   return turn;
 }
@@ -531,54 +562,26 @@ function setStatus(turn, text) {
   scrollDown();
 }
 
-// When the turn ends the line becomes "Worked for 12s" (or nothing if no tools ran).
+// When the turn ends the working line collapses to "Worked · 6 steps · 14s" (or nothing if
+// no tools ran). Safe to call twice: the first call wins.
 function finishWork(turn, seconds, label) {
-  if (!turn) return;
+  if (!turn || turn.finished) return;
+  turn.finished = true;
   const w = turn.workEl;
   turn.statusText = "";
-  if (!turn.order.length) { w.style.display = "none"; return; }
+  if (!turn.order.length) { w.style.display = "none"; w.classList.remove("live"); $(".wt", w).innerHTML = ""; return; }
   const secs = seconds != null ? seconds : (Date.now() - turn.started) / 1000;
   const n = turn.order.length;
-  const txt = label || (secs >= 1 ? `Worked for ${secs >= 60 ? Math.floor(secs / 60) + "m " + Math.round(secs % 60) + "s" : Math.round(secs) + "s"}` : `Worked · ${n} step${n > 1 ? "s" : ""}`);
+  const txt = label || STEPS.workedLine(n, secs);
   w.classList.remove("live"); w.classList.add("done");
   $(".wt", w).innerHTML = `<span class="phrase">${esc(txt)}</span>`;
-  w.title = `${n} step${n > 1 ? "s" : ""} · click to ${showSteps() ? "hide" : "see"} them`;
+  w.title = `Click to ${turn.open ? "hide" : "see"} each step and its exact command`;
+  w.setAttribute("aria-expanded", turn.open);
   w.style.display = showSteps() ? "none" : "";
 }
 
-// Plain-English phrase for a tool call (same phrases as the tray in friendly.go).
-function friendly(name, args) {
-  let a = {}; try { a = JSON.parse(args || "{}"); } catch (e) {}
-  const v = k => String(a[k] ?? "").split("\n")[0].trim();
-  const file = () => base(v("path")) || "a file";
-  const host = u => { try { return new URL(u).host.replace(/^www\./, ""); } catch (e) { return u; } };
-  switch (name) {
-    case "file_read": return "Reading " + file();
-    case "file_edit": return "Editing " + file();
-    case "file_write": return "Writing " + file();
-    case "file_delete": return "Deleting " + file();
-    case "file_list": return "Looking through your files";
-    case "file_search": return `Searching your files for "${v("pattern") || v("query")}"`;
-    case "web_search": return `Searching the web for "${v("query")}"`;
-    case "fetch_page": return "Reading " + (host(v("url")) || "a web page");
-    case "run_shell": return /\b(npm|pnpm|yarn|bun) (i|install|add)\b|\bpip3? install\b|\b(apt|apt-get|dnf|yum|pacman|brew|winget|choco|scoop|cargo|go) (install|-S|get)\b/i.test(v("command")) ? "Installing packages" : "Running a command";
-    case "git": return "Checking the project history";
-    case "run_code": return `Running ${v("language") || "some"} code`;
-    case "install_tool": return "Installing " + (v("name") || "a tool");
-    case "remember": return "Saving that to memory";
-    case "forget": return "Updating memory";
-    case "schedule": return "Setting up a schedule";
-    case "use_skill": return "Following a saved skill";
-    case "write_skill": return "Saving a skill";
-    case "system_info": return "Checking your computer";
-    case "http_request": return "Calling " + (host(v("url")) || "a web service");
-    case "download_file": return "Downloading " + (host(v("url")) || "a file");
-    case "open_url": return "Opening " + (host(v("target") || v("url")) || "a page");
-    case "job_log": case "job_input": return "Checking a background job";
-    case "job_stop": return "Stopping a background job";
-  }
-  return "Working on it";
-}
+// Plain words for a tool call: steps.js (no commands, paths or JSON while working).
+const friendly = (name, args) => STEPS.describe(name, args);
 
 function scrollDown(force) {
   const log = $("#log", pane); if (!log) return;
@@ -587,10 +590,16 @@ function scrollDown(force) {
 
 function setBusy(b) {
   busy = b;
-  const send = $("#send", pane);
-  send.innerHTML = b ? `${icon("stop", "i sm")}<span>Stop</span>` : `${icon("send", "i sm")}<span>Send</span>`;
-  send.classList.toggle("accent", !b); send.classList.toggle("line", b);
+  sendLabel();
   hintText();
+}
+function sendLabel() {
+  const send = $("#send", pane), i = $("#input", pane); if (!send) return;
+  const stop = busy && !(i && i.value.trim()) && !ATT.length;
+  if (send.dataset.stop === String(stop)) return;
+  send.dataset.stop = String(stop);
+  send.innerHTML = stop ? `${icon("stop", "i sm")}<span>Stop</span>` : `${icon("send", "i sm")}<span>Send</span>`;
+  send.classList.toggle("accent", !stop); send.classList.toggle("line", stop);
 }
 
 let thinkingEl = null;
@@ -612,7 +621,7 @@ function thinking(onOff, text) {
 function submit() {
   const input = $("#input", pane);
   let text = input.value.trim();
-  if ((!text && !ATT.length) || busy) return;
+  if (!text && !ATT.length) return;
   if (!text) text = ATT.some(a => a.kind === "image") ? "Look at this." : "Take a look at this.";
   if (/^\/\S+$/.test(text)) { const c = matchCommands(text.slice(1))[0]; if (c) { input.value = ""; runCommand(c); return; } }
   input.value = ""; grow();
@@ -626,45 +635,46 @@ async function runCommand(c) {
 }
 
 async function sendText(text, files, att) {
-  if (busy) return;
   const col = $("#log .col", pane);
   const heroEl = $(".hero", col); if (heroEl) heroEl.remove();
-  col.append(userMsg(text + (files || []).map(f => `\n<attached path="${f}"></attached>`).join(""), att));
-  current = blazeMsg(); col.append(current.el);
+  const bubble = userMsg(text + (files || []).map(f => `\n<attached path="${f}"></attached>`).join(""), att);
+  col.append(bubble);
+  if (busy) {
+    // Blaze is mid-answer: the message waits its turn (Go starts it when this one ends).
+    bubble.classList.add("queued"); scrollDown(true); sendLabel();
+    await API().SendWith(text, files || [], att || []);
+    return;
+  }
+  current = blazeMsg(); current.pendingUser = true; col.append(current.el);
   setBusy(true); thinking(true);
   scrollDown(true);
   const r = await API().SendWith(text, files || [], att || []);
-  if (r === "busy") setBusy(true);
+  if (r === "queued" && current && current.pendingUser) { current.el.remove(); current = null; bubble.classList.add("queued"); }
 }
 
-// One line per tool step: a verb and its target.
-function describe(name, args) {
-  let a = {}; try { a = JSON.parse(args || "{}"); } catch (e) {}
-  const v = k => String(a[k] ?? "").split("\n")[0].slice(0, 120);
-  switch (name) {
-    case "run_shell": return ["run", v("command")];
-    case "git": return ["git", v("args")];
-    case "web_search": return ["search", v("query")];
-    case "fetch_page": return ["read", v("url")];
-    case "run_code": return ["run", v("language") + " code"];
-    case "file_read": return ["read", v("path")];
-    case "file_write": return ["write", v("path")];
-    case "file_edit": return ["edit", v("path")];
-    case "file_delete": return ["delete", v("path")];
-    case "file_list": return ["list", v("path") || "."];
-    case "file_search": return ["search", v("pattern")];
-    case "open_url": return ["open", v("target") || v("url")];
-    case "install_tool": return ["install", v("name")];
-  }
-  return [name.replace(/_/g, " "), ""];
-}
-const describeText = (n, a) => describe(n, a).filter(Boolean).join(" ");
+// A main turn starts in Go: a user message (maybe queued) or a background agent's result.
+on("turn", t => {
+  if (t && t.conv) convId = t.conv;
+  const col = $("#log .col", pane); if (!col) return;
+  if (t.kind === "agent") {
+    if (current && current.pendingUser) { current.el.remove(); current = null; const q = $$(".msg.user", col).pop(); if (q) q.classList.add("queued"); }
+    if (current) return;
+    col.append(agentNote(`[Background agent result · ${t.handle} · ${(Agents.recs[t.handle] || { v: {} }).v.status || "done"}`));
+  } else if (current && current.pendingUser) { current.pendingUser = false; return; }
+  else if (current) return;
+  else { const q = $(".msg.user.queued", col); if (q) q.classList.remove("queued"); }
+  current = blazeMsg(); col.append(current.el);
+  setBusy(true); thinking(true); scrollDown();
+});
 
+// One row per tool step: plain words on the row; the exact command or tool call and its
+// output only inside the expanded row (mono).
 const MAX_STEPS_SHOWN = 6;
 function addStep(turn, id, name, args) {
   if (showSteps() || turn.open) turn.stepsEl.style.display = "";
-  const [verb, tgt] = describe(name, args);
-  const s = h("div", "step run", `<div class="head"><span class="st"></span><span class="verb">${esc(verb)}</span><span class="tgt">${esc(tgt)}</span><span class="sum"></span></div><pre></pre>`);
+  const s = h("div", "step run", `<div class="head" role="button" tabindex="0" aria-expanded="false"><span class="st"></span><span class="ph">${esc(friendly(name, args))}</span><span class="sum"></span><span class="dur"></span><svg class="i sm chev" viewBox="0 0 16 16">${IC.down}</svg></div>
+    <div class="body"><div class="blk"><span class="label">${esc(STEPS.detailLabel(name))}</span><pre class="cmd"></pre></div><div class="blk out"><span class="label">Output</span><pre class="res"></pre></div></div>`);
+  $(".cmd", s).textContent = STEPS.detail(name, args);
   s.dataset.tool = name;
   turn.stepsEl.append(s); turn.steps[id] = s; turn.order.push(s);
   foldSteps(turn);
@@ -682,7 +692,7 @@ function foldSteps(turn) {
   more.textContent = `${hidden.length} earlier step${hidden.length > 1 ? "s" : ""} · show`;
 }
 
-const isBad = r => /^Error|^exit [1-9]|did NOT approve|^Refused|^Blaze couldn't/.test(r || "");
+const isBad = r => /^Error|^exit [1-9]|did NOT approve|^Refused|^Blaze couldn't|^Tool error/.test(r || "");
 function summary(result) {
   const lines = String(result || "").split("\n").map(x => x.trim()).filter(Boolean);
   let first = lines[0] || "";
@@ -693,17 +703,22 @@ function summary(result) {
 function finishStep(turn, s, result) {
   if (!s) return;
   const bad = isBad(result);
+  const declined = /did NOT approve|declined/i.test(result || "");
   s.classList.remove("run"); s.classList.add(bad ? "bad" : "ok");
   const sum = summary(result);
-  s.querySelector(".sum").textContent = sum;
-  s.querySelector("pre").textContent = result;
-  // The same error again collapses into the previous line with a ×N count.
+  s.dataset.err = bad ? sum : "";
+  // A failed step says so in plain words; what went wrong is inside the expanded row.
+  s.querySelector(".sum").textContent = bad ? (declined ? "Declined" : "Failed") : "";
+  // Only steps that took a noticeable time show it.
+  if (s._t0) { const d = (Date.now() - s._t0) / 1000; s.querySelector(".dur").textContent = d < 1 ? "" : d < 60 ? d.toFixed(d < 10 ? 1 : 0) + "s" : Math.floor(d / 60) + "m " + Math.round(d % 60) + "s"; }
+  s.querySelector(".res").textContent = String(result || "").trim() || "(no output)";
+  // The same error again collapses into the previous row with a ×N count.
   if (bad && turn) {
     const i = turn.order.indexOf(s), prev = turn.order.slice(0, i).reverse().find(x => !x.dataset.dup);
-    if (prev && prev.classList.contains("bad") && prev.dataset.tool === s.dataset.tool && prev.querySelector(".sum").textContent === sum) {
+    if (prev && prev.classList.contains("bad") && prev.dataset.tool === s.dataset.tool && prev.dataset.err === sum) {
       s.dataset.dup = "1"; s.classList.add("hide");
       const n = (+prev.dataset.n || 1) + 1; prev.dataset.n = n;
-      let rep = $(".rep", prev); if (!rep) { rep = h("span", "rep"); prev.querySelector(".head").append(rep); }
+      let rep = $(".rep", prev); if (!rep) { rep = h("span", "rep"); prev.querySelector(".sum").after(rep); }
       rep.textContent = "×" + n;
       foldSteps(turn);
     }
@@ -744,7 +759,8 @@ function errorCard(target, e) {
 
 // ---------- events from Go ----------
 on("thinking", () => { if (current) thinking(true); });
-on("status", t => { if (current) thinking(true, t); });
+// Backend progress lines can carry raw commands ("Running: cat …"): only plain words reach the line.
+on("status", t => { const p = STEPS.plainStatus(t); if (current && p) thinking(true, p); });
 on("delta", d => {
   if (!current) return;
   thinking(false);
@@ -754,10 +770,11 @@ on("delta", d => {
 });
 on("tool", t => {
   if (!current) return;
+  if (Agents.isMainTool(t.name)) { thinking(true, t.name === "dispatch_agent" ? "Handing this to a background agent" : "Checking on your agents"); return; }
   thinking(false);
   if (current.text) current.text += "\n\n";
-  addStep(current, t.id, t.name, t.args);
-  thinking(true, showSteps() ? describeText(t.name, t.args) : friendly(t.name, t.args));
+  addStep(current, t.id, t.name, t.args)._t0 = Date.now();
+  thinking(true, friendly(t.name, t.args));
   scrollDown();
 });
 on("tool_done", t => {
@@ -779,6 +796,7 @@ on("repair", r => {
 on("route", r => { if (r && r.route) setModel(r.route); });
 on("model", m => { if (m) setModel(m.label, m.selection); });
 on("confirm", c => {
+  if (c.agent && Agents.confirm(c)) return; // a background agent's approval shows on its card
   thinking(false);
   const btns = c.always
     ? `<button class="btn accent sm yes">Allow once</button><button class="btn line sm al">Always allow</button><button class="btn ghost sm no">Don't allow</button>`
@@ -834,6 +852,7 @@ function setOrb(onOff) {
   if (onOff) {
     if (!$("#orbbar")) {
       const bar = h("div", "", `<canvas width="44" height="44"></canvas><span class="label ink">Blaze</span><span class="grow"></span>
+        <button class="themebtn" title="Switch theme"></button>
         <button class="btn ghost xs" data-o="new" title="New chat">${icon("plus", "i sm")}<span>New</span></button>
         <button class="btn ghost xs" data-o="expand" title="Open the full window">${icon("open", "i sm")}<span>Expand</span></button>
         <button class="btn ghost xs" data-o="hide" title="Hide (Esc)">${icon("x", "i sm")}<span>Hide</span></button>`);
@@ -844,6 +863,7 @@ function setOrb(onOff) {
       $("[data-o=hide]", bar).onclick = () => API().HideWindow();
       $("#main").prepend(bar);
       particleOrb($("canvas", bar), 22);
+      Agents.orbBadge();
     }
     if (view !== "work") show("work");
     pane.classList.add("narrow");
@@ -1656,7 +1676,7 @@ async function setBehaviour(col, redraw) {
   const ps = h("button", "btn line sm", "Save style"); ps.style.marginTop = "8px";
   ps.onclick = async () => { await API().SetPersona(pers.value); ps.textContent = "Saved"; setTimeout(() => ps.textContent = "Save style", 1200); };
   g3.append(pers, ps);
-  const t2 = h("label", "toggle", `<input type="checkbox" ${S.prefs.show_steps ? "checked" : ""}><span><span class="tt">Show every step (power users)</span><span class="td">Off: one plain-English status line per answer; click “Worked for…” to see the steps.</span></span>`);
+  const t2 = h("label", "toggle", `<input type="checkbox" ${S.prefs.show_steps ? "checked" : ""}><span><span class="tt">Show every step (power users)</span><span class="td">Off: one plain-English status line per answer; click “Worked · N steps” to see each step and its exact command.</span></span>`);
   $("input", t2).onchange = e => { API().SetShowSteps(e.target.checked); S.prefs.show_steps = e.target.checked; };
   bxA.append(t2);
   const t3 = h("label", "toggle", `<input type="checkbox" ${foldCards() ? "checked" : ""}><span><span class="tt">Fold long answers into cards</span><span class="td">The short answer stays in view; tables, long lists and reports go in a card you can expand.</span></span>`);
@@ -1665,7 +1685,7 @@ async function setBehaviour(col, redraw) {
   const t4 = h("label", "toggle", `<input type="checkbox" ${S.prefs.auto_titles !== false ? "checked" : ""}><span><span class="tt">Name chats by their topic</span><span class="td">A tiny call on your cheapest model titles each chat by what it's mostly about, and updates it as the chat moves on. Double-click a chat to rename it yourself.</span></span>`);
   $("input", t4).onchange = e => { API().SetAutoTitles(e.target.checked); S.prefs.auto_titles = e.target.checked; };
   bxA.append(t4);
-  col.append(g1, gA, voiceGroup(redraw), backgroundGroup(redraw), g2, Polish.personalityGroup(redraw), g3);
+  col.append(g1, gA, voiceGroup(redraw), backgroundGroup(redraw), agentsGroup(redraw), g2, Polish.personalityGroup(redraw), g3);
 }
 
 function modeSetting(title, key, opts, cur, pick) {
@@ -1696,6 +1716,19 @@ function voiceGroup(redraw) {
     const lr = h("div", "modeset", `<div class="mst"><span class="tt">Language</span></div>`); lr.append(lang, h("div", "td", "auto, or a language code like en, fr, sw."));
     bx.append(lr);
   })();
+  return g;
+}
+
+// Settings › Behaviour › Background agents: how many run at once.
+function agentsGroup(redraw) {
+  const g = group("Background agents", "Blaze hands long jobs to background agents so you can keep chatting. More at once finishes sooner but works your computer harder.");
+  const row = h("div", "hkrow", `<span class="tt">Run at most</span>`);
+  const seg = h("div", "seg");
+  const cur = S.prefs.max_agents || (S.info && S.info.cores && S.info.cores <= 2 ? 1 : 3);
+  [1, 2, 3, 4, 6].forEach(n => { const b = h("button", cur === n ? "on" : "", `${n} at once`); b.onclick = async () => { S.prefs.max_agents = await API().SetMaxAgents(n); redraw(); }; seg.append(b); });
+  row.append(seg);
+  const bx = h("div", "box pad formgrid"); bx.append(row, h("div", "hknote", "Extra agents wait in a queue and start when one finishes."));
+  g.append(bx);
   return g;
 }
 
@@ -1796,7 +1829,13 @@ function doctorView(el) {
     rows.innerHTML = "";
     const ok = res.filter(r => r.ok).length;
     run.disabled = false; run.textContent = `${ok} of ${res.length} passed · run again`;
-    res.forEach((r, i) => rows.append(h("div", "r", `<span class="dot ${r.ok ? "" : "ink"}"></span><div class="main"><div class="t">${esc(r.name)}</div><div class="s">${esc(r.detail)}</div></div><span class="pill ${r.ok ? "acc" : "ink"}">${r.ok ? "OK" : "Fix"}</span>`)));
+    res.forEach((r, i) => {
+      const row = h("div", "r", `<span class="dot ${r.ok ? "" : "ink"}"></span><div class="main"><div class="t">${esc(r.name)}</div><div class="s">${esc(r.detail)}</div></div>`);
+      // A check that can be fixed in one click (a macOS privacy pane) gets a button; the rest a status label.
+      if (!r.ok && r.fix) { const b = h("button", "btn line sm fixbtn", `Fix${icon("ext", "i sm")}`); b.onclick = () => API().OpenURL(r.fix); row.append(b); }
+      else row.append(h("span", `pill ${r.ok ? "acc" : "ink"}`, r.ok ? "OK" : "Fix"));
+      rows.append(row);
+    });
   };
   run.click();
 }

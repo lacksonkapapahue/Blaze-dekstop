@@ -9,6 +9,8 @@
 <link rel="stylesheet" href="accounts.css">
 <link rel="stylesheet" href="memory.css">
 <link rel="stylesheet" href="composer.css">
+<link rel="stylesheet" href="notify.css">
+<link rel="stylesheet" href="agents.css">
 </head>
 <body>
 <div id="app">
@@ -37,13 +39,18 @@
       </div>
       <button id="folder" class="chip" title="Change folder"><svg class="i sm" viewBox="0 0 16 16"><path d="M1.5 3.5h5l1.5 1.5h6.5v8h-13z"/></svg><span id="folderName"></span></button>
       <span class="grow"></span>
+      <button id="themeBtn" class="themebtn" data-w="1" title="Switch theme" aria-label="Switch theme"></button>
       <button id="route" class="chip" title="Choose the model"><span class="dot" id="routeDot"></span><span id="routeText">No model</span><svg class="i sm caret" viewBox="0 0 16 16"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg></button>
     </header>
     <section id="view"></section>
   </main>
 </div>
 <script src="md.js"></script>
+<script src="steps.js"></script>
 <script src="app.js"></script>
+<script src="agents.js"></script>
+<script src="selfupdate.js"></script>
+<script src="theme.js"></script>
 <script src="polish.js"></script>
 <script src="brand.js"></script>
 <script src="connectors.js"></script>
@@ -51,5 +58,6 @@
 <script src="onboard.js"></script>
 <script src="memory.js"></script>
 <script src="composer.js"></script>
+<script src="notify.js"></script>
 </body>
 </html>

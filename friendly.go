@@ -9,6 +9,9 @@ import (
 	"unicode/utf8"
 )
 
+// plainRe: a model-written step summary that reads as words, not a command.
+var plainRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9 ,.'()]*$`)
+
 var installRe = regexp.MustCompile(`(?i)\b(npm|pnpm|yarn|bun) (i|install|add)\b|\bpip3? install\b|\b(apt|apt-get|dnf|yum|pacman|brew|winget|choco|scoop|cargo|go) (install|-S|get)\b`)
 
 // friendlyTool says what a tool call is doing in plain English (the tray status line;
@@ -29,6 +32,12 @@ func friendlyTool(name, rawArgs string) string {
 	}
 	var s string
 	switch name {
+	case "read_screen":
+		s = "Reading your screen"
+	case "see_screen":
+		s = "Looking at your screen"
+	case "notify":
+		s = "Sending a notification"
 	case "file_read":
 		s = "Reading " + file()
 	case "file_edit":
@@ -49,6 +58,8 @@ func friendlyTool(name, rawArgs string) string {
 		s = "Running a command"
 		if installRe.MatchString(v("command")) {
 			s = "Installing packages"
+		} else if sum := v("summary"); plainRe.MatchString(sum) && utf8.RuneCountInString(sum) <= 60 {
+			s = strings.ToUpper(sum[:1]) + sum[1:]
 		}
 	case "git":
 		s = "Checking the project history"
@@ -56,6 +67,8 @@ func friendlyTool(name, rawArgs string) string {
 		s = "Running " + orStr(v("language"), "some") + " code"
 	case "install_tool":
 		s = "Installing " + orStr(v("name"), "a tool")
+	case "update_blaze":
+		s = "Checking for a Blaze update"
 	case "remember":
 		s = "Saving that to memory"
 	case "schedule":
