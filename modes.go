@@ -188,6 +188,9 @@ var planTools = map[string]bool{
 	"see_screen": true, "screen_read": true, "read_screen": true, "screen_info": true,
 	"notify":      true, // a notification changes nothing on disk
 	"list_agents": true, // background agents: Plan may look, not start or steer them
+	// Specialists: a Plan lead may brief Plan specialists (they only scout) and steer
+	// them; apply_specialist changes files, so it waits for Build.
+	"dispatch_specialist": true, "check_specialist": true, "message_specialist": true, "cancel_specialist": true,
 }
 
 var gitReadOnly = map[string]bool{
@@ -285,6 +288,15 @@ func (a *App) modeBlock(name, rawArgs string) string {
 	if a.workMode() != "plan" {
 		return ""
 	}
+	why := a.planBlock(name, rawArgs)
+	if why == "" {
+		return ""
+	}
+	return "Refused: Blaze is in PLAN mode (read and scout only) and " + why + ". Don't retry it. Finish investigating with read-only tools, then present the plan: the exact changes and commands you would run. The user switches to Build (Ctrl+Tab) to let you carry it out."
+}
+
+// planBlock is why Plan refuses a call ("" = allowed), for the lead and its agents.
+func (a *App) planBlock(name, rawArgs string) string {
 	why := ""
 	if !a.planAllows(name) {
 		why = name + " can change things"
@@ -297,10 +309,7 @@ func (a *App) modeBlock(name, rawArgs string) string {
 		}
 		why = planGit(s)
 	}
-	if why == "" {
-		return ""
-	}
-	return "Refused: Blaze is in PLAN mode (read and scout only) and " + why + ". Don't retry it. Finish investigating with read-only tools, then present the plan: the exact changes and commands you would run. The user switches to Build (Ctrl+Tab) to let you carry it out."
+	return why
 }
 
 // ---------------- Autopilot ----------------

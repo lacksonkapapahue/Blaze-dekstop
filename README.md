@@ -13,6 +13,12 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Debian/Ubuntu**: `sudo apt install ./blaze-desktop_*_amd64.deb`.
 - **Other Linux**: unpack the tar.gz and run `blaze-desktop` (needs GTK 3 + WebKitGTK 4.1).
 
+## What's in v0.6.0 (a lead with specialists)
+1. **Big tasks split across specialists.** For work with independent parts (a frontend and a backend change, tests for several packages, research on separate questions) the main chat acts as the lead: it briefs specialists with `dispatch_specialist`, they run in parallel (3 at a time by default, Settings › Behaviour › *Background agents & specialists*, extras queue), and each result comes back to the lead automatically. Small or step-by-step tasks it still does itself.
+2. **Each specialist gets its own copy.** A Build specialist works in its own **git worktree** on a `blaze/<name>` branch (or a copy of the folder when it isn't a repo, skipping `node_modules` and other caches), so specialists never collide and nothing reaches your folder until the lead has reviewed the diff (`check_specialist` with `diff: true`) and called `apply_specialist`. Applied work lands as uncommitted changes for you to commit; a copy never overwrites a file you changed meanwhile.
+3. **Never more than the lead.** Specialists inherit Plan/Build (in Plan they only scout and plan), Auto/Autopilot approvals, the step budget and the daily spend cap. The lead can check, steer (`message_specialist`) or stop (`cancel_specialist`) any of them.
+4. **A compact Specialists strip** above the composer: one row per specialist with a mini particle orb, its task, mode, state and time, Stop, and on expand its plan, log, report and the files it changed (with Apply / Discard if you'd rather decide yourself). See `docs/plan-v0.6.0.md`.
+
 ## What's in v0.5.0 (Blaze accounts and one-click connectors)
 1. **Connect in one click.** Google (Gmail, Calendar, Drive), GitHub, Spotify, Notion and Slack connect with a browser sign-in through `blaze-auth`, a small Cloudflare Worker on the free tier (`cloud/`), so you no longer need your own developer app. "Use your own key/developer app instead" stays under *Advanced* on each connector page; providers the Worker isn't set up for yet say "One-click Connect is coming soon" and keep manual setup open.
 2. **Blaze account (optional).** Settings › Account or `/account`: sign in with Google, GitHub or email and password, sign out, or delete the account. A card at the top of Accounts shows who's signed in.

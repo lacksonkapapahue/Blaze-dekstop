@@ -4,7 +4,9 @@
 // the agent's report. Approvals and questions from an agent show on its card, so the
 // main chat never blocks. The orb shows a compact running-agents indicator.
 const Agents = (() => {
-  const MAIN = ["dispatch_agent", "message_agent", "cancel_agent", "list_agents"];
+  const MAIN = ["dispatch_agent", "message_agent", "cancel_agent", "list_agents", "dispatch_specialist", "check_specialist", "message_specialist", "cancel_specialist", "apply_specialist"];
+  // Specialists (v0.6.0) live in their own strip above the composer (specialists.js).
+  const spec = v => typeof Specs !== "undefined" && Specs.claims(v);
   const recs = {}; // handle -> { v, steps: [], el, open }
   const isMainTool = n => MAIN.includes(n);
   const active = s => s === "queued" || s === "running" || s === "waiting";
@@ -90,6 +92,7 @@ const Agents = (() => {
 
   function upsert(v) {
     if (!v || !v.handle) return;
+    if (spec(v)) return Specs.upsert(v);
     const r = rec(v.handle);
     if (v.started && !v.ended) v.skew = (v.seconds || 0) - (Date.now() - v.started) / 1000; // backend clock vs ours
     r.v = { ...r.v, ...v };
@@ -101,6 +104,7 @@ const Agents = (() => {
   }
 
   function step(d) {
+    if (spec({ handle: d.handle })) return Specs.step(d);
     const r = rec(d.handle), s = d.step;
     const i = r.steps.findIndex(x => x.id === s.id && x.at === s.at);
     if (i >= 0) r.steps[i] = s; else r.steps.push(s);
@@ -109,10 +113,11 @@ const Agents = (() => {
     draw(r);
   }
 
-  function remove(handle) { const r = recs[handle]; if (r && r.el) r.el.remove(); delete recs[handle]; orbBadge(); }
+  function remove(handle) { if (spec({ handle })) return Specs.remove(handle); const r = recs[handle]; if (r && r.el) r.el.remove(); delete recs[handle]; orbBadge(); }
 
   // Cards for a saved chat: each after the turn that dispatched it.
   function load(list, col, anchors) {
+    if (typeof Specs !== "undefined") { Specs.load((list || []).filter(v => v.kind === "specialist")); list = (list || []).filter(v => v.kind !== "specialist"); }
     (list || []).forEach(v => {
       const r = rec(v.handle);
       r.v = { ...v }; r.steps = (v.steps || []).slice(); r.el = null; r.line = null;
@@ -123,6 +128,7 @@ const Agents = (() => {
 
   // An approval card from a sub-agent shows on its card.
   function confirm(c) {
+    if (spec({ handle: c.agent })) return Specs.confirm(c);
     const r = rec(c.agent);
     if (!r.el) { const col = $("#log .col", pane); if (col) place(c.agent, col); }
     if (!r.el) return false;
@@ -142,6 +148,7 @@ const Agents = (() => {
 
   // A question from a sub-agent (ask_user): choices and a free answer.
   function question(q) {
+    if (spec({ handle: q.agent })) return Specs.question(q);
     const r = rec(q.agent);
     if (!r.el) { const col = $("#log .col", pane); if (col) place(q.agent, col); }
     if (!r.el) return;
@@ -160,6 +167,7 @@ const Agents = (() => {
   function counts() {
     let running = 0, queued = 0, waiting = 0;
     Object.values(recs).forEach(r => { const s = r.v.status; if (s === "running") running++; else if (s === "queued") queued++; else if (s === "waiting") waiting++; });
+    if (typeof Specs !== "undefined") { const c = Specs.counts(); running += c.running; queued += c.queued; waiting += c.waiting; }
     return { running, queued, waiting, total: running + queued + waiting };
   }
 

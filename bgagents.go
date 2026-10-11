@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,58 @@ import (
 // model router, the tools and approval gate, the UI events and the main turn queue.
 
 func agentsDir() string { return filepath.Join(config.Dir(), "desktop", "agents") }
+
+// worktreesDir is where specialists get their own git worktree or folder copy (v0.6.0).
+func worktreesDir() string { return filepath.Join(config.Dir(), "desktop", "worktrees") }
+
+// agentGuard stops an agent at the lead's limits: the daily spend cap for every agent,
+// and Autopilot's time budget for a specialist (it inherits the lead's budgets).
+func (a *App) agentGuard(ag *agents.Agent) string {
+	if c := a.cfg.DailyCap; c > 0 && llm.TodayCost() >= c {
+		return fmt.Sprintf("stopped: today's spend cap ($%.2f) is reached", c)
+	}
+	if ag.Kind == agents.Specialist && a.approval() == "autopilot" && !ag.Started.IsZero() {
+		a.mu.Lock()
+		mins := a.prefs.Composer.APMinutes
+		a.mu.Unlock()
+		if mins > 0 && time.Since(ag.Started) > time.Duration(mins)*time.Minute {
+			return fmt.Sprintf("stopped at Autopilot's time budget (%d min)", mins)
+		}
+	}
+	return ""
+}
+
+// agentPlan is true when an agent may only read and scout: a Plan specialist, or any
+// agent while the lead (the main chat) is in Plan mode. An agent never has more
+// permissions than the lead.
+func (a *App) agentPlan(ag *agents.Agent) bool { return ag.Mode == "plan" || a.workMode() == "plan" }
+
+// agentBlock is why an agent's tool call is refused ("" = allowed): Plan limits, and a
+// Build specialist with its own copy writing into the original folder.
+func (a *App) agentBlock(ag *agents.Agent, name, rawArgs string) string {
+	if a.agentPlan(ag) {
+		if why := a.planBlock(name, rawArgs); why != "" {
+			return "Refused: you are in PLAN mode (read and scout only) and " + why + ". Don't retry it. Finish investigating with read-only tools, then report the plan: the exact changes and commands."
+		}
+	}
+	if ag.Iso != nil && writesFiles[name] {
+		var args map[string]any
+		_ = json.Unmarshal([]byte(rawArgs), &args)
+		p, _ := args["path"].(string)
+		if p != "" && filepath.IsAbs(p) && insideDir(ag.Iso.OriginalWorkdir(), p) && !insideDir(ag.Iso.Path, p) {
+			return "Refused: " + p + " is in the original folder. Work only in your own copy, " + ag.Iso.Workdir() + " (the same relative path there); the lead applies your changes after review."
+		}
+	}
+	return ""
+}
+
+// writesFiles are the file tools a specialist could aim at the original folder.
+var writesFiles = map[string]bool{"file_write": true, "file_edit": true, "file_delete": true}
+
+func insideDir(dir, p string) bool {
+	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(p))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
 
 // agentCap is how many sub-agents may run at once (Settings › Behaviour).
 func (a *App) agentCap() int {
@@ -49,11 +102,13 @@ func (a *App) startAgents() {
 		Known: func() []string { return append(append(tools.Names(), a.conn.Known()...), "ask_user") },
 		Exec:  a.agentExec,
 		System: func(ag *agents.Agent) string {
-			return a.system(ag.Task) + tools.ExtraLine(agentConv(ag.Handle)) + agents.SubSystem(ag.Handle)
+			return a.system(ag.Task) + tools.ExtraLine(agentConv(ag.Handle)) + agents.AgentSystem(ag)
 		},
 		Describe: friendlyTool,
 		MaxSteps: steps,
+		Guard:    a.agentGuard,
 	}, agentsDir(), a.agentCap())
+	a.agents.SetIsolationDir(worktreesDir())
 	a.agents.OnChange = func(v agents.View) {
 		if agents.Active(v.Status) {
 			v.Steps = nil // steps stream as agent_step; the whole log comes with the final view
@@ -110,6 +165,15 @@ func (a *App) agentTools(ag *agents.Agent) []llm.Tool {
 			all = out
 		}
 	}
+	if a.agentPlan(ag) {
+		var ro []llm.Tool
+		for _, t := range all {
+			if a.planAllows(t.Function.Name) {
+				ro = append(ro, t)
+			}
+		}
+		all = ro
+	}
 	return append(all, agents.AskTool())
 }
 
@@ -140,7 +204,10 @@ func (a *App) agentExec(ctx context.Context, ag *agents.Agent, name, args string
 		return a.agentQuestion(ctx, ag.Handle, args)
 	}
 	if agents.IsMainTool(name) {
-		return "Error: background agents can't start or steer other agents. Do the work yourself."
+		return "Error: background agents and specialists can't start or steer other agents. Do the work yourself."
+	}
+	if why := a.agentBlock(ag, name, args); why != "" {
+		return why
 	}
 	if a.conn.Handles(name) {
 		return a.conn.Run(ctx, name, args)
@@ -238,6 +305,20 @@ func (a *App) AgentResume(handle string) string { return errText(a.agents.Resume
 
 // AgentDiscard forgets an agent that isn't running.
 func (a *App) AgentDiscard(handle string) string { return errText(a.agents.Discard(handle)) }
+
+// SpecialistReview is the Apply / Discard button on a finished specialist's row: the
+// same as the lead's apply_specialist, for when the user decides themselves.
+func (a *App) SpecialistReview(handle, action string) string {
+	if action == "apply" && a.workMode() == "plan" {
+		return "Blaze is in Plan mode: switch to Build to apply changes."
+	}
+	msg, err := a.agents.ApplySpecialist(handle, action)
+	if err != nil {
+		return err.Error()
+	}
+	a.emit("toast", map[string]string{"text": msg, "kind": "ok"})
+	return ""
+}
 
 // AnswerAgent answers a sub-agent's question.
 func (a *App) AnswerAgent(id, text string) {
