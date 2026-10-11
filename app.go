@@ -76,13 +76,13 @@ type App struct {
 	env   *tools.Env
 
 	mu      sync.Mutex
-	cancel  context.CancelFunc
-	busy    bool
+	busy    bool                // a turn is running in some chat (open or in the background)
+	live    map[string]*session // chats whose turn runs, by id (sessions.go)
+	cur     *session            // the chat on screen
 	pending map[string]chan int // confirm cards: 0 no, 1 yes, 2 always
 	conn    *connect.Manager
 	cloud   *cloudState // Blaze account + one-click connectors (account.go)
-	convID  string
-	history []llm.Message
+	convID  string      // the chat on screen (a.cur.id once it has one)
 	pv      *preview
 	ready   chan struct{} // closed when startup has finished
 	tab     string        // work or design
@@ -93,15 +93,12 @@ type App struct {
 
 	// Background agents (bgagents.go).
 	agents    *agents.Manager
-	main      *agents.Mainline      // main turns, one at a time; inputs that arrive mid-turn wait
 	envs      map[string]*tools.Env // each sub-agent's own shell and approval gate
 	questions map[string]chan string
 }
 
 func NewApp() *App {
-	a := &App{pending: map[string]chan int{}, ready: make(chan struct{})}
-	a.main = &agents.Mainline{Run: a.turn}
-	return a
+	return &App{pending: map[string]chan int{}, ready: make(chan struct{}), live: map[string]*session{}, cur: &session{}}
 }
 
 // waitReady blocks until startup is done. Wails runs OnStartup in a goroutine while
@@ -330,7 +327,8 @@ type Conv struct {
 	Folder   string        `json:"folder"`
 	Updated  time.Time     `json:"updated"`
 	Messages []llm.Message `json:"messages"`
-	Agents   []agents.View `json:"agents,omitempty"` // this chat's background agents (filled when opened)
+	Agents   []agents.View `json:"agents,omitempty"`  // this chat's background agents (filled when opened)
+	Running  bool          `json:"running,omitempty"` // its turn is still going (opened mid-turn, sessions.go)
 
 	TitleSource string `json:"title_source,omitempty"` // auto (AI, titles.go) or manual (renamed); "" = first prompt
 	TitleTurns  int    `json:"title_turns,omitempty"`  // user turns when the auto title was last evaluated
@@ -385,8 +383,13 @@ func (a *App) OpenConversation(id string) Conv {
 	}
 	rememberTitle(c)
 	a.mu.Lock()
-	a.convID = c.ID
-	a.history = c.Messages
+	s := a.live[c.ID]
+	if s != nil && c.ID != "" { // its turn is still running: show it as it is now
+		c.Messages, c.Running = append([]llm.Message(nil), s.hist...), s.running()
+	} else {
+		s = &session{id: c.ID, hist: c.Messages, folder: c.Folder, project: c.Project, started: c.ID != ""}
+	}
+	a.cur, a.convID = s, c.ID
 	a.mu.Unlock()
 	a.noteHistory(c.Messages)
 	if a.agents != nil && c.ID != "" {
@@ -404,8 +407,7 @@ func (a *App) OpenConversation(id string) Conv {
 
 func (a *App) NewConversation() {
 	a.mu.Lock()
-	a.convID = ""
-	a.history = nil
+	a.convID, a.cur = "", &session{}
 	a.mu.Unlock()
 	a.conn.ResetLoaded()
 }
@@ -416,28 +418,38 @@ func (a *App) DeleteConversation(id string) {
 	titles.Unlock()
 	_ = os.Remove(filepath.Join(convDir(), id+".json"))
 	a.mu.Lock()
+	if s := a.live[id]; s != nil && s.cancel != nil {
+		s.cancel() // deleting a chat stops its turn
+	}
+	delete(a.live, id)
 	if a.convID == id {
-		a.convID, a.history = "", nil
+		a.convID, a.cur = "", &session{}
 	}
 	a.mu.Unlock()
 }
 
-func (a *App) saveConv() {
+func (a *App) saveConv(s *session) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.convID == "" {
-		a.convID = time.Now().Format("20060102-150405") + "-" + newID()[:4]
-	}
-	title, src, turns := promptTitle(a.history), "", 0
-	if m, ok := getTitle(a.convID); ok && m.Title != "" {
+	a.nameSession(s)
+	title, src, turns := promptTitle(s.hist), "", 0
+	if m, ok := getTitle(s.id); ok && m.Title != "" {
 		title, src, turns = m.Title, m.Source, m.Turns
 	}
-	c := Conv{ID: a.convID, Project: a.prefs.Project, Title: title, Folder: a.prefs.Folder, Updated: time.Now(), Messages: a.history,
+	folder := s.folder
+	if folder == "" {
+		folder = a.prefs.Folder
+	}
+	project := a.prefs.Project
+	if s.started {
+		project = s.project
+	}
+	c := Conv{ID: s.id, Project: project, Title: title, Folder: folder, Updated: time.Now(), Messages: s.hist,
 		TitleSource: src, TitleTurns: turns}
 	convWriteMu.Lock()
 	defer convWriteMu.Unlock()
 	b, _ := json.Marshal(c)
-	_ = os.WriteFile(filepath.Join(convDir(), a.convID+".json"), b, 0o600)
+	_ = os.WriteFile(filepath.Join(convDir(), s.id+".json"), b, 0o600)
 }
 
 // ---------------- chat ----------------
@@ -463,12 +475,13 @@ func (a *App) SendWith(text string, files []string, att []llm.Attach) string {
 		fmt.Fprintf(&b, "\n\n<attached path=\"%s\">\n%s\n</attached>", f, data)
 	}
 	att = inlineAttach(&b, att)
-	// No queue: a message sent mid-answer stops that answer (its text so far is kept) and
-	// is answered at once. The work itself runs in specialists, which keep going.
-	if a.main.Busy() {
+	// No queue: a message sent mid-answer stops that chat's answer (its text so far is
+	// kept) and is answered at once. Turns in other chats keep running in the background.
+	s := a.screen()
+	if s.main().Busy() {
 		a.Stop()
 	}
-	if a.main.Submit(agents.Input{Kind: "user", Text: b.String(), Attach: att}) {
+	if s.main().Submit(agents.Input{Kind: "user", Text: b.String(), Attach: att}) {
 		return "queued"
 	}
 	return "ok"
@@ -476,19 +489,20 @@ func (a *App) SendWith(text string, files []string, att []llm.Attach) string {
 
 // Retry drops the last answer and asks again.
 func (a *App) Retry() string {
-	if a.main.Busy() {
+	s := a.screen()
+	if s.main().Busy() {
 		return "busy"
 	}
 	a.mu.Lock()
 	has := false
-	for _, m := range a.history {
+	for _, m := range s.hist {
 		has = has || m.Role == "user"
 	}
 	a.mu.Unlock()
 	if !has {
 		return "nothing"
 	}
-	a.main.Submit(agents.Input{Kind: "retry"})
+	s.main().Submit(agents.Input{Kind: "retry"})
 	return "ok"
 }
 
@@ -496,10 +510,11 @@ var attachedRe = regexp.MustCompile(`(?s)\n*<attached path="[^"]*"[^>]*>.*?</att
 
 func stripAttached(s string) string { return attachedRe.ReplaceAllString(s, "") }
 
+// Stop ends the answer in the chat on screen (turns in other chats keep going).
 func (a *App) Stop() {
 	a.mu.Lock()
-	if a.cancel != nil {
-		a.cancel()
+	if s := a.cur; s != nil && s.cancel != nil {
+		s.cancel()
 	}
 	pend := a.pending
 	a.mu.Unlock()
@@ -511,14 +526,14 @@ func (a *App) Stop() {
 	}
 }
 
-func (a *App) run(ctx context.Context) {
+func (a *App) run(ctx context.Context, s *session) {
 	started := time.Now()
 	setTrayStatus("Working…")
 	defer setTrayStatus("Idle")
 	var changed, urls []string
 	prompt := ""
 	a.mu.Lock()
-	for _, m := range a.history {
+	for _, m := range s.hist {
 		if m.Role == "user" && !isAgentResult(m) && !strings.HasPrefix(m.Content, continueTag) {
 			prompt = strings.TrimPrefix(firstLine(stripAttached(m.Content)), "[Design edit] ")
 		}
@@ -526,35 +541,33 @@ func (a *App) run(ctx context.Context) {
 	a.mu.Unlock()
 	defer func() {
 		if ok, st := a.pv.noteTurn(changed, urls, prompt); ok {
-			wr.EventsEmit(a.ctx, "design", map[string]any{"target": st.Target, "versions": len(st.Versions)})
+			a.temit(s, "design", map[string]any{"target": st.Target, "versions": len(st.Versions)})
 		}
 	}()
 	defer func() {
 		if r := recover(); r != nil {
-			wr.EventsEmit(a.ctx, "error", fmt.Sprint("Blaze hit an internal error: ", r))
+			a.temit(s, "error", fmt.Sprint("Blaze hit an internal error: ", r))
 		}
+		a.endSession(s)
+		a.saveConv(s)
 		a.mu.Lock()
-		a.busy, a.cancel = false, nil
-		a.mu.Unlock()
-		a.saveConv()
-		a.mu.Lock()
-		id, hist := a.convID, append([]llm.Message(nil), a.history...)
+		id, hist := s.id, append([]llm.Message(nil), s.hist...)
 		a.mu.Unlock()
 		a.maybeRetitle(id, hist) // background, never blocks the turn
 		a.maybeReflect(id, hist) // end-of-turn learning check (learn_app.go)
-		a.afterTurn(started)
+		a.afterTurn(s, started)
 	}()
 	steps := a.cfg.MaxSteps
 	if steps <= 0 {
 		steps = 40
 	}
 	a.mu.Lock()
-	design := a.tab == "design"
+	design := s.tab == "design"
 	a.mu.Unlock()
 	a.mu.Lock()
-	for i := len(a.history) - 1; i >= 0; i-- {
-		if a.history[i].Role == "user" {
-			design = design || strings.HasPrefix(a.history[i].Content, "[Design edit]")
+	for i := len(s.hist) - 1; i >= 0; i-- {
+		if s.hist[i].Role == "user" {
+			design = design || strings.HasPrefix(s.hist[i].Content, "[Design edit]")
 			break
 		}
 	}
@@ -563,13 +576,13 @@ func (a *App) run(ctx context.Context) {
 	ap, steps := a.startAutopilot(steps)
 	for step := 0; step < steps; step++ {
 		if why := ap.stop(a.cfg.DailyCap, llm.TodayCost()); why != "" {
-			wr.EventsEmit(a.ctx, "error", map[string]any{"message": why, "kind": "steps"})
+			a.temit(s, "error", map[string]any{"message": why, "kind": "steps"})
 			return
 		}
 		a.mu.Lock()
-		hist := trim(a.history)
+		hist := trim(s.hist)
 		a.mu.Unlock()
-		conv := a.convKey()
+		conv := "chat:" + s.id
 		lead := a.leadOnly(design)
 		sys := a.system(recentQuery(hist)) + tools.ExtraLine(conv) + agents.Delegation + agents.Orchestration
 		if lead {
@@ -587,63 +600,63 @@ func (a *App) run(ctx context.Context) {
 		if lead { // the lead only briefs, steers and reviews specialists; it stays free to chat
 			all, known = agents.MainTools(), agents.MainToolNames
 		}
-		wr.EventsEmit(a.ctx, "thinking", step)
+		a.temit(s, "thinking", step)
 		var partial strings.Builder // what streamed, kept if the reply breaks off
 		r, err := llm.CompleteWith(ctx, a.cfg, msgs, a.modeTools(all), llm.Opts{
-			OnText:   func(s string) { partial.WriteString(s); wr.EventsEmit(a.ctx, "delta", s) },
-			OnStatus: func(s string) { wr.EventsEmit(a.ctx, "status", s) },
+			OnText:   func(t string) { partial.WriteString(t); a.temit(s, "delta", t) },
+			OnStatus: func(t string) { a.temit(s, "status", t) },
 			// Keyless may answer plain chat in Work when nothing that can use tools is set up.
 			// Never in Design: a design turn without tools can't change anything.
 			PlainFallback: !design,
 		})
 		if err != nil {
 			// Keep what the user already saw, so Continue picks up from there.
-			kept := a.keepPartial(partial.String())
+			kept := a.keepPartial(s, partial.String())
 			if ctx.Err() != nil {
-				wr.EventsEmit(a.ctx, "stopped", map[string]any{"resumable": kept || step > 0})
+				a.temit(s, "stopped", map[string]any{"resumable": kept || step > 0})
 			} else {
 				e := turnError(err)
 				e["partial"] = kept || step > 0
-				wr.EventsEmit(a.ctx, "error", e)
+				a.temit(s, "error", e)
 			}
 			return
 		}
-		wr.EventsEmit(a.ctx, "route", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless})
+		a.temit(s, "route", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless})
 		// The gatekeeper: repair what can be repaired; never save a call with no name or
 		// unreadable arguments (the provider would refuse every later request with a 400).
 		n := llm.NormalizeCalls(r.ToolCalls, known)
 		if strings.TrimSpace(r.Text) != "" || len(n.Calls) > 0 {
 			a.mu.Lock()
-			a.history = append(a.history, llm.Message{Role: "assistant", Content: r.Text, ToolCalls: n.Calls})
+			s.hist = append(s.hist, llm.Message{Role: "assistant", Content: r.Text, ToolCalls: n.Calls})
 			a.mu.Unlock()
 		}
 		note = ""
 		if len(n.Dropped) > 0 {
 			note = "Blaze couldn't run " + strings.Join(n.Dropped, "; ") + ". Call the tool again with its exact name and a complete JSON object for the arguments."
-			wr.EventsEmit(a.ctx, "repair", map[string]any{"dropped": n.Dropped, "repairs": n.Repairs})
+			a.temit(s, "repair", map[string]any{"dropped": n.Dropped, "repairs": n.Repairs})
 		}
 		if len(n.Calls) == 0 {
 			if len(n.Dropped) > 0 && retries < 2 {
 				retries++
 				continue
 			}
-			if a.autoReply(&ap, r.Text) {
+			if a.autoReply(s, &ap, r.Text) {
 				continue // Autopilot: the user is away, so the agent decides and keeps going
 			}
 			done := map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless, "seconds": time.Since(started).Seconds()}
 			if r.Truncated() {
 				done["cut"] = true // ran out of output tokens or the stream broke: offer Continue
 			}
-			wr.EventsEmit(a.ctx, "done", done)
+			a.temit(s, "done", done)
 			return
 		}
 		dispatched, onlyAgentTools := false, true
 		for _, tc := range n.Calls {
 			if ctx.Err() != nil {
-				wr.EventsEmit(a.ctx, "stopped", map[string]any{"resumable": true})
+				a.temit(s, "stopped", map[string]any{"resumable": true})
 				return
 			}
-			wr.EventsEmit(a.ctx, "tool", map[string]string{"id": tc.ID, "name": tc.Function.Name, "args": tc.Function.Arguments})
+			a.temit(s, "tool", map[string]string{"id": tc.ID, "name": tc.Function.Name, "args": tc.Function.Arguments})
 			setTrayStatus("Working · " + friendlyTool(tc.Function.Name, tc.Function.Arguments))
 			res := a.modeBlock(tc.Function.Name, tc.Function.Arguments) // Plan mode refuses what can change things
 			switch {
@@ -651,10 +664,10 @@ func (a *App) run(ctx context.Context) {
 				onlyAgentTools = false
 			case agents.IsMainTool(tc.Function.Name):
 				a.mu.Lock()
-				conv := a.convID
+				conv := s.id
 				a.mu.Unlock()
 				// Specialists inherit the lead's mode and step budget (never more).
-				out := a.agents.HandleLeadTool(tc.Function.Name, tc.Function.Arguments, agents.Lead{Conv: conv, Folder: a.prefs.Folder, Mode: a.workMode(), MaxSteps: steps})
+				out := a.agents.HandleLeadTool(tc.Function.Name, tc.Function.Arguments, agents.Lead{Conv: conv, Folder: s.dir(a.prefs.Folder), Mode: a.workMode(), MaxSteps: steps})
 				res = out.Result
 				dispatched = dispatched || out.Dispatched != ""
 			case tc.Function.Name == "update_blaze":
@@ -665,12 +678,12 @@ func (a *App) run(ctx context.Context) {
 				res = a.conn.Run(ctx, tc.Function.Name, tc.Function.Arguments)
 			default:
 				onlyAgentTools = false
-				res = tools.RunCtx(ctx, a.env, tc.Function.Name, tc.Function.Arguments)
+				res = tools.RunCtx(ctx, a.tenv(s), tc.Function.Name, tc.Function.Arguments)
 			}
 			changed, urls = a.designTouch(tc.Function.Name, tc.Function.Arguments, res, changed, urls)
-			wr.EventsEmit(a.ctx, "tool_done", map[string]string{"id": tc.ID, "result": res})
+			a.temit(s, "tool_done", map[string]string{"id": tc.ID, "result": res})
 			a.mu.Lock()
-			a.history = append(a.history, llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: res})
+			s.hist = append(s.hist, llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: res})
 			a.mu.Unlock()
 		}
 		// Handing work off ends the turn at once: the user gets a short line and the
@@ -679,16 +692,16 @@ func (a *App) run(ctx context.Context) {
 			line := strings.TrimSpace(r.Text)
 			if line == "" {
 				line = "On it. I'll report back when it's done."
-				wr.EventsEmit(a.ctx, "delta", line)
+				a.temit(s, "delta", line)
 				a.mu.Lock()
-				a.history = append(a.history, llm.Message{Role: "assistant", Content: line})
+				s.hist = append(s.hist, llm.Message{Role: "assistant", Content: line})
 				a.mu.Unlock()
 			}
-			wr.EventsEmit(a.ctx, "done", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless, "seconds": time.Since(started).Seconds(), "handoff": true})
+			a.temit(s, "done", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless, "seconds": time.Since(started).Seconds(), "handoff": true})
 			return
 		}
 	}
-	wr.EventsEmit(a.ctx, "error", map[string]any{"message": fmt.Sprintf("Stopped after %d steps without finishing. Continue gives it another %d.", steps, steps), "kind": "steps"})
+	a.temit(s, "error", map[string]any{"message": fmt.Sprintf("Stopped after %d steps without finishing. Continue gives it another %d.", steps, steps), "kind": "steps"})
 }
 
 // continueTag starts the message the Continue button sends.
@@ -696,12 +709,12 @@ const continueTag = "[Continue]"
 
 // keepPartial saves the text a reply streamed before it broke off (Stop, an error),
 // so the model can see where it stopped when the user presses Continue.
-func (a *App) keepPartial(text string) bool {
+func (a *App) keepPartial(s *session, text string) bool {
 	if strings.TrimSpace(text) == "" {
 		return false
 	}
 	a.mu.Lock()
-	a.history = append(a.history, llm.Message{Role: "assistant", Content: text + "\n\n(cut off here)"})
+	s.hist = append(s.hist, llm.Message{Role: "assistant", Content: text + "\n\n(cut off here)"})
 	a.mu.Unlock()
 	return true
 }
