@@ -65,9 +65,20 @@
     let g;
     try { g = await API().MemoryGraph(); } catch (e) { g = null; }
     if (!root.isConnected) return;
+    if (g && g.notice) return updateState(root, g.notice);
     if (!g || !(g.nodes || []).length) return emptyState(root);
     M = new MemoryScreen(root, g, arg);
   };
+
+  // blaze.db was written by a newer Blaze: memory is off until this one is updated.
+  function updateState(root, notice) {
+    root.className = "mem mem-empty";
+    root.innerHTML = `<div class="label acc">Memory</div><h1>Please update Blaze</h1>
+      <p class="lead"></p>
+      <div class="mem-eacts"><button class="btn line sm" data-a="update">Update Blaze</button></div>`;
+    $(".lead", root).textContent = notice;
+    $("[data-a=update]", root).onclick = () => { show("work"); if (typeof SelfUpdate !== "undefined") SelfUpdate.run(); };
+  }
 
   function emptyState(root) {
     root.className = "mem mem-empty";
