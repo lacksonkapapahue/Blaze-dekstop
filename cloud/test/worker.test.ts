@@ -208,6 +208,9 @@ describe("connector broker", () => {
     expect((await call("GET", `/oauth/google/callback?state=${st}&code=again`)).status).toBe(400);
 
     const code = loop.searchParams.get("code") as string;
+    // The tokens wait in KV for 2 minutes at most (Worker 0.5.1; was 5).
+    const held = kv.m.get(kv.keys("oauthcode:")[0] as string);
+    expect(held && held.exp - Date.now()).toBeLessThanOrEqual(120_000);
     const wrong = (await pkce()).verifier;
     expect((await call("POST", "/oauth/redeem", { code, code_verifier: wrong })).status).toBe(400);
     r = await call("POST", "/oauth/redeem", { code, code_verifier: verifier });
