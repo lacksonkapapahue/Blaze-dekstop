@@ -357,3 +357,28 @@ describe("model key sync", () => {
     return kv.m.get(`email:${email}`)?.v ?? "deleted";
   }
 });
+
+describe("shared-page comments (v0.8.0)", () => {
+  const site = "0123456789abcdef";
+  it("serves the widget with open CORS", async () => {
+    const r = await call("GET", "/v1/comments.js");
+    expect(r.status).toBe(200);
+    expect(r.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(await r.text()).toContain("data-bzc");
+  });
+  it("adds and lists pins from any origin", async () => {
+    const r = await call("POST", `/v1/comments/${site}`, { text: "  Bigger button  ", sel: "a.btn", x: 1.5, y: 120, who: "Ann" }, { Origin: "https://homeglow.pages.dev" });
+    expect(r.status).toBe(201);
+    const pin: any = await r.json();
+    expect(pin.text).toBe("Bigger button");
+    expect(pin.x).toBe(1);
+    const list: any = await (await call("GET", `/v1/comments/${site}`)).json();
+    expect(list.length).toBe(1);
+    expect(list[0].who).toBe("Ann");
+  });
+  it("answers preflight and refuses bad input", async () => {
+    expect((await call("OPTIONS", `/v1/comments/${site}`, undefined, { Origin: "https://x.dev" })).status).toBe(204);
+    expect((await call("POST", "/v1/comments/NOT-A-SITE", { text: "x" })).status).toBe(400);
+    expect((await call("POST", `/v1/comments/${site}`, { text: "   " })).status).toBe(400);
+  });
+});
