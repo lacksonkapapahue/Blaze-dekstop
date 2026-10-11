@@ -57,7 +57,10 @@ type Prefs struct {
 
 	MemoryAISort *bool `json:"memory_ai_sort,omitempty"` // let a model sort new memories into categories (default on)
 
-	MaxAgents int `json:"max_agents,omitempty"` // background agents at once (0 = default, bgagents.go)
+	Composer  ComposerPrefs `json:"composer"`             // work mode, approval mode, voice (modes.go)
+	Notify    NotifyPrefs   `json:"notify"`               // notifications and proactive suggestions (notify_app.go)
+	Vision    VisionPrefs   `json:"vision"`               // screen reading (vision_app.go)
+	MaxAgents int           `json:"max_agents,omitempty"` // background agents at once (0 = default, bgagents.go)
 }
 
 type App struct {
@@ -124,14 +127,17 @@ func (a *App) startup(ctx context.Context) {
 	if st, err := os.Stat(a.prefs.Folder); err != nil || !st.IsDir() {
 		a.prefs.Folder = a.info.Home
 	}
+	a.migrateComposer()
 	a.pv = &preview{}
 	a.pv.start()
 	a.pv.load(a.prefs.Folder)
 	a.newEnv()
 	a.startConnectors()
 	a.startCloud()
+	a.startComposer()
 	a.startAgents()
 	a.startShell()
+	a.startNotify()
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -163,11 +169,11 @@ func (a *App) newEnv() {
 	a.env = &tools.Env{
 		Info:  &a.info,
 		Root:  a.prefs.Folder,
-		Yolo:  a.cfg.AutoApprove,
+		Yolo:  false, // the desktop's Approval mode decides (gate in modes.go); auto_approve stays a CLI setting
 		Shell: tools.NewShell(a.info.Shell, a.info.ShellPath, a.prefs.Folder),
 		Jobs:  jobs,
 	}
-	a.env.Confirm = a.confirm
+	a.env.Confirm = a.gate
 	a.env.Status = func(s string) { wr.EventsEmit(a.ctx, "status", s) }
 }
 
@@ -192,25 +198,29 @@ func newID() string {
 // ---------------- state for the UI ----------------
 
 type State struct {
-	Version   string            `json:"version"`
-	SetupDone bool              `json:"setup_done"`
-	Info      sysinfo.Info      `json:"info"`
-	Missing   []string          `json:"missing"`
-	Installs  map[string]string `json:"installs"`
-	Providers []ProviderView    `json:"providers"`
-	Chain     []config.Entry    `json:"chain"`
-	Prefs     Prefs             `json:"prefs"`
-	Yolo      bool              `json:"yolo"`
-	Persona   string            `json:"persona"`
-	Keyless   bool              `json:"keyless"`
-	Skills    []string          `json:"skills"`
-	Memory    string            `json:"memory"`
-	Project   *Project          `json:"project"`
-	Model     string            `json:"model"`
-	Selection Selection         `json:"selection"`
-	Routing   RoutingView       `json:"routing"`
-	Desktop   DesktopView       `json:"desktop"`
-	Connected int               `json:"connected"` // connectors + MCP servers ready
+	Version     string            `json:"version"`
+	SetupDone   bool              `json:"setup_done"`
+	Info        sysinfo.Info      `json:"info"`
+	Missing     []string          `json:"missing"`
+	Installs    map[string]string `json:"installs"`
+	Providers   []ProviderView    `json:"providers"`
+	Chain       []config.Entry    `json:"chain"`
+	Prefs       Prefs             `json:"prefs"`
+	Yolo        bool              `json:"yolo"`
+	Modes       ModeView          `json:"modes"`
+	VisionModel string            `json:"vision_model"` // the first model that can see images ("" = none; composer)
+	Persona     string            `json:"persona"`
+	Keyless     bool              `json:"keyless"`
+	Skills      []string          `json:"skills"`
+	Memory      string            `json:"memory"`
+	Project     *Project          `json:"project"`
+	Model       string            `json:"model"`
+	Selection   Selection         `json:"selection"`
+	Routing     RoutingView       `json:"routing"`
+	Desktop     DesktopView       `json:"desktop"`
+	Connected   int               `json:"connected"` // connectors + MCP servers ready
+	Notify      NotifyView        `json:"notify"`
+	Vision      VisionPrefs       `json:"vision"`
 }
 
 func (a *App) State() State {
@@ -226,9 +236,11 @@ func (a *App) State() State {
 	aiSort := a.memAISort()
 	prefs.MemoryAISort = &aiSort
 	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.RouteChain(), Prefs: prefs,
-		Yolo: a.env.Yolo, Persona: a.cfg.Persona, Keyless: a.cfg.AllowKeyless(), Missing: a.info.Missing(),
+		Yolo: a.cfg.AutoApprove, Persona: a.cfg.Persona, Keyless: a.cfg.AllowKeyless(), Missing: a.info.Missing(),
 		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName(),
-		Selection: a.selection(), Routing: a.routing(), Providers: a.providerViews(), Desktop: a.desktopView(), Connected: a.conn.ConnectedCount()}
+		Selection: a.selection(), Routing: a.routing(), Providers: a.providerViews(), Desktop: a.desktopView(), Connected: a.conn.ConnectedCount(),
+		Notify: a.notifyView(false), Vision: a.prefs.Vision,
+		Modes: a.modeView(), VisionModel: llm.VisionModel(llm.Targets(a.cfg, false))}
 	for _, m := range s.Missing {
 		s.Installs[m] = a.info.InstallCommand(m)
 	}
@@ -248,7 +260,7 @@ func (a *App) FinishSetup() {
 }
 
 func (a *App) SetPersona(p string)    { a.cfg.Persona = strings.TrimSpace(p); _ = a.cfg.Save() }
-func (a *App) SetYolo(v bool)         { a.cfg.AutoApprove = v; a.env.Yolo = v; _ = a.cfg.Save() }
+func (a *App) SetYolo(v bool)         { a.cfg.AutoApprove = v; _ = a.cfg.Save() } // the CLI's --yolo default; the desktop uses Approval mode
 func (a *App) SetTheme(t string)      { a.prefs.Theme = t; a.savePrefs() }
 func (a *App) SetDesignMode(m string) { a.prefs.Design = m; a.savePrefs() }
 
@@ -424,7 +436,11 @@ func (a *App) saveConv() {
 
 // Send starts a turn. Progress arrives as events: delta, tool, tool_done, status, confirm, done, error.
 // files are project-relative paths the user attached with @.
-func (a *App) Send(text string, files []string) string {
+func (a *App) Send(text string, files []string) string { return a.SendWith(text, files, nil) }
+
+// SendWith is Send plus what the composer attached with +, drag-and-drop or paste
+// (images, files and folders anywhere on disk; see attach.go).
+func (a *App) SendWith(text string, files []string, att []llm.Attach) string {
 	var b strings.Builder
 	b.WriteString(text)
 	for _, f := range files {
@@ -438,9 +454,10 @@ func (a *App) Send(text string, files []string) string {
 		}
 		fmt.Fprintf(&b, "\n\n<attached path=\"%s\">\n%s\n</attached>", f, data)
 	}
+	att = inlineAttach(&b, att)
 	// A message sent mid-turn waits its turn instead of being refused (the main
 	// agent stays free for chat while background agents work).
-	if a.main.Submit(agents.Input{Kind: "user", Text: b.String()}) {
+	if a.main.Submit(agents.Input{Kind: "user", Text: b.String(), Attach: att}) {
 		return "queued"
 	}
 	return "ok"
@@ -464,7 +481,7 @@ func (a *App) Retry() string {
 	return "ok"
 }
 
-var attachedRe = regexp.MustCompile(`(?s)\n*<attached path="[^"]*">.*?</attached>`)
+var attachedRe = regexp.MustCompile(`(?s)\n*<attached path="[^"]*"[^>]*>.*?</attached>`)
 
 func stripAttached(s string) string { return attachedRe.ReplaceAllString(s, "") }
 
@@ -513,6 +530,7 @@ func (a *App) run(ctx context.Context) {
 		id, hist := a.convID, append([]llm.Message(nil), a.history...)
 		a.mu.Unlock()
 		a.maybeRetitle(id, hist) // background, never blocks the turn
+		a.afterTurn(started)
 	}()
 	steps := a.cfg.MaxSteps
 	if steps <= 0 {
@@ -530,7 +548,12 @@ func (a *App) run(ctx context.Context) {
 	}
 	a.mu.Unlock()
 	note, retries := "", 0
+	ap, steps := a.startAutopilot(steps)
 	for step := 0; step < steps; step++ {
+		if why := ap.stop(a.cfg.DailyCap, llm.TodayCost()); why != "" {
+			wr.EventsEmit(a.ctx, "error", map[string]any{"message": why, "kind": "steps"})
+			return
+		}
 		a.mu.Lock()
 		hist := trim(a.history)
 		a.mu.Unlock()
@@ -544,7 +567,7 @@ func (a *App) run(ctx context.Context) {
 		all := append(append(append(tools.All(), a.conn.Tools()...), agents.MainTools()...), updateBlazeTool())
 		known := append(append(append(tools.Names(), a.conn.Known()...), agents.MainToolNames...), "update_blaze")
 		wr.EventsEmit(a.ctx, "thinking", step)
-		r, err := llm.CompleteWith(ctx, a.cfg, msgs, all, llm.Opts{
+		r, err := llm.CompleteWith(ctx, a.cfg, msgs, a.modeTools(all), llm.Opts{
 			OnText:   func(s string) { wr.EventsEmit(a.ctx, "delta", s) },
 			OnStatus: func(s string) { wr.EventsEmit(a.ctx, "status", s) },
 			// Keyless may answer plain chat in Work when nothing that can use tools is set up.
@@ -578,6 +601,9 @@ func (a *App) run(ctx context.Context) {
 				retries++
 				continue
 			}
+			if a.autoReply(&ap, r.Text) {
+				continue // Autopilot: the user is away, so the agent decides and keeps going
+			}
 			wr.EventsEmit(a.ctx, "done", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless, "seconds": time.Since(started).Seconds()})
 			return
 		}
@@ -589,21 +615,24 @@ func (a *App) run(ctx context.Context) {
 			}
 			wr.EventsEmit(a.ctx, "tool", map[string]string{"id": tc.ID, "name": tc.Function.Name, "args": tc.Function.Arguments})
 			setTrayStatus("Working · " + friendlyTool(tc.Function.Name, tc.Function.Arguments))
-			var res string
-			if agents.IsMainTool(tc.Function.Name) {
+			res := a.modeBlock(tc.Function.Name, tc.Function.Arguments) // Plan mode refuses what can change things
+			switch {
+			case res != "":
+				onlyAgentTools = false
+			case agents.IsMainTool(tc.Function.Name):
 				a.mu.Lock()
 				conv := a.convID
 				a.mu.Unlock()
 				out := a.agents.HandleMainTool(tc.Function.Name, tc.Function.Arguments, conv, a.prefs.Folder)
 				res = out.Result
 				dispatched = dispatched || out.Dispatched != ""
-			} else if tc.Function.Name == "update_blaze" {
+			case tc.Function.Name == "update_blaze":
 				onlyAgentTools = false
 				res = a.selfUpdate()
-			} else if a.conn.Handles(tc.Function.Name) {
+			case a.conn.Handles(tc.Function.Name):
 				onlyAgentTools = false
 				res = a.conn.Run(ctx, tc.Function.Name, tc.Function.Arguments)
-			} else {
+			default:
 				onlyAgentTools = false
 				res = tools.Run(a.env, tc.Function.Name, tc.Function.Arguments)
 			}
@@ -739,6 +768,7 @@ RULES
 `)
 	b.WriteString(a.personality())
 	b.WriteString(answerShape(a.foldCards()))
+	b.WriteString(a.modeLine())
 	if a.cfg.Persona != "" {
 		b.WriteString("\nSTYLE\n" + a.cfg.Persona + "\n")
 	}
@@ -814,11 +844,12 @@ type Check struct {
 	Name   string `json:"name"`
 	OK     bool   `json:"ok"`
 	Detail string `json:"detail"`
+	Fix    string `json:"fix,omitempty"` // a link that fixes it (e.g. a macOS privacy pane)
 }
 
 func (a *App) Doctor() []Check {
 	var out []Check
-	add := func(n string, ok bool, d string) { out = append(out, Check{n, ok, d}) }
+	add := func(n string, ok bool, d string) { out = append(out, Check{Name: n, OK: ok, Detail: d}) }
 	c := &http.Client{Timeout: 8 * time.Second}
 	resp, err := c.Get("https://www.google.com/generate_204")
 	online := err == nil && resp.StatusCode < 400
@@ -878,6 +909,8 @@ func (a *App) Doctor() []Check {
 	default:
 		add("Start at login", false, "On, but the login entry is missing. Turn it off and on again.")
 	}
+	out = append(out, a.notifyCheck())
+	out = append(out, a.visionChecks()...)
 	return out
 }
 

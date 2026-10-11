@@ -21,6 +21,7 @@
     selection: { auto: true, provider: "auto", label: "Auto (free routing)" },
     routing: { fallback: true, fastest_first: true, keyless: false, daily_cap: 0, today_cost: 0 },
     prefs: { theme: window.__theme || "light", folder: "/home/luke/code/homeglow", design_mode: "ask", project: "p1", show_steps: false, fold_cards: true, autostart: false, hotkey: "" },
+    modes: { work_mode: "build", approval: "auto" }, vision_model: window.__novision ? "" : "Google Gemini · gemini-3.8-flash",
     desktop: { os, tray: true, tray_note: "In the system tray", background: true, autostart: false, autostart_ok: false, hotkey: "ctrl+shift+space", hotkey_label: "Ctrl+Shift+Space", hotkey_ok: true,
       hotkey_note: "Press Ctrl+Shift+Space anywhere for quick ask", needs_access: false, wayland: false, frameless: os === "windows", orb: false,
       presets: [{ id: "ctrl+shift+space", label: "Ctrl+Shift+Space" }, { id: "alt+space", label: "Alt+Space" }, { id: "ctrl+alt+space", label: "Ctrl+Alt+Space" }, { id: "ctrl+shift+b", label: "Ctrl+Shift+B" }] }, model: "Auto · Google Gemini · gemini-3.8-flash",
@@ -121,7 +122,28 @@
   Object.entries(pairs).filter(([, p]) => p.w >= 2).sort((a, b) => b[1].w - a[1].w).forEach(([k, p]) => { const [a, b] = k.split(",").map(Number); if (deg[a] >= 5 && deg[b] >= 5) return; deg[a]++; deg[b]++; memEdges.push({ a, b, w: +p.w.toFixed(2), why: "both mention “" + p.why + "”" }); });
   allMem.forEach((n, i) => projNodes.forEach((p, pi) => { if (n.kind !== "project" && n.project === p.project) memEdges.push({ a: i, b: memNodes.length + skillNodes.length + pi, w: 1.5, why: "saved in " + p.label }); }));
   window.__memGraph = { nodes: allMem.map(n => ({ ...n, cat: catNames.indexOf(n.cat) })), edges: memEdges, cats: catNames.map(c => ({ name: c, count: allMem.filter(n => n.cat === c).length })), ai_sort: true, can_sort: true, sorting: false, unsorted: 0 };
+  // v0.5 composer: attachments, voice and modes.
+  const thumb = (a, b) => "data:image/svg+xml;base64," + btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="${a}"/><rect x="8" y="22" width="32" height="18" fill="${b}"/><rect x="30" y="8" width="8" height="8" fill="#fff"/></svg>`);
+  const att = {
+    "/home/luke/Pictures/hero-mobile.png": { kind: "image", path: "/home/luke/Pictures/hero-mobile.png", name: "hero-mobile.png", size: 412000, mime: "image/png", thumb: thumb("#1F4BD8", "#F4C95D") },
+    "/home/luke/Downloads/error-trace.jpg": { kind: "image", path: "/home/luke/Downloads/error-trace.jpg", name: "error-trace.jpg", size: 2310000, mime: "image/jpeg", thumb: thumb("#26262A", "#E05A47") },
+    "/home/luke/code/homeglow/package.json": { kind: "file", path: "/home/luke/code/homeglow/package.json", name: "package.json", size: 1840 },
+    "/home/luke/Documents/brief-v2.pdf": { kind: "file", path: "/home/luke/Documents/brief-v2.pdf", name: "brief-v2.pdf", size: 884000 },
+    "/home/luke/code/homeglow/sections": { kind: "folder", path: "/home/luke/code/homeglow/sections", name: "sections", count: 23 },
+  };
+  window.__att = att;
+  const models = [{ name: "tiny", file: "ggml-tiny.bin", mb: 75, note: "fastest, rougher" }, { name: "base", file: "ggml-base.bin", mb: 142, note: "good on any PC (default)" }, { name: "small", file: "ggml-small.bin", mb: 466, note: "most accurate, slower on older PCs" }];
+  window.__stt = { ready: false, engine: "", engine_how: "download", engine_mb: 10, model: "base", model_mb: 142, have_model: false, models, lang: "auto", native: "" };
   const A = {
+    SendWith: async () => "ok", Modes: async () => state.modes,
+    SetWorkMode: async m => (state.modes = { ...state.modes, work_mode: m === "plan" ? "plan" : "build" }),
+    SetApprovalMode: async m => (state.modes = { ...state.modes, approval: m === "autopilot" ? "autopilot" : "auto" }),
+    AttachPaths: async ps => ps.map(p => att[p]).filter(Boolean),
+    AttachPick: async k => Object.values(att).filter(a => a.kind === k),
+    AttachPasted: async () => ({ kind: "image", path: "/home/luke/.blaze/desktop/pasted/20261010-pasted.png", name: "Pasted image.png", size: 96000, thumb: thumb("#111110", "#6B8CFF") }),
+    STTStatus: async () => window.__stt, SetSTT: async m => (window.__stt = { ...window.__stt, model: m || window.__stt.model }), STTSetup: async () => "ok",
+    Transcribe: async () => ({ text: "Make the hero image smaller on phones and keep the headline on one line.", secs: 1.8 }),
+    RecStart: async () => "", RecStop: async () => ({ text: "" }),
     State: async () => state, Conversations: async () => [{ id: "c1", title: "Float Rounding In Price Tests", updated: "Oct 9", source: "auto" }, { id: "c2", title: "Set up a Postgres container", updated: "Oct 8" }, { id: "c3", title: "Why is my fan so loud?", updated: "Oct 7" }, { id: "c6", title: "HomeGlow launch checklist", updated: "Oct 6", source: "manual" }],
     DefaultPersonality: async () => "PERSONALITY\nYou are Blaze. Be warm, sharp, and one step ahead: an expert who happens to be easy to talk to.\n- Answer first. Lead with the result.\n- Take a side.\n- Be specific.",
     SetPersonality: async () => "",
@@ -156,6 +178,37 @@
     ForgetMemory: async () => "", SortMemories: async () => "", SetMemoryAISort: async () => {},
     Doctor: async () => [{ name: "Internet", ok: true, detail: "Online" }, { name: "Google Gemini", ok: true, detail: "gemini-3.8-flash answered in 0.9s" }, { name: "Groq", ok: false, detail: "openai/gpt-oss-120b: Groq hit its free limit for now. Blaze will use another model." }, { name: "Shell", ok: true, detail: "bash · /usr/bin/bash" }, { name: "Tray", ok: true, detail: "In the system tray" }, { name: "Shortcut", ok: true, detail: "Press Ctrl+Shift+Space anywhere for quick ask" }, { name: "Start at login", ok: true, detail: "Off (Settings › Behaviour)" }],
   };
+  // notify-vision: Settings › Notifications, the privacy indicator, Doctor's lines.
+  const nprefs = { proactive: true, every: 10, max_hour: 3 };
+  const vprefs = {};
+  const nhist = [
+    { id: "n3", kind: "suggest", title: "pnpm test fails in price.ts", body: "Expected 19.99, got 19.989999. I can fix the rounding.", prompt: "Fix the failing price test", at: "2026-10-10T10:42:00", method: "D-Bus notifications · mako", clicked: true },
+    { id: "n2", kind: "task", title: "Blaze finished", body: "All 42 tests pass now.", at: "2026-10-10T10:31:00", method: "D-Bus notifications · mako" },
+    { id: "n1", kind: "job", title: "Scheduled job “backup-notes” finished", body: "sent 1,204 files", at: "2026-10-09T07:00:00", method: "notify-send" }];
+  const nview = () => ({ prefs: nprefs, quiet: nprefs.no_quiet ? ["", ""] : [nprefs.quiet_from || "22:00", nprefs.quiet_to || "08:00"], method: "D-Bus notifications · mako", kind: "native", clicks: true, fallback: "notify-send", probed: "Oct 10 09:12", history: nhist, watch: "Checked 10:52 · nothing worth interrupting" });
+  const caps = os === "darwin"
+    ? { text: false, text_via: "AX", text_note: "Blaze needs Accessibility access to read other apps' windows", pixels: false, pixels_via: "screencapture", pixels_note: "Allow Blaze in System Settings › Privacy & Security › Screen Recording", permission: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture", text_perm: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" }
+    : { text: true, text_via: "AT-SPI", text_note: "14 apps readable", pixels: true, pixels_via: "grim", pixels_note: "" };
+  const vview = () => ({ prefs: vprefs, caps, os, last: os === "darwin" ? "" : "Firefox — Pull request #12 · 4s ago · AT-SPI 140 ms", warm: false });
+  state.notify = nview(); state.vision = vprefs;
+  Object.assign(A, {
+    NotifyStatus: async () => nview(), ProbeNotify: async () => nview(), TestNotify: async () => "",
+    SetNotifyPrefs: async p => { Object.keys(nprefs).forEach(k => delete nprefs[k]); Object.assign(nprefs, p); return nview(); },
+    NotifyHistory: async () => nhist, ClearNotifyHistory: async () => { nhist.length = 0; }, SuggestionAction: async () => {},
+    CheckSuggestionNow: async () => "Checked 10:58 · nothing worth interrupting",
+    VisionStatus: async () => vview(), SetVisionPrefs: async p => { Object.keys(vprefs).forEach(k => delete vprefs[k]); Object.assign(vprefs, p); return vview(); },
+    TryReadScreen: async () => "Read Firefox — \"Pull request #12\": 142 items in 138 ms via AT-SPI.", GrantScreen: async () => {}, GrantScreenText: async () => {},
+  });
+  const doctor0 = A.Doctor;
+  A.Doctor = async () => (await doctor0()).concat(os === "darwin"
+    ? [{ name: "Notifications", ok: true, detail: "macOS Notification Center · cached in ~/.blaze/notify.json" },
+       { name: "Screen reading", ok: false, detail: "AX · Blaze needs Accessibility access to read other apps' windows", fix: caps.text_perm },
+       { name: "Screenshots", ok: false, detail: "screencapture · Allow Blaze in System Settings › Privacy & Security › Screen Recording", fix: caps.permission },
+       { name: "Proactive suggestions", ok: true, detail: "Every 10 min at most, 3 an hour, quiet 22:00–08:00" }]
+    : [{ name: "Notifications", ok: true, detail: "D-Bus notifications · mako · cached in ~/.blaze/notify.json" },
+       { name: "Screen reading", ok: true, detail: "AT-SPI · 14 apps readable" },
+       { name: "Screenshots", ok: false, detail: "grim · Install grim for screenshots (Arch: sudo pacman -S grim)" },
+       { name: "Proactive suggestions", ok: true, detail: "Every 10 min at most, 3 an hour, quiet 22:00–08:00 · Checked 10:52 · nothing worth interrupting" }]);
   // v0.4.7: background agents. A saved chat whose agent was interrupted by a restart.
   const now0 = Date.now();
   window.__agentSteps = [

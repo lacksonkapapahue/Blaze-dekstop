@@ -42,6 +42,7 @@ jobs:
         shell: bash
         run: |
           exec > >(tee -a build.log) 2>&1
+          go test ./internal/notify/ ./internal/screen/
           choco install nsis -y --no-progress
           export PATH="$PATH:/c/Program Files (x86)/NSIS"
           go install $WAILS
@@ -72,6 +73,7 @@ jobs:
         shell: bash
         run: |
           exec > >(tee -a build.log) 2>&1
+          go test ./internal/notify/ ./internal/screen/
           go install $WAILS
           V=$(cat VERSION)
           wails build -platform darwin/universal -ldflags "-X main.version=v$V"
@@ -103,7 +105,7 @@ jobs:
         run: |
           exec > >(tee -a build.log) 2>&1
           sudo apt-get update -q && sudo apt-get install -yq libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev
-          go test ./internal/agents/
+          go test -tags webkit2_41 ./...
           go install $WAILS
           V=$(cat VERSION)
           wails build -platform linux/amd64 -tags webkit2_41 -ldflags "-X main.version=v$V"

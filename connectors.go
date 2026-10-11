@@ -22,7 +22,7 @@ func (a *App) startConnectors() {
 		Emit:    func(ev string, d any) { wr.EventsEmit(a.ctx, ev, d) },
 		OpenURL: func(u string) { wr.BrowserOpenURL(a.ctx, u) },
 		Confirm: a.confirmAlways,
-		Yolo:    func() bool { return a.env != nil && a.env.Yolo },
+		Yolo:    func() bool { return a.approval() == "autopilot" }, // Autopilot runs Action tools; Write tools still ask
 		Focus: func() {
 			wr.WindowUnminimise(a.ctx)
 			wr.WindowShow(a.ctx)
@@ -155,7 +155,7 @@ func (a *App) ask(title, detail string, allowAlways bool) int {
 	if allowAlways {
 		payload["always"] = true
 	}
-	wr.EventsEmit(a.ctx, "confirm", payload)
+	emit(a.ctx, "confirm", payload)
 	defer func() { a.mu.Lock(); delete(a.pending, id); a.mu.Unlock() }()
 	select {
 	case v := <-ch:

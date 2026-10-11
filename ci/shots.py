@@ -203,6 +203,66 @@ with sync_playwright() as p:
         n = pg.evaluate("document.querySelectorAll('.acard.tall').length + document.querySelectorAll('.acard.fits').length")
         if n < 1:
             errs.append("fallback reply did not fold into a card")
+        # v0.5 composer: + menu, attachments (images, files, a folder), vision fallback, voice, modes.
+        pg.evaluate("newChat()"); pg.wait_for_timeout(300)
+        pg.evaluate("openMenu('plus', plusItems(), 'Attach')"); pg.wait_for_timeout(250)
+        pg.screenshot(path=str(out / f"composer-plus-{theme}.png"))
+        pg.evaluate("""closeMenu(); addAttach(Object.values(window.__att));
+          document.querySelector('#input').value = 'Why does the hero break on phones? The brief and the sections are attached.'; grow();""")
+        pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"composer-attachments-{theme}.png"))
+        n = pg.evaluate("document.querySelectorAll('#attach .achip').length")
+        if n != 5:
+            errs.append(f"expected 5 attachment chips, got {n}")
+        pg.evaluate("document.querySelector('#attach .achip .ax').click()"); pg.wait_for_timeout(100)
+        if pg.evaluate("document.querySelectorAll('#attach .achip').length") != 4:
+            errs.append("removing a chip didn't work")
+        pg.evaluate("S.vision_model = ''; drawAttach()"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"composer-novision-{theme}.png"))
+        if not pg.evaluate("document.querySelector('#visionwarn').style.display !== 'none'"):
+            errs.append("no vision warning without a vision model")
+        pg.evaluate("S.vision_model = 'Google Gemini · gemini-3.8-flash'; submit()"); pg.wait_for_timeout(200)
+        pg.evaluate("""fire('route', {route: 'Google Gemini · gemini-3.8-flash'});
+          fire('delta', 'The hero image is a fixed **1440px** wide, so phones scroll sideways. I set it to `max-width: 100%` in `sections/hero.liquid`.');
+          fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 5.2});""")
+        pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"chat-attachments-{theme}.png"))
+        if pg.evaluate("document.querySelectorAll('.msg.user .achip').length") != 4:
+            errs.append("sent message lost its attachment chips")
+        # Voice: the one-time setup card, its progress, then recording.
+        pg.evaluate("newChat()"); pg.wait_for_timeout(300)
+        pg.evaluate("micClick()"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"voice-setup-{theme}.png"))
+        pg.evaluate("document.querySelector('#vcard .yes').click()"); pg.wait_for_timeout(100)
+        pg.evaluate("fire('stt_progress', {stage: 'model', pct: 46, text: 'Downloading the Whisper base model… 65 of 142 MB'})"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"voice-progress-{theme}.png"))
+        pg.evaluate("closeVoice(); recUI(true)"); pg.wait_for_timeout(1200)
+        pg.screenshot(path=str(out / f"voice-recording-{theme}.png"))
+        pg.evaluate("recUI(false); insertText('Make the hero image smaller on phones and keep the headline on one line.')"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"voice-text-{theme}.png"))
+        # Modes: Plan (Ctrl+Tab) and Autopilot (Shift+Tab), from the keyboard.
+        pg.evaluate("document.querySelector('#input').value=''; grow()")
+        pg.focus("#input"); pg.keyboard.press("Control+Tab"); pg.wait_for_timeout(300)
+        if pg.evaluate("MODES.work_mode") != "plan":
+            errs.append("Ctrl+Tab didn't switch to Plan")
+        pg.screenshot(path=str(out / f"mode-plan-{theme}.png"))
+        pg.keyboard.press("Control+Tab"); pg.keyboard.press("Shift+Tab"); pg.wait_for_timeout(300)
+        if pg.evaluate("MODES.work_mode + '/' + MODES.approval") != "build/autopilot":
+            errs.append("Ctrl+Tab / Shift+Tab didn't give Build + Autopilot")
+        pg.screenshot(path=str(out / f"mode-autopilot-{theme}.png"))
+        pg.evaluate("""sendText('Upgrade the theme to the new Shopify CLI and make sure it still builds', []);
+          fire('autopilot', {on: true, steps: 150, minutes: 45});
+          fire('tool', {id: 'a1', name: 'run_shell', args: '{"command":"pnpm add -D @shopify/cli@latest"}'});
+          fire('tool_done', {id: 'a1', result: 'exit 0'});
+          fire('delta', 'The new CLI wants Node 20. Should I upgrade Node, or pin the old CLI?');
+          fire('autoreply', 'The user is away');
+          fire('delta', 'Pinned **@shopify/cli 3.66**, which still runs on your Node 18, and the theme builds. Assumption: upgrading Node is a bigger change than you asked for.');
+          fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 48.0});""")
+        pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"autopilot-reply-{theme}.png"))
+        if not pg.evaluate("document.querySelector('.apnote')"):
+            errs.append("no Autopilot note in the chat")
+        pg.evaluate("setApproval('auto'); setWorkMode('build')"); pg.wait_for_timeout(200)
         # v0.4: the orb (quick ask), at its real 400x560 size.
         pg.set_viewport_size({"width": 400, "height": 560})
         pg.evaluate("newChat().then(() => fire('orb', true))"); pg.wait_for_timeout(900)
@@ -354,6 +414,30 @@ with sync_playwright() as p:
         pg.evaluate("""window.go.main.App.State().then(s => { s.__d = s.desktop; s.desktop = { ...s.desktop, os: 'darwin', needs_access: true, hotkey: 'alt+space', hotkey_label: 'Option+Space', hotkey_ok: false, hotkey_note: 'macOS needs Accessibility permission for the shortcut.' }; return show('setup', 3); })"""); pg.wait_for_timeout(900)
         pg.screenshot(path=str(out / f"onboard-04-perms-mac-{theme}.png"))
         pg.evaluate("window.go.main.App.State().then(s => { s.desktop = s.__d; Onboard.close(); show('work'); })"); pg.wait_for_timeout(300)
+        # notify-vision: Settings › Notifications (notifications, suggestions, screen vision, recent).
+        pg.evaluate("show('settings','notifications')"); pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"settings-notifications-{theme}.png"))
+        pg.evaluate("[...document.querySelectorAll('.group')].find(g => /Proactive suggestions/.test(g.textContent)).scrollIntoView({block: 'start'})"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"settings-suggestions-{theme}.png"))
+        pg.evaluate("[...document.querySelectorAll('.group')].find(g => /Screen vision/.test(g.textContent)).scrollIntoView({block: 'start'})"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"settings-vision-{theme}.png"))
+        if not pg.evaluate("/Proactive suggestions/.test(document.querySelector('#view').textContent)"):
+            errs.append("Settings › Notifications did not render")
+        # The privacy indicator while the screen is read, then a clicked suggestion in the chat.
+        pg.evaluate("loadConv(window.__conv); show('work'); fire('screen', {on: true, how: 'text'})"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"screen-indicator-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('#screenind.on')"):
+            errs.append("privacy indicator did not show")
+        pg.evaluate("fire('screen', {on: false})"); pg.wait_for_timeout(1800)
+        if pg.evaluate("!!document.querySelector('#screenind.on')"):
+            errs.append("privacy indicator did not hide")
+        pg.evaluate("""fire('suggest', {id: 'n3', kind: 'suggest', title: 'pnpm test fails in price.ts', body: 'Expected 19.99, got 19.989999. I can fix the rounding.', prompt: 'Fix the failing price test'})"""); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"suggest-{theme}.png"))
+        # The indicator in the orb.
+        pg.set_viewport_size({"width": 400, "height": 560})
+        pg.evaluate("newChat().then(() => { fire('orb', true); fire('screen', {on: true, how: 'pixels'}); })"); pg.wait_for_timeout(700)
+        pg.screenshot(path=str(out / f"orb-screen-{theme}.png"))
+        pg.evaluate("fire('screen', {on: false}); fire('orb', false)"); pg.set_viewport_size({"width": 1280, "height": 820}); pg.wait_for_timeout(1700)
         if errs:
             print("JS errors:", errs); allerrs.extend(f"{theme}: {e}" for e in errs)
     # Windows runs frameless with its own title-bar buttons.
@@ -365,6 +449,22 @@ with sync_playwright() as p:
     pg.screenshot(path=str(out / "home-windows-light.png"))
     if errs:
         print("JS errors:", errs); allerrs.extend("windows: " + e for e in errs)
+    # macOS: screen vision needs two permissions; Settings and Doctor offer to grant them.
+    pg = b.new_page(viewport={"width": 1280, "height": 820}, device_scale_factor=1)
+    pg.add_init_script(f"window.__theme='light';window.__os='darwin';window.__sample='{sample}';" + mock)
+    errs = []
+    pg.on("pageerror", lambda e: errs.append(str(e)))
+    pg.goto(url); pg.wait_for_timeout(600)
+    pg.evaluate("show('settings','notifications')"); pg.wait_for_timeout(600)
+    pg.evaluate("[...document.querySelectorAll('.group')].find(g => /Screen vision/.test(g.textContent)).scrollIntoView({block: 'start'})"); pg.wait_for_timeout(200)
+    pg.screenshot(path=str(out / "settings-vision-mac-light.png"))
+    pg.evaluate("show('doctor')"); pg.wait_for_timeout(600)
+    pg.evaluate("document.querySelector('#view .page').scrollTop = 1e6"); pg.wait_for_timeout(200)
+    pg.screenshot(path=str(out / "doctor-mac-light.png"))
+    if pg.evaluate("document.querySelectorAll('#view .fixbtn').length") < 2:
+        errs.append("Doctor has no Fix buttons for the macOS permissions")
+    if errs:
+        print("JS errors:", errs); allerrs.extend("macos: " + e for e in errs)
     b.close()
 # Shots still get pushed when something broke; ERRORS.txt says what (the job then fails).
 if allerrs:
