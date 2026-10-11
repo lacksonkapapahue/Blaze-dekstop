@@ -15,7 +15,7 @@ import (
 // alone, and says "please update Blaze" instead of a vague database error.
 func TestNewerSchemaRunsWithoutMemory(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("BLAZE_HOME", home)
+	testHome(t, home)
 	p := filepath.Join(home, "blaze.db")
 	s, err := sql.Open("sqlite", "file:"+filepath.ToSlash(p))
 	if err != nil {
