@@ -37,7 +37,9 @@ func gitRepo(t *testing.T) string {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "a.txt"), "one\n")
 	write(t, filepath.Join(dir, "pkg", "b.txt"), "two\n")
-	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"}} {
+	// Pin line endings: Git for Windows defaults to core.autocrlf=true, which would turn
+	// these LF fixtures into CRLF on checkout. The tests check Blaze's logic, not git's.
+	for _, args := range [][]string{{"init", "-q"}, {"config", "core.autocrlf", "false"}, {"add", "-A"}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"}} {
 		if _, err := git(dir, args...); err != nil {
 			t.Fatal(err)
 		}
