@@ -67,6 +67,9 @@ type Runtime struct {
 	// Guard is checked before every model call: a non-empty reason stops the agent
 	// (the daily spend cap, Autopilot's time budget). Optional.
 	Guard func(a *Agent) string
+	// Parallel reports a read-only tool that may run beside the others from the same
+	// reply. nil = every call runs one by one.
+	Parallel func(name string) bool
 }
 
 // Step is one tool call in an agent's log.
@@ -380,37 +383,51 @@ func (m *Manager) run(ctx context.Context, a *Agent, gen int) {
 			}
 			return
 		}
-		for _, tc := range n.Calls {
-			if ctx.Err() != nil {
-				status = Cancelled
-				return
-			}
-			s := Step{ID: tc.ID, Name: tc.Function.Name, Args: tc.Function.Arguments, At: time.Now()}
-			if m.rt.Describe != nil {
-				s.Plain = m.rt.Describe(s.Name, s.Args)
-			}
-			m.mu.Lock()
-			a.Steps = append(a.Steps, s)
-			idx := len(a.Steps) - 1
-			a.Now = s.Plain
-			v := m.view(a)
-			m.mu.Unlock()
-			if m.OnStep != nil {
-				m.OnStep(a.Handle, s)
-			}
-			m.emit(v)
-			res := m.rt.Exec(ctx, a, s.Name, s.Args)
-			s.Result, s.Done, s.Bad = res, true, isBad(res)
-			m.mu.Lock()
-			if idx < len(a.Steps) {
-				a.Steps[idx] = s
-			}
-			a.History = append(a.History, llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: res})
-			m.mu.Unlock()
-			if m.OnStep != nil {
-				m.OnStep(a.Handle, s)
-			}
-			m.save(a)
+		calls := n.Calls
+		steps := make([]Step, len(calls))
+		idxs := make([]int, len(calls))
+		completed := llm.RunBatch(len(calls),
+			func(i int) bool { return m.rt.Parallel != nil && m.rt.Parallel(calls[i].Function.Name) },
+			func(i int) bool {
+				if ctx.Err() != nil {
+					return false
+				}
+				tc := calls[i]
+				s := Step{ID: tc.ID, Name: tc.Function.Name, Args: tc.Function.Arguments, At: time.Now()}
+				if m.rt.Describe != nil {
+					s.Plain = m.rt.Describe(s.Name, s.Args)
+				}
+				m.mu.Lock()
+				a.Steps = append(a.Steps, s)
+				idxs[i] = len(a.Steps) - 1
+				a.Now = s.Plain
+				v := m.view(a)
+				m.mu.Unlock()
+				steps[i] = s
+				if m.OnStep != nil {
+					m.OnStep(a.Handle, s)
+				}
+				m.emit(v)
+				return true
+			},
+			func(i int) string { return m.rt.Exec(ctx, a, steps[i].Name, steps[i].Args) },
+			func(i int, res string) {
+				s, tc := steps[i], calls[i]
+				s.Result, s.Done, s.Bad = res, true, isBad(res)
+				m.mu.Lock()
+				if idxs[i] < len(a.Steps) {
+					a.Steps[idxs[i]] = s
+				}
+				a.History = append(a.History, llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: res})
+				m.mu.Unlock()
+				if m.OnStep != nil {
+					m.OnStep(a.Handle, s)
+				}
+				m.save(a)
+			})
+		if !completed {
+			status = Cancelled
+			return
 		}
 	}
 	errText = fmt.Sprintf("stopped after %d steps without finishing", max)

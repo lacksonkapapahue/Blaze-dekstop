@@ -643,40 +643,60 @@ func (a *App) run(ctx context.Context, s *session) {
 			return
 		}
 		dispatched, onlyAgentTools := false, true
-		for _, tc := range n.Calls {
-			if ctx.Err() != nil {
-				a.temit(s, "stopped", map[string]any{"resumable": true})
-				return
-			}
-			a.temit(s, "tool", map[string]string{"id": tc.ID, "name": tc.Function.Name, "args": tc.Function.Arguments})
-			setTrayStatus("Working · " + friendlyTool(tc.Function.Name, tc.Function.Arguments))
-			res := a.modeBlock(tc.Function.Name, tc.Function.Arguments) // Plan mode refuses what can change things
-			switch {
-			case res != "":
-				onlyAgentTools = false
-			case agents.IsMainTool(tc.Function.Name):
+		// Reads from one reply (files, searches, fetches, skills) run at the same time;
+		// anything that changes things runs one by one, in the order the model asked.
+		calls := n.Calls
+		blocked := make([]string, len(calls))
+		completed := llm.RunBatch(len(calls),
+			func(i int) bool {
+				tc := calls[i]
+				return tools.ParallelSafe(tc.Function.Name) && a.modeBlock(tc.Function.Name, tc.Function.Arguments) == ""
+			},
+			func(i int) bool {
+				if ctx.Err() != nil {
+					return false
+				}
+				tc := calls[i]
+				a.temit(s, "tool", map[string]string{"id": tc.ID, "name": tc.Function.Name, "args": tc.Function.Arguments})
+				setTrayStatus("Working · " + friendlyTool(tc.Function.Name, tc.Function.Arguments))
+				blocked[i] = a.modeBlock(tc.Function.Name, tc.Function.Arguments) // Plan mode refuses what can change things
+				return true
+			},
+			func(i int) string {
+				tc := calls[i]
+				switch {
+				case blocked[i] != "":
+					return blocked[i]
+				case agents.IsMainTool(tc.Function.Name):
+					a.mu.Lock()
+					conv := s.id
+					a.mu.Unlock()
+					// Specialists inherit the lead's mode and step budget (never more).
+					out := a.agents.HandleLeadTool(tc.Function.Name, tc.Function.Arguments, agents.Lead{Conv: conv, Folder: s.dir(a.prefs.Folder), Mode: a.workMode(), MaxSteps: steps})
+					dispatched = dispatched || out.Dispatched != "" // agent tools never run in parallel
+					return out.Result
+				case tc.Function.Name == "update_blaze":
+					return a.selfUpdate()
+				case a.conn.Handles(tc.Function.Name):
+					return a.conn.Run(ctx, tc.Function.Name, tc.Function.Arguments)
+				default:
+					return tools.RunCtx(ctx, a.tenv(s), tc.Function.Name, tc.Function.Arguments)
+				}
+			},
+			func(i int, res string) {
+				tc := calls[i]
+				if blocked[i] != "" || !agents.IsMainTool(tc.Function.Name) {
+					onlyAgentTools = false
+				}
+				changed, urls = a.designTouch(tc.Function.Name, tc.Function.Arguments, res, changed, urls)
+				a.temit(s, "tool_done", map[string]string{"id": tc.ID, "result": res})
 				a.mu.Lock()
-				conv := s.id
+				s.hist = append(s.hist, llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: res})
 				a.mu.Unlock()
-				// Specialists inherit the lead's mode and step budget (never more).
-				out := a.agents.HandleLeadTool(tc.Function.Name, tc.Function.Arguments, agents.Lead{Conv: conv, Folder: s.dir(a.prefs.Folder), Mode: a.workMode(), MaxSteps: steps})
-				res = out.Result
-				dispatched = dispatched || out.Dispatched != ""
-			case tc.Function.Name == "update_blaze":
-				onlyAgentTools = false
-				res = a.selfUpdate()
-			case a.conn.Handles(tc.Function.Name):
-				onlyAgentTools = false
-				res = a.conn.Run(ctx, tc.Function.Name, tc.Function.Arguments)
-			default:
-				onlyAgentTools = false
-				res = tools.RunCtx(ctx, a.tenv(s), tc.Function.Name, tc.Function.Arguments)
-			}
-			changed, urls = a.designTouch(tc.Function.Name, tc.Function.Arguments, res, changed, urls)
-			a.temit(s, "tool_done", map[string]string{"id": tc.ID, "result": res})
-			a.mu.Lock()
-			s.hist = append(s.hist, llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: res})
-			a.mu.Unlock()
+			})
+		if !completed {
+			a.temit(s, "stopped", map[string]any{"resumable": true})
+			return
 		}
 		// Handing work off ends the turn at once: the user gets a short line and the
 		// composer is free while the agent works.
@@ -844,6 +864,8 @@ RULES
 - Servers, watchers and long builds go in run_shell background=true; then job_log. open_url shows a local server or file to the user.
 - Missing program? install_tool (the user approves it).
 - Only your core tools are loaded each turn. MORE TOOLS below lists the rest by name: call find_tools(query) to turn them on (or call one by its exact name). Memories and skills are also picked per turn: recall(query) and load_skill(name) reach the rest. Never use sudo or admin rights without asking.
+- Work in parallel: when you need several things that don't depend on each other (read three files, search two queries, fetch a few pages, load two skills), ask for all of them in ONE reply. Blaze runs read-only calls at the same time, so a batch costs one wait instead of several. Calls that change things still run one by one, in your order.
+- Skills combine. When a task falls between skills (a hand-drawn poster, a game with pixel sprites and music, a 3D walk-through of a floor plan), load every skill it touches and use each one for its own part. No single skill covers it and it is likely to come up again: after it works, save the combination with write_skill as a new skill that names the skills it builds on and holds only the glue (which part comes from which skill, in what order, and what was learned). Tell the user in one line.
 - Be honest about failures. Never claim something worked without checking.
 - Answers: short, direct, Markdown. Lead with the result.
 `)

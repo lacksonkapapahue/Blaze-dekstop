@@ -21,7 +21,7 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Specialists on request**: Blaze does your tasks itself. Ask it to split a big task and parallel agents each work on their own git worktree, reviewed before anything lands.
 - **Lives in the background**: tray icon, quick ask from anywhere (Ctrl+Shift+Space, Option+Space on a Mac), native notifications, and optional proactive suggestions.
 - **Sees and hears**: reads the front window, attaches images, files and folders, and turns speech into text with Whisper on your own PC.
-- **Memory and skills**: learns facts and workflows as you go, with 20 bundled skills you can edit or turn off.
+- **Memory and skills**: learns facts and workflows as you go, with 28 bundled skills you can edit or turn off. Blaze combines them when a request falls between skills (a hand-drawn poster, a pixel-art game with music), and saves a combination that keeps coming up as a skill of its own.
 - **Connected**: one-click Google, GitHub, Spotify, Notion and Slack, MCP servers shared with Blaze CLI (`~/.blaze/mcp.json`), and keys that sync through your Blaze account.
 - **Updates itself** from GitHub releases.
 
