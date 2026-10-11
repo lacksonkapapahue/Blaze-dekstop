@@ -140,8 +140,18 @@ addEventListener("keydown", e => {
   }
 });
 
+// Leaving a chat mid-answer: the answer keeps running in Go (sessions.go) and saves into
+// its own chat; the sidebar shows it working, and opening it again picks it back up.
+function leaveTurn() {
+  if (!busy && !current) return;
+  thinking(false); current = null; setBusy(false);
+}
+let LIVE = new Set(); // chats whose answer is running
+function markLive() { $$("#chats .chat[data-id]").forEach(b => b.classList.toggle("live", LIVE.has(b.dataset.id))); }
+on("live", ids => { LIVE = new Set(ids || []); markLive(); });
+
 async function newChat() {
-  if (busy) return;
+  leaveTurn();
   await API().NewConversation(); convId = ""; attachments = []; ATT = []; drawAttach();
   hero(); show(tab === "design" ? "design" : "work"); refreshSide();
 }
@@ -253,8 +263,8 @@ async function refreshSide() {
     const b = h("button", "chat proj" + (id === pid ? " on" : ""), `<span class="sq"></span><span class="t">${esc(name)}</span>`);
     b.title = sub || "";
     b.onclick = async () => {
-      if (busy) return;
-      if (id !== pid) { const p = await API().OpenProject(id); convId = ""; if (p.folder) { S.prefs.folder = p.folder; setFolder(p.folder); } hero(); await refreshSide(); }
+      if (id !== pid) {
+        leaveTurn(); const p = await API().OpenProject(id); convId = ""; if (p.folder) { S.prefs.folder = p.folder; setFolder(p.folder); } hero(); await refreshSide(); }
       if (id) show("project", id); else show("work");
     };
     pn.append(b);
@@ -265,14 +275,16 @@ async function refreshSide() {
   $("#chatsLabel").textContent = "Chats";
   $("#chatsCtx").textContent = "· " + (S.project ? S.project.name : "General");
   const list = await API().Conversations(pid) || [];
+  if (API().Live) LIVE = new Set(await API().Live() || []);
   const nav = $("#chats"); nav.innerHTML = "";
   if (!list.length) nav.append(h("div", "none", "No chats yet"));
   list.forEach(c => {
-    const b = h("button", "chat" + (c.id === convId && (view === "work" || view === "design") ? " on" : ""), `<span class="t">${esc(c.title)}</span><span class="when">${esc(c.updated || "")}</span><span class="x" title="Delete">${icon("x", "i sm")}</span>`);
+    const b = h("button", "chat" + (c.id === convId && (view === "work" || view === "design") ? " on" : "") + (LIVE.has(c.id) ? " live" : ""), `<span class="t">${esc(c.title)}</span><span class="when">${esc(c.updated || "")}</span><span class="x" title="Delete">${icon("x", "i sm")}</span>`);
+    b.dataset.id = c.id;
     b.onclick = async e => {
       if (e.target.closest("input")) return; // renaming
       if (e.target.closest(".x")) { await API().DeleteConversation(c.id); if (c.id === convId) { convId = ""; hero(); } refreshSide(); return; }
-      if (busy || (c.id === convId && b.classList.contains("on"))) return;
+      if (c.id === convId && b.classList.contains("on")) return;
       openChat(c.id);
     };
     if (window.Polish) Polish.decorate(b, c); // AI titles: animate, double-click to rename (polish.js)
@@ -281,10 +293,15 @@ async function refreshSide() {
 }
 
 async function openChat(id) {
+  leaveTurn();
   const conv = await API().OpenConversation(id);
   convId = id;
   if (conv.folder) { S.prefs.folder = conv.folder; setFolder(conv.folder); }
   loadConv(conv);
+  if (conv.running) { // still answering: pick the live answer back up
+    const col = $("#log .col", pane);
+    if (col) { const hr = $(".hero", col); if (hr) hr.remove(); current = blazeMsg(); col.append(current.el); setBusy(true); thinking(true, "Still working…"); }
+  }
   show(tab === "design" ? "design" : "work");
   refreshSide();
 }
