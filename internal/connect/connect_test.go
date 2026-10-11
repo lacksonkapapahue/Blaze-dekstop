@@ -672,18 +672,30 @@ func checkMCP(t *testing.T, m *Manager, rec *recorder, v MCPView) {
 		t.Fatalf("annotations not mapped to risk: %+v", v.Tools)
 	}
 	ctx := context.Background()
-	if out := m.Run(ctx, metaLoad, `{"group":"mcp:`+v.ID+`"}`); !strings.Contains(out, "mcp_"+v.ID+"_echo") || !strings.Contains(out, "mcp_"+v.ID+"_wipe_all") {
+	if out := m.Run(ctx, metaLoad, `{"group":"mcp:`+v.ID+`"}`); !strings.Contains(out, "mcp__"+v.ID+"__echo") || !strings.Contains(out, "mcp__"+v.ID+"__wipe_all") {
 		t.Fatal(out)
 	}
-	if out := m.Run(ctx, "mcp_"+v.ID+"_echo", `{"text":"hello"}`); out != "echo: hello" {
-		t.Fatalf("echo: %q", out)
+	// Every MCP tool asks first (even one the server calls read-only) until the user
+	// sets Always allow.
+	rec.answer = func(string) (bool, bool) { return true, false }
+	asks0 := rec.asks
+	if out := m.Run(ctx, "mcp__"+v.ID+"__echo", `{"text":"hello"}`); out != "echo: hello" || rec.asks != asks0+1 {
+		t.Fatalf("echo: %q (asks %d)", out, rec.asks-asks0)
 	}
+	if err := m.SetToolMode("mcp:"+v.ID, "echo", "always"); err != nil {
+		t.Fatal(err)
+	}
+	if out := m.Run(ctx, "mcp__"+v.ID+"__echo", `{"text":"hello"}`); out != "echo: hello" || rec.asks != asks0+1 {
+		t.Fatalf("always-allowed echo asked: %q", out)
+	}
+	_ = m.SetToolMode("mcp:"+v.ID, "echo", "")
+	rec.answer = nil
 	asks := rec.asks
-	if out := m.Run(ctx, "mcp_"+v.ID+"_wipe_all", `{}`); !strings.Contains(out, "declined") || rec.asks != asks+1 {
+	if out := m.Run(ctx, "mcp__"+v.ID+"__wipe_all", `{}`); !strings.Contains(out, "declined") || rec.asks != asks+1 {
 		t.Fatalf("destructive MCP tool must ask: %q", out)
 	}
 	rec.answer = func(string) (bool, bool) { return true, false }
-	if out := m.Run(ctx, "mcp_"+v.ID+"_wipe_all", `{}`); out != "Tool error: wiped" {
+	if out := m.Run(ctx, "mcp__"+v.ID+"__wipe_all", `{}`); out != "Tool error: wiped" {
 		t.Fatalf("isError: %q", out)
 	}
 	rec.answer = nil
@@ -702,7 +714,8 @@ func TestMCPStreamableHTTP(t *testing.T) {
 		checkMCP(t, m, rec, v)
 		// The server forgets the session: Blaze re-initializes and retries once.
 		f.expire.Store(true)
-		if out := m.Run(context.Background(), "mcp_"+v.ID+"_echo", `{"text":"again"}`); out != "echo: again" {
+		_ = m.SetToolMode("mcp:"+v.ID, "echo", "always")
+		if out := m.Run(context.Background(), "mcp__"+v.ID+"__echo", `{"text":"again"}`); out != "echo: again" {
 			t.Fatalf("session recovery: %q", out)
 		}
 		b, _ := os.ReadFile(m.Store().path)
@@ -761,7 +774,7 @@ func TestMCPStdio(t *testing.T) {
 	}
 	checkMCP(t, m, rec, v)
 	_ = m.SetMCPEnabled(v.ID, false)
-	if out := m.Run(context.Background(), "mcp_"+v.ID+"_echo", `{"text":"x"}`); !strings.Contains(out, "off") {
+	if out := m.Run(context.Background(), "mcp__"+v.ID+"__echo", `{"text":"x"}`); !strings.Contains(out, "off") {
 		t.Fatal(out)
 	}
 	if _, err := m.AddMCP(MCPSpec{Transport: "http", URL: "http://example.com/mcp"}); err == nil {
@@ -774,7 +787,7 @@ func TestSplitArgsAndNames(t *testing.T) {
 	if len(got) != 4 || got[2] != `C:\My Files` || got[3] != "" {
 		t.Fatalf("%q", got)
 	}
-	if n := mcpToolName("srv", "a.b c"); n != "mcp_srv_a_b_c" {
+	if n := mcpToolName("srv", "a.b c"); n != "mcp__srv__a_b_c" {
 		t.Fatal(n)
 	}
 	if len(mcpToolName("srv", strings.Repeat("x", 100))) != 64 {
