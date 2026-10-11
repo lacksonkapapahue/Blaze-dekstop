@@ -142,7 +142,7 @@ addEventListener("keydown", e => {
 
 async function newChat() {
   if (busy) return;
-  await API().NewConversation(); convId = ""; attachments = []; drawAttach();
+  await API().NewConversation(); convId = ""; attachments = []; ATT = []; drawAttach();
   hero(); show(tab === "design" ? "design" : "work"); refreshSide();
 }
 
@@ -345,22 +345,20 @@ function buildPane() {
       <div id="attach" class="attach"></div>
       <textarea id="input" rows="1" placeholder="Ask Blaze to do something…"></textarea>
       <div class="ibar">
-        <button id="plus" class="plusbtn" title="Commands and files">${icon("plus", "i sm")}</button>
-        <span class="grow"></span>
-        <label class="toggle" title="Auto-approve risky actions (deletes still ask)"><input type="checkbox" id="yolo"><span class="label">Auto-approve</span></label>
+        ${composerBar()}
         <button id="send" class="btn accent sm">${icon("send", "i sm")}<span>Send</span></button>
       </div>
     </div>
-    <div class="hintline"><span class="label weak" id="hint">/ commands · @ files · Shift+Enter new line</span></div>
+    <div id="visionwarn" class="visionwarn" style="display:none"></div>
+    <div class="hintline"><span class="label weak" id="hint"></span></div>
   </div></div>`;
-  const input = $("#input", p), yolo = $("#yolo", p);
-  yolo.checked = !!S.yolo;
-  yolo.onchange = () => { S.yolo = yolo.checked; API().SetYolo(yolo.checked); };
+  const input = $("#input", p);
   input.addEventListener("input", () => { grow(); onType(); sendLabel(); });
   input.addEventListener("keydown", onKey);
   // Mid-answer the button stops the answer, unless there's a message to send: that one queues.
-  $("#send", p).onclick = () => busy && !input.value.trim() ? API().Stop() : submit();
-  $("#plus", p).onclick = () => menuOpen() ? closeMenu() : openMenu("root");
+  $("#send", p).onclick = () => busy && !input.value.trim() && !ATT.length ? API().Stop() : submit();
+  $("#plus", p).onclick = () => menuOpen() ? closeMenu() : openMenu("plus", plusItems(), "Attach");
+  initComposer(p);
   return p;
 }
 function grow() { const i = $("#input"); if (!i) return; i.style.height = "auto"; i.style.height = Math.min(i.scrollHeight, 240) + "px"; }
@@ -408,7 +406,7 @@ function loadConv(conv) {
   conv.messages.forEach(m => { if (m.role === "tool") results[m.tool_call_id] = m.content; });
   conv.messages.forEach(m => {
     if (m.role === "user" && isAgentResult(m.content)) { col.append(agentNote(m.content)); turn = null; }
-    else if (m.role === "user") { col.append(userMsg(m.content)); turn = null; }
+    else if (m.role === "user") { col.append(userMsg(m.content, m.attach)); turn = null; }
     else if (m.role === "assistant") {
       if (!turn) { turn = blazeMsg(); turns.push(turn); col.append(turn.el); }
       (m.tool_calls || []).forEach(tc => {
@@ -441,9 +439,10 @@ function agentNote(content) {
 }
 
 // User bubbles hide attached file bodies and long design-edit context.
-function userMsg(content) {
+function userMsg(content, att) {
   const files = [];
-  let text = content.replace(/\n*<attached path="([^"]*)">[\s\S]*?<\/attached>/g, (_, p) => { files.push(p); return ""; });
+  let text = content.replace(/\n*<attached path="([^"]*)"([^>]*)>[\s\S]*?<\/attached>/g, (_, p, rest) => { if (!/kind=/.test(rest)) files.push(p); return ""; });
+  if (text.startsWith("[Autopilot] ")) return apNote();
   const m = h("div", "msg user");
   if (text.startsWith("[Design edit]")) {
     const act = (text.match(/^\[Design edit\] (.*)/) || [])[1] || "Edit";
@@ -454,6 +453,7 @@ function userMsg(content) {
   } else {
     m.append(h("div", "bubble", esc(text)));
     if (files.length) m.append(h("div", "chips", files.map(f => `<span class="fchip">@ ${esc(f)}</span>`).join("")));
+    const ar = attachRow(att); if (ar) m.append(ar);
   }
   return m;
 }
@@ -591,11 +591,11 @@ function scrollDown(force) {
 function setBusy(b) {
   busy = b;
   sendLabel();
-  $("#hint", pane).textContent = b ? "Working… keep typing to queue a message · Stop ends this answer" : "/ commands · @ files · Shift+Enter new line";
+  hintText();
 }
 function sendLabel() {
   const send = $("#send", pane), i = $("#input", pane); if (!send) return;
-  const stop = busy && !(i && i.value.trim());
+  const stop = busy && !(i && i.value.trim()) && !ATT.length;
   if (send.dataset.stop === String(stop)) return;
   send.dataset.stop = String(stop);
   send.innerHTML = stop ? `${icon("stop", "i sm")}<span>Stop</span>` : `${icon("send", "i sm")}<span>Send</span>`;
@@ -620,11 +620,12 @@ function thinking(onOff, text) {
 
 function submit() {
   const input = $("#input", pane);
-  const text = input.value.trim();
-  if (!text) return;
+  let text = input.value.trim();
+  if (!text && !ATT.length) return;
+  if (!text) text = ATT.some(a => a.kind === "image") ? "Look at this." : "Take a look at this.";
   if (/^\/\S+$/.test(text)) { const c = matchCommands(text.slice(1))[0]; if (c) { input.value = ""; runCommand(c); return; } }
-  input.value = ""; grow(); sendLabel();
-  sendText(text, attachments.slice());
+  input.value = ""; grow();
+  sendText(text, attachments.slice(), takeAttach());
   attachments = []; drawAttach();
 }
 
@@ -633,21 +634,21 @@ async function runCommand(c) {
   await c.run();
 }
 
-async function sendText(text, files) {
+async function sendText(text, files, att) {
   const col = $("#log .col", pane);
   const heroEl = $(".hero", col); if (heroEl) heroEl.remove();
-  const bubble = userMsg(text + (files || []).map(f => `\n<attached path="${f}"></attached>`).join(""));
+  const bubble = userMsg(text + (files || []).map(f => `\n<attached path="${f}"></attached>`).join(""), att);
   col.append(bubble);
   if (busy) {
     // Blaze is mid-answer: the message waits its turn (Go starts it when this one ends).
-    bubble.classList.add("queued"); scrollDown(true);
-    await API().Send(text, files || []);
+    bubble.classList.add("queued"); scrollDown(true); sendLabel();
+    await API().SendWith(text, files || [], att || []);
     return;
   }
   current = blazeMsg(); current.pendingUser = true; col.append(current.el);
   setBusy(true); thinking(true);
   scrollDown(true);
-  const r = await API().Send(text, files || []);
+  const r = await API().SendWith(text, files || [], att || []);
   if (r === "queued" && current && current.pendingUser) { current.el.remove(); current = null; bubble.classList.add("queued"); }
 }
 
@@ -939,7 +940,12 @@ const COMMANDS = [
   { name: "stop", desc: "Stop the current task", run: () => API().Stop() },
   { name: "clear", desc: "Clear this chat and start fresh", run: () => newChat() },
   { name: "skills", desc: "Use one of your skills", sub: async () => { const s = (await API().State()).skills || []; return s.length ? s.map(x => ({ name: x.split(":")[0], desc: x.split(":").slice(1).join(":").trim(), run: () => { const i = $("#input"); i.value = `Use the ${x.split(":")[0]} skill: `; i.focus(); } })) : [{ name: "No skills yet", desc: "Ask Blaze to save one after a task", run: () => {} }]; } },
-  { name: "auto-approve", desc: "Toggle auto-approve for risky actions", run: () => { const y = $("#yolo", pane); y.checked = !y.checked; y.onchange(); } },
+  { name: "plan", desc: "Plan mode: read and scout only, then a plan (Ctrl+Tab)", run: () => setWorkMode("plan") },
+  { name: "build", desc: "Build mode: every tool (Ctrl+Tab)", run: () => setWorkMode("build") },
+  { name: "autopilot", desc: "Work until done; decide instead of asking (Shift+Tab)", run: () => setApproval("autopilot") },
+  { name: "auto", desc: "Ask before risky actions (Shift+Tab)", run: () => setApproval("auto") },
+  { name: "image", desc: "Attach images", run: () => pick("image") },
+  { name: "voice", desc: "Speak instead of typing (local Whisper)", run: () => micClick() },
   { name: "theme", desc: "System, light or dark", sub: async () => ["system", "light", "dark"].map(t => ({ name: t, desc: t === S.prefs.theme ? "current" : "", run: async () => { await API().SetTheme(t); S.prefs.theme = t; applyTheme(); } })) },
   { name: "jobs", desc: "Background jobs and their logs", run: () => show("jobs") },
   { name: "schedule", desc: "Scheduled jobs", run: () => show("schedule") },
@@ -966,7 +972,7 @@ function drawMenu() {
   const m = $("#menu"); if (!m) return;
   if (!menu.items.length) { closeMenu(); return; }
   m.innerHTML = (menu.title ? `<div class="mhead label">${esc(menu.title)}</div>` : "") +
-    menu.items.slice(0, 60).map((it, i) => `<button class="mi ${i === menu.idx ? "on" : ""}" data-i="${i}"><span class="mn">${it.slash ? "/" : ""}${esc(it.name)}${it.sub ? " ›" : ""}</span><span class="md2">${esc(it.desc || "")}</span></button>`).join("") +
+    menu.items.slice(0, 60).map((it, i) => `<button class="mi ${i === menu.idx ? "on" : ""}" data-i="${i}"><span class="mn">${it.icon ? cmIcon(it.icon) : ""}${it.slash ? "/" : ""}${esc(it.name)}${it.sub ? " ›" : ""}</span><span class="md2">${esc(it.desc || "")}</span></button>`).join("") +
     `<div class="mfoot label weak">↑↓ move · Enter pick · Esc close</div>`;
   m.style.display = "";
   m.querySelectorAll(".mi").forEach(b => { b.onmouseenter = () => { menu.idx = +b.dataset.i; m.querySelectorAll(".mi").forEach(x => x.classList.toggle("on", x === b)); }; b.onclick = () => pickMenu(+b.dataset.i); });
@@ -982,6 +988,7 @@ async function pickMenu(i) {
     drawAttach(); closeMenu(); input.focus(); return;
   }
   if (menu.kind === "cmd" || menu.kind === "root") input.value = "";
+  if (menu.kind === "plus" && !it.sub) { closeMenu(); await it.run(); return; }
   if (it.sub) { openMenu("sub", await it.sub(), it.name); return; }
   closeMenu(); grow();
   await it.run();
@@ -1009,17 +1016,14 @@ function onKey(e) {
     const n = Math.min(menu.items.length, 60);
     if (e.key === "ArrowDown") { e.preventDefault(); menu.idx = (menu.idx + 1) % n; drawMenu(); return; }
     if (e.key === "ArrowUp") { e.preventDefault(); menu.idx = (menu.idx - 1 + n) % n; drawMenu(); return; }
-    if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); pickMenu(menu.idx); return; }
+    if (e.key === "Enter" || (e.key === "Tab" && !e.shiftKey && !e.ctrlKey)) { e.preventDefault(); pickMenu(menu.idx); return; }
   }
   if (e.key === "Escape") { closeMenu(); return; }
-  if (e.key === "Backspace" && !e.target.value && attachments.length) { attachments.pop(); drawAttach(); return; }
+  if (e.key === "Backspace" && !e.target.value && popAttach()) return;
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
 }
 
-function drawAttach() {
-  const a = $("#attach", pane); a.innerHTML = "";
-  attachments.forEach((f, i) => { const c = h("span", "fchip", `@ ${esc(f)} <button title="Remove">×</button>`); $("button", c).onclick = () => { attachments.splice(i, 1); drawAttach(); }; a.append(c); });
-}
+// drawAttach lives in composer.js (the @ files and the + / drop / paste attachments).
 
 async function retry() {
   if (busy) return;
@@ -1656,11 +1660,13 @@ async function setUsage(col, redraw) {
 }
 
 async function setBehaviour(col, redraw) {
-  const g1 = group("Actions");
+  const g1 = group("Modes", "Both show in the composer and are remembered.");
   const bx = h("div", "box pad formgrid");
-  const t1 = h("label", "toggle", `<input type="checkbox" ${S.yolo ? "checked" : ""}><span><span class="tt">Auto-approve risky commands and installs</span><span class="td">Deletes and anything destructive still ask first.</span></span>`);
-  $("input", t1).onchange = e => { API().SetYolo(e.target.checked); S.yolo = e.target.checked; const y = $("#yolo", pane); if (y) y.checked = e.target.checked; };
-  bx.append(t1); g1.append(bx);
+  bx.append(modeSetting("Work mode", "Ctrl+Tab", [["plan", "Plan", "Read and scout only, then a plan. Enforced: tools that change things aren't offered."], ["build", "Build", "Every tool: write code, run commands, install."]], MODES.work_mode, async k => { await setWorkMode(k); redraw(); }));
+  bx.append(modeSetting("Approval", "Shift+Tab", [["auto", "Auto", "Risky commands, deletes and installs ask you first."], ["autopilot", "Autopilot", "Works until done. Questions get “you’re away, decide by best practice”. Disk-wiping commands stay blocked."]], MODES.approval, async k => { await setApproval(k); redraw(); }));
+  g1.append(bx);
+  const gA = group("Chat");
+  const bxA = h("div", "box pad formgrid"); gA.append(bxA);
   const g2 = group("Design tab", "When Blaze makes something visual, open it in Design:");
   const seg2 = h("div", "seg");
   [["ask", "Ask first"], ["always", "Always"], ["never", "Never"]].forEach(([k, t]) => { const b = h("button", (S.prefs.design_mode || "ask") === k ? "on" : "", t); b.onclick = async () => { await API().SetDesignMode(k); S.prefs.design_mode = k; redraw(); }; seg2.append(b); });
@@ -1672,14 +1678,45 @@ async function setBehaviour(col, redraw) {
   g3.append(pers, ps);
   const t2 = h("label", "toggle", `<input type="checkbox" ${S.prefs.show_steps ? "checked" : ""}><span><span class="tt">Show every step (power users)</span><span class="td">Off: one plain-English status line per answer; click “Worked · N steps” to see each step and its exact command.</span></span>`);
   $("input", t2).onchange = e => { API().SetShowSteps(e.target.checked); S.prefs.show_steps = e.target.checked; };
-  bx.append(t2);
+  bxA.append(t2);
   const t3 = h("label", "toggle", `<input type="checkbox" ${foldCards() ? "checked" : ""}><span><span class="tt">Fold long answers into cards</span><span class="td">The short answer stays in view; tables, long lists and reports go in a card you can expand.</span></span>`);
   $("input", t3).onchange = e => { API().SetFoldCards(e.target.checked); S.prefs.fold_cards = e.target.checked; };
-  bx.append(t3);
+  bxA.append(t3);
   const t4 = h("label", "toggle", `<input type="checkbox" ${S.prefs.auto_titles !== false ? "checked" : ""}><span><span class="tt">Name chats by their topic</span><span class="td">A tiny call on your cheapest model titles each chat by what it's mostly about, and updates it as the chat moves on. Double-click a chat to rename it yourself.</span></span>`);
   $("input", t4).onchange = e => { API().SetAutoTitles(e.target.checked); S.prefs.auto_titles = e.target.checked; };
-  bx.append(t4);
-  col.append(g1, backgroundGroup(redraw), agentsGroup(redraw), g2, Polish.personalityGroup(redraw), g3);
+  bxA.append(t4);
+  col.append(g1, gA, voiceGroup(redraw), backgroundGroup(redraw), agentsGroup(redraw), g2, Polish.personalityGroup(redraw), g3);
+}
+
+function modeSetting(title, key, opts, cur, pick) {
+  const r = h("div", "modeset", `<div class="mst"><span class="tt">${esc(title)}</span><span class="kbd">${esc(key)}</span></div>`);
+  const seg = h("div", "mseg big");
+  opts.forEach(([k, t]) => { const b = h("button", k === cur ? "on" : "", esc(t)); b.onclick = () => pick(k); seg.append(b); });
+  const d = h("div", "td", esc((opts.find(o => o[0] === cur) || opts[0])[2]));
+  r.append(seg, d);
+  if (title === "Approval") seg.classList.toggle("pilot", cur === "autopilot");
+  return r;
+}
+
+// Settings › Behaviour › Voice input (local Whisper).
+function voiceGroup(redraw) {
+  const g = group("Voice input", "Speech to text with Whisper, on this PC. Free and offline after a one-time download.");
+  const bx = h("div", "box pad formgrid"); g.append(bx);
+  (async () => {
+    let st = null; try { st = await API().STTStatus(); } catch (e) {}
+    if (!st || typeof st !== "object") { bx.append(h("div", "td", "Not available in this build.")); return; }
+    const state = st.ready ? `Ready · ${esc(st.model)} model` : st.engine_how === "manual" && !st.engine ? esc(st.note) : "Not set up yet. Click the mic in the composer to set it up.";
+    bx.append(h("div", "modeset", `<div class="mst"><span class="tt">Status</span></div><div class="td">${state}</div>`));
+    const seg = h("div", "mseg big");
+    (st.models || []).forEach(m => { const b = h("button", m.name === st.model ? "on" : "", `${esc(m.name)} · ${m.mb} MB`); b.title = m.note; b.onclick = async () => { await API().SetSTT(m.name, ""); redraw(); }; seg.append(b); });
+    const r = h("div", "modeset", `<div class="mst"><span class="tt">Model</span></div>`); r.append(seg, h("div", "td", "Bigger is more accurate and slower. A new model downloads the next time you use the mic."));
+    bx.append(r);
+    const lang = h("input", "field mono"); lang.value = st.lang || "auto"; lang.placeholder = "auto";
+    lang.onchange = () => API().SetSTT("", lang.value || "auto");
+    const lr = h("div", "modeset", `<div class="mst"><span class="tt">Language</span></div>`); lr.append(lang, h("div", "td", "auto, or a language code like en, fr, sw."));
+    bx.append(lr);
+  })();
+  return g;
 }
 
 // Settings › Behaviour › Background agents: how many run at once.

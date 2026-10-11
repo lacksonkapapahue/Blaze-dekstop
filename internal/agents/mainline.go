@@ -4,15 +4,18 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/lacksonkapapahue/blaze-desktop/internal/llm"
 )
 
 // Input is one thing that starts a main-agent turn: a user message, a background
 // agent's result, or a retry.
 type Input struct {
-	Kind   string // user, agent, retry
-	Text   string // the message (user) or the result (agent)
-	Handle string // agent results: which agent
-	Conv   string // agent results: the chat the agent belongs to
+	Kind   string       // user, agent, retry
+	Text   string       // the message (user) or the result (agent)
+	Handle string       // agent results: which agent
+	Conv   string       // agent results: the chat the agent belongs to
+	Attach []llm.Attach // user messages: what the composer attached (images, files, folders)
 }
 
 // Mainline runs main-agent turns one at a time. A turn that arrives while another

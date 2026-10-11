@@ -65,8 +65,9 @@ func main() {
 			UniqueId:               "com.blaze.desktop",
 			OnSecondInstanceLaunch: func(d options.SecondInstanceData) { go app.secondInstance(d.Args) },
 		},
-		Bind:    []interface{}{app},
-		Windows: &windows.Options{Theme: windows.SystemDefault},
+		DragAndDrop: &options.DragAndDrop{EnableFileDrop: true}, // files dropped on the window attach to the message
+		Bind:        []interface{}{app},
+		Windows:     &windows.Options{Theme: windows.SystemDefault},
 		Mac: &mac.Options{
 			TitleBar: mac.TitleBarHiddenInset(),
 			About:    &mac.AboutInfo{Title: "Blaze", Message: "Blaze " + version, Icon: icon},

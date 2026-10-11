@@ -119,7 +119,7 @@ func (a *App) agentEnv(ag *agents.Agent) *tools.Env {
 	}
 	h := ag.Handle
 	e := &tools.Env{Info: &a.info, Root: root, Yolo: a.env.Yolo, Shell: tools.NewShell(a.info.Shell, a.info.ShellPath, root), Jobs: a.env.Jobs}
-	e.Confirm = func(title, detail string) bool { return a.askAgent(h, title, detail) }
+	e.Confirm = func(title, detail string) bool { return a.agentGate(h, title, detail) }
 	e.Status = func(s string) { a.agents.Status(h, s) }
 	a.envs[h] = e
 	return e
@@ -136,6 +136,19 @@ func (a *App) agentExec(ctx context.Context, ag *agents.Agent, name, args string
 		return a.conn.Run(ctx, name, args)
 	}
 	return tools.Run(a.agentEnv(ag), name, args)
+}
+
+// agentGate is a sub-agent's approval: Autopilot approves (catastrophic commands stay
+// blocked) like the main chat's gate in modes.go; Auto asks on the agent's card.
+func (a *App) agentGate(handle, title, detail string) bool {
+	if a.approval() == "autopilot" {
+		if why := Catastrophic(title, detail); why != "" {
+			a.agents.Status(handle, "Blocked: "+why)
+			return false
+		}
+		return true
+	}
+	return a.askAgent(handle, title, detail)
 }
 
 // askAgent is the approval card for a sub-agent: it shows on the agent's card and
@@ -158,10 +171,14 @@ func (a *App) askAgent(handle, title, detail string) bool {
 	}
 }
 
-// agentAway is the Autopilot hook: when the user has said they're away, a sub-agent's
-// question gets the same away-reply as the main agent's. On builds without Autopilot
-// (composer-modes, PR #13) it never answers for the user.
-var agentAway = func(a *App) (string, bool) { return "", false }
+// agentAway is the Autopilot hook: in Autopilot (modes.go) the user is away, so a
+// sub-agent's question gets the same away-reply as the main agent's.
+var agentAway = func(a *App) (string, bool) {
+	if a.approval() == "autopilot" {
+		return AutoReply, true
+	}
+	return "", false
+}
 
 // agentQuestion is ask_user for a sub-agent: a question on its card.
 func (a *App) agentQuestion(ctx context.Context, handle, raw string) string {
@@ -270,7 +287,7 @@ func (a *App) turn(in agents.Input) {
 		}
 		a.history = a.history[:last+1]
 	default:
-		a.history = append(a.history, llm.Message{Role: "user", Content: in.Text})
+		a.history = append(a.history, llm.Message{Role: "user", Content: in.Text, Attach: in.Attach})
 	}
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.cancel = cancel

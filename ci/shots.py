@@ -203,6 +203,66 @@ with sync_playwright() as p:
         n = pg.evaluate("document.querySelectorAll('.acard.tall').length + document.querySelectorAll('.acard.fits').length")
         if n < 1:
             errs.append("fallback reply did not fold into a card")
+        # v0.5 composer: + menu, attachments (images, files, a folder), vision fallback, voice, modes.
+        pg.evaluate("newChat()"); pg.wait_for_timeout(300)
+        pg.evaluate("openMenu('plus', plusItems(), 'Attach')"); pg.wait_for_timeout(250)
+        pg.screenshot(path=str(out / f"composer-plus-{theme}.png"))
+        pg.evaluate("""closeMenu(); addAttach(Object.values(window.__att));
+          document.querySelector('#input').value = 'Why does the hero break on phones? The brief and the sections are attached.'; grow();""")
+        pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"composer-attachments-{theme}.png"))
+        n = pg.evaluate("document.querySelectorAll('#attach .achip').length")
+        if n != 5:
+            errs.append(f"expected 5 attachment chips, got {n}")
+        pg.evaluate("document.querySelector('#attach .achip .ax').click()"); pg.wait_for_timeout(100)
+        if pg.evaluate("document.querySelectorAll('#attach .achip').length") != 4:
+            errs.append("removing a chip didn't work")
+        pg.evaluate("S.vision_model = ''; drawAttach()"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"composer-novision-{theme}.png"))
+        if not pg.evaluate("document.querySelector('#visionwarn').style.display !== 'none'"):
+            errs.append("no vision warning without a vision model")
+        pg.evaluate("S.vision_model = 'Google Gemini · gemini-3.8-flash'; submit()"); pg.wait_for_timeout(200)
+        pg.evaluate("""fire('route', {route: 'Google Gemini · gemini-3.8-flash'});
+          fire('delta', 'The hero image is a fixed **1440px** wide, so phones scroll sideways. I set it to `max-width: 100%` in `sections/hero.liquid`.');
+          fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 5.2});""")
+        pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"chat-attachments-{theme}.png"))
+        if pg.evaluate("document.querySelectorAll('.msg.user .achip').length") != 4:
+            errs.append("sent message lost its attachment chips")
+        # Voice: the one-time setup card, its progress, then recording.
+        pg.evaluate("newChat()"); pg.wait_for_timeout(300)
+        pg.evaluate("micClick()"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"voice-setup-{theme}.png"))
+        pg.evaluate("document.querySelector('#vcard .yes').click()"); pg.wait_for_timeout(100)
+        pg.evaluate("fire('stt_progress', {stage: 'model', pct: 46, text: 'Downloading the Whisper base model… 65 of 142 MB'})"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"voice-progress-{theme}.png"))
+        pg.evaluate("closeVoice(); recUI(true)"); pg.wait_for_timeout(1200)
+        pg.screenshot(path=str(out / f"voice-recording-{theme}.png"))
+        pg.evaluate("recUI(false); insertText('Make the hero image smaller on phones and keep the headline on one line.')"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"voice-text-{theme}.png"))
+        # Modes: Plan (Ctrl+Tab) and Autopilot (Shift+Tab), from the keyboard.
+        pg.evaluate("document.querySelector('#input').value=''; grow()")
+        pg.focus("#input"); pg.keyboard.press("Control+Tab"); pg.wait_for_timeout(300)
+        if pg.evaluate("MODES.work_mode") != "plan":
+            errs.append("Ctrl+Tab didn't switch to Plan")
+        pg.screenshot(path=str(out / f"mode-plan-{theme}.png"))
+        pg.keyboard.press("Control+Tab"); pg.keyboard.press("Shift+Tab"); pg.wait_for_timeout(300)
+        if pg.evaluate("MODES.work_mode + '/' + MODES.approval") != "build/autopilot":
+            errs.append("Ctrl+Tab / Shift+Tab didn't give Build + Autopilot")
+        pg.screenshot(path=str(out / f"mode-autopilot-{theme}.png"))
+        pg.evaluate("""sendText('Upgrade the theme to the new Shopify CLI and make sure it still builds', []);
+          fire('autopilot', {on: true, steps: 150, minutes: 45});
+          fire('tool', {id: 'a1', name: 'run_shell', args: '{"command":"pnpm add -D @shopify/cli@latest"}'});
+          fire('tool_done', {id: 'a1', result: 'exit 0'});
+          fire('delta', 'The new CLI wants Node 20. Should I upgrade Node, or pin the old CLI?');
+          fire('autoreply', 'The user is away');
+          fire('delta', 'Pinned **@shopify/cli 3.66**, which still runs on your Node 18, and the theme builds. Assumption: upgrading Node is a bigger change than you asked for.');
+          fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 48.0});""")
+        pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"autopilot-reply-{theme}.png"))
+        if not pg.evaluate("document.querySelector('.apnote')"):
+            errs.append("no Autopilot note in the chat")
+        pg.evaluate("setApproval('auto'); setWorkMode('build')"); pg.wait_for_timeout(200)
         # v0.4: the orb (quick ask), at its real 400x560 size.
         pg.set_viewport_size({"width": 400, "height": 560})
         pg.evaluate("newChat().then(() => fire('orb', true))"); pg.wait_for_timeout(900)

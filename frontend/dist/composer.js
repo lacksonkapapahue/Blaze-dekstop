@@ -1,0 +1,350 @@
+// Blaze composer (v0.5): + menu attachments (images, files, folders), drag-and-drop and
+// paste, the mic (local Whisper), and the two modes: Work (Plan / Build, Ctrl+Tab) and
+// Approval (Auto / Autopilot, Shift+Tab). Loaded before app.js; uses its helpers at call time.
+
+let ATT = [];            // attachments from +, drop and paste: {kind, path, name, size, count, thumb, note}
+let MODES = { work_mode: "build", approval: "auto" };
+let STT = null;          // last STTStatus
+let rec = null;          // the recording in progress
+
+const CIC = {
+  image: '<rect x="2" y="2.5" width="12" height="11"/><path d="m2 11 3.5-3.5 3 3 2-2 3.5 3.5"/><rect x="9.5" y="4.5" width="2" height="2"/>',
+  file: '<path d="M3.5 1.5h6l3 3v10h-9z"/><path d="M9.5 1.5v3h3"/>',
+  folder: '<path d="M1.5 3.5h5l1.5 1.5h6.5v8h-13z"/>',
+  mic: '<rect x="6" y="1.5" width="4" height="8"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5M5.5 14.5h5"/>',
+  slash: '<path d="m10.5 2.5-5 11"/>',
+};
+const cmIcon = (n, cls = "i sm") => `<svg class="${cls}" viewBox="0 0 16 16">${CIC[n] || ""}</svg>`;
+const fmtSize = n => !n ? "" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
+
+// ---------- markup ----------
+function composerBar() {
+  return `<button id="plus" class="plusbtn" title="Attach images, files or a folder · commands">${icon("plus", "i sm")}</button>
+    <button id="mic" class="plusbtn mic" title="Voice input · Ctrl+Shift+M (local Whisper)">${cmIcon("mic")}</button>
+    <span id="recline" class="recline" style="display:none"><span class="rdot"></span><span class="rtime label ink">0:00</span><button class="btn ghost xs rcancel" title="Discard">${icon("x", "i sm")}</button></span>
+    <span class="grow"></span>
+    <div id="modes" class="modes">
+      <div class="mseg" id="mWork" title="Work mode · Ctrl+Tab"><button data-m="plan">Plan</button><button data-m="build">Build</button></div>
+      <div class="mseg" id="mAppr" title="Approval mode · Shift+Tab"><button data-a="auto">Auto</button><button data-a="autopilot">Autopilot</button></div>
+    </div>`;
+}
+
+function initComposer(p) {
+  MODES = (S && S.modes) || MODES;
+  $$("#mWork button", p).forEach(b => b.onclick = () => setWorkMode(b.dataset.m));
+  $$("#mAppr button", p).forEach(b => b.onclick = () => setApproval(b.dataset.a));
+  $("#mic", p).onclick = () => micClick();
+  $(".rcancel", p).onclick = () => stopRec(true);
+  const input = $("#input", p);
+  input.addEventListener("paste", onPaste);
+  // Files dropped anywhere on the window attach to the message (Wails resolves real paths).
+  if (window.runtime && typeof window.runtime.OnFileDrop === "function") {
+    try { window.runtime.OnFileDrop((x, y, paths) => attachPaths(paths), false); } catch (e) {}
+  }
+  let depth = 0;
+  const isFiles = e => e.dataTransfer && [...(e.dataTransfer.types || [])].includes("Files");
+  addEventListener("dragenter", e => { if (isFiles(e)) { depth++; document.body.classList.add("dropping"); } });
+  addEventListener("dragleave", e => { if (isFiles(e) && --depth <= 0) { depth = 0; document.body.classList.remove("dropping"); } });
+  addEventListener("drop", () => { depth = 0; document.body.classList.remove("dropping"); });
+  addEventListener("dragover", e => { if (isFiles(e)) e.preventDefault(); });
+  drawModes(p);
+}
+
+// ---------- modes ----------
+function drawModes(p = pane) {
+  if (!p) return;
+  $$("#mWork button", p).forEach(b => b.classList.toggle("on", b.dataset.m === MODES.work_mode));
+  $$("#mAppr button", p).forEach(b => b.classList.toggle("on", b.dataset.a === MODES.approval));
+  $("#mAppr", p).classList.toggle("pilot", MODES.approval === "autopilot");
+  const ib = $(".inbox", p);
+  if (ib) { ib.classList.toggle("plan", MODES.work_mode === "plan"); ib.classList.toggle("pilot", MODES.approval === "autopilot"); }
+  const i = $("#input", p);
+  if (i) i.placeholder = MODES.work_mode === "plan" ? "Plan mode: Blaze reads and scouts, then proposes a plan. It changes nothing." : (MODES.approval === "autopilot" ? "Autopilot: Blaze works until it's done and decides on its own." : "Ask Blaze to do something…");
+  if (S) S.modes = MODES;
+  hintText(p);
+}
+function applyModes(m) { if (m && m.work_mode) { MODES = { work_mode: m.work_mode, approval: m.approval }; drawModes(); } }
+async function setWorkMode(m) { MODES.work_mode = m === "plan" ? "plan" : "build"; drawModes(); try { applyModes(await API().SetWorkMode(MODES.work_mode)); } catch (e) {} flashMode(MODES.work_mode); }
+async function setApproval(m) { MODES.approval = m === "autopilot" ? "autopilot" : "auto"; drawModes(); try { applyModes(await API().SetApprovalMode(MODES.approval)); } catch (e) {} flashMode(MODES.approval); }
+function flashMode(m) {
+  const el = $(`#modes [data-m="${m}"], #modes [data-a="${m}"]`, pane); if (!el) return;
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+}
+
+// Ctrl+Tab cycles Plan/Build, Shift+Tab toggles Auto/Autopilot (Alt+Tab belongs to the OS).
+function modeKeys(e) {
+  if (view !== "work" && view !== "design") return false;
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.key || "").toLowerCase() === "m") { e.preventDefault(); micClick(); return true; }
+  if (e.key !== "Tab" || e.altKey || e.metaKey) return false;
+  if (e.ctrlKey && !e.shiftKey) { e.preventDefault(); setWorkMode(MODES.work_mode === "plan" ? "build" : "plan"); return true; }
+  if (e.shiftKey && !e.ctrlKey) {
+    if (document.activeElement && document.activeElement !== document.body && !document.activeElement.closest("#composer")) return false;
+    e.preventDefault(); setApproval(MODES.approval === "autopilot" ? "auto" : "autopilot"); return true;
+  }
+  return false;
+}
+addEventListener("keydown", e => { if (!e.defaultPrevented) modeKeys(e); }, true);
+
+function hintText(p = pane) {
+  const el = p && $("#hint", p); if (!el) return;
+  if (busy) { el.textContent = (MODES.approval === "autopilot" ? "Autopilot is working…" : "Working…") + " keep typing to queue a message · Stop ends this answer"; return; }
+  el.innerHTML = `/ commands · @ files · + attach · Shift+Enter new line<span class="hk"><span class="kbd">Ctrl Tab</span> ${MODES.work_mode === "plan" ? "Plan" : "Build"} · <span class="kbd">Shift Tab</span> ${MODES.approval === "autopilot" ? "Autopilot" : "Auto"}</span>`;
+}
+
+// ---------- attachments ----------
+function addAttach(list) {
+  let skipped = 0;
+  (list || []).forEach(a => {
+    if (!a || !a.path) { if (a && a.note) toastLine(a.note); return; }
+    if (ATT.some(x => x.path === a.path)) return;
+    if (ATT.length >= 12) { skipped++; return; }
+    ATT.push(a);
+  });
+  if (skipped) toastLine(`Up to 12 attachments per message.`);
+  drawAttach();
+  const i = $("#input"); if (i) i.focus();
+}
+async function attachPaths(paths) { if (paths && paths.length) addAttach(await API().AttachPaths(paths)); }
+async function pick(kind) { addAttach(await API().AttachPick(kind)); }
+
+async function onPaste(e) {
+  const items = [...((e.clipboardData && e.clipboardData.items) || [])].filter(it => it.kind === "file" && /^image\//.test(it.type));
+  if (!items.length) return;
+  e.preventDefault();
+  for (const it of items) {
+    const f = it.getAsFile(); if (!f) continue;
+    if (f.size > 12 * 1048576) { toastLine("That image is over 12 MB."); continue; }
+    const url = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.onerror = () => r(""); fr.readAsDataURL(f); });
+    if (url) addAttach([await API().AttachPasted(f.name || "image.png", url)]);
+  }
+}
+
+function attachChip(a, onRemove) {
+  const meta = a.kind === "folder" ? `${a.count || 0} item${a.count === 1 ? "" : "s"}` : fmtSize(a.size);
+  const vis = a.thumb ? `<img src="${a.thumb}" alt="">` : `<span class="ak">${cmIcon(a.kind === "image" ? "image" : a.kind === "folder" ? "folder" : "file")}</span>`;
+  const c = h("span", "achip k-" + a.kind, `${vis}<span class="an" title="${esc(a.path)}">${esc(a.name || base(a.path))}</span>${meta ? `<span class="am">${esc(meta)}</span>` : ""}`);
+  if (onRemove) { const x = h("button", "ax", icon("x", "i sm")); x.title = "Remove"; x.onclick = onRemove; c.append(x); }
+  return c;
+}
+
+function drawAttach() {
+  const a = $("#attach", pane); if (!a) return;
+  a.innerHTML = "";
+  attachments.forEach((f, i) => { const c = h("span", "fchip", `@ ${esc(f)} <button title="Remove">×</button>`); $("button", c).onclick = () => { attachments.splice(i, 1); drawAttach(); }; a.append(c); });
+  ATT.forEach((x, i) => a.append(attachChip(x, () => { ATT.splice(i, 1); drawAttach(); })));
+  if (typeof sendLabel === "function") sendLabel();
+  const warn = $("#visionwarn", pane);
+  const imgs = ATT.some(x => x.kind === "image");
+  if (warn) {
+    warn.style.display = imgs && S && !S.vision_model ? "" : "none";
+    warn.innerHTML = `${cmIcon("image")}<span>None of your models can see images, so Blaze sends them as file paths. Add a free Gemini key to let it see them.</span><a class="go">Add a model</a>`;
+    const g = $(".go", warn); if (g) g.onclick = () => show("settings", "providers");
+  }
+}
+
+// Backspace on an empty input removes the last chip.
+function popAttach() {
+  if (ATT.length) { ATT.pop(); drawAttach(); return true; }
+  if (attachments.length) { attachments.pop(); drawAttach(); return true; }
+  return false;
+}
+
+function takeAttach() { const a = ATT.slice(); ATT = []; return a; }
+
+// The + menu: attachments first, then the command menu.
+function plusItems() {
+  return [
+    { name: "Image…", icon: "image", desc: "png, jpg, gif, webp · or paste one", run: () => pick("image") },
+    { name: "File…", icon: "file", desc: "any file; text goes in the message", run: () => pick("file") },
+    { name: "Folder…", icon: "folder", desc: "Blaze gets its file tree", run: () => pick("folder") },
+    { name: "Commands", icon: "slash", desc: "type / in the box", sub: async () => COMMANDS.map(c => ({ ...c, slash: true })) },
+  ];
+}
+
+// User bubble attachments (sent and saved chats).
+function attachRow(list) {
+  if (!list || !list.length) return null;
+  const r = h("div", "chips achips");
+  list.forEach(a => r.append(attachChip(a)));
+  return r;
+}
+
+let toastT = 0;
+function toastLine(t) {
+  const el = pane && $("#hint", pane); if (!el) return;
+  el.textContent = t; clearTimeout(toastT); toastT = setTimeout(hintText, 4000);
+}
+
+// ---------- voice ----------
+async function micClick() {
+  if (rec) { stopRec(false); return; }
+  try { STT = await API().STTStatus(); } catch (e) { STT = null; }
+  if (!STT || typeof STT !== "object") { voiceCard({ error: "Voice input isn't available in this build." }); return; }
+  if (!STT.ready) { voiceCard(STT); return; }
+  startRec();
+}
+
+// The one-time setup card: what it downloads, with consent and progress.
+function voiceCard(st) {
+  closeVoice();
+  const box = h("div", "vcard");
+  box.id = "vcard";
+  if (st.error) {
+    box.innerHTML = `<div class="vh"><span class="label acc">Voice input</span></div><div class="vt">${esc(st.error)}</div><div class="actions"><button class="btn line sm no">OK</button></div>`;
+  } else if (st.engine_how === "manual" && !st.engine) {
+    box.innerHTML = `<div class="vh"><span class="label acc">Voice input</span></div><div class="vt">${esc(st.note || "Voice input needs whisper.cpp.")}</div><div class="actions"><button class="btn line sm no">OK</button></div>`;
+  } else {
+    const m = (st.models || []).find(x => x.name === st.model) || { name: st.model, mb: st.model_mb };
+    const parts = [];
+    if (!st.engine && st.engine_how === "download") parts.push(`whisper.cpp (about ${st.engine_mb || 10} MB)`);
+    if (!st.engine && st.engine_how === "brew") parts.push("whisper.cpp with Homebrew");
+    if (!st.have_model) parts.push(`the Whisper <b>${esc(m.name)}</b> model (${m.mb} MB)`);
+    box.innerHTML = `<div class="vh"><span class="label acc">Set up voice input</span><span class="label weak">Free · runs on this PC</span></div>
+      <div class="vt">Blaze turns speech into text with Whisper, on your own computer. Nothing you say leaves it. It needs a one-time download of ${parts.join(" and ")}.</div>
+      <div class="vmodels seg">${(st.models || []).map(x => `<button data-m="${x.name}" class="${x.name === st.model ? "on" : ""}" title="${esc(x.note)}">${esc(x.name)} · ${x.mb} MB</button>`).join("")}</div>
+      <div class="vprog" style="display:none"><div class="bar"><i></i></div><div class="label weak vpt"></div></div>
+      <div class="actions"><button class="btn accent sm yes">Download and set up</button><button class="btn line sm no">Not now</button></div>`;
+    $$(".vmodels button", box).forEach(b => b.onclick = async () => { const n = await API().SetSTT(b.dataset.m, ""); STT = n; voiceCard(n); });
+    $(".yes", box).onclick = async () => {
+      $$("button", box).forEach(b => b.disabled = true);
+      $(".vprog", box).style.display = ""; $(".vpt", box).textContent = "Starting…";
+      const r = await API().STTSetup();
+      if (r === "busy") $(".vpt", box).textContent = "Already downloading…";
+    };
+  }
+  const no = $(".no", box); if (no) no.onclick = () => closeVoice();
+  $(".cwrap", pane).prepend(box);
+}
+function closeVoice() { const v = $("#vcard"); if (v) v.remove(); }
+
+on("stt_progress", p => {
+  const box = $("#vcard"); if (!box) return;
+  const pr = $(".vprog", box); if (pr) pr.style.display = "";
+  const bar = $(".bar i", box); if (bar) { bar.style.width = (p.pct >= 0 ? p.pct : 100) + "%"; bar.parentElement.classList.toggle("ind", p.pct < 0); }
+  const t = $(".vpt", box); if (t) t.textContent = p.text || "";
+});
+on("stt_ready", st => { STT = st; closeVoice(); toastLine("Voice input is ready. Click the mic and speak."); startRec(); });
+on("stt_error", msg => {
+  const box = $("#vcard"); if (!box) { toastLine(msg); return; }
+  $(".vpt", box).textContent = msg; $(".bar", box).classList.add("bad");
+  $$("button", box).forEach(b => b.disabled = false);
+  $(".yes", box).textContent = "Try again";
+});
+on("rec_limit", () => { if (rec) stopRec(false); });
+
+async function startRec() {
+  if (rec) return;
+  // 1) The window's own microphone (WebView2 on Windows, WKWebView on macOS).
+  const md = navigator.mediaDevices;
+  if (md && md.getUserMedia) {
+    try {
+      const stream = await md.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AC();
+      const src = ctx.createMediaStreamSource(stream);
+      const node = ctx.createScriptProcessor(4096, 1, 1);
+      const chunks = [];
+      node.onaudioprocess = ev => chunks.push(new Float32Array(ev.inputBuffer.getChannelData(0)));
+      src.connect(node); node.connect(ctx.destination);
+      rec = { kind: "web", stream, ctx, node, src, chunks, rate: ctx.sampleRate, t0: Date.now() };
+      recUI(true); return;
+    } catch (e) {
+      if (e && e.name === "NotAllowedError" && !(STT && STT.native)) { voiceCard({ error: "Blaze isn't allowed to use the microphone. Allow it in your system's privacy settings, then try again." }); return; }
+    }
+  }
+  // 2) A recorder program (WebKitGTK on Linux has no WebView microphone).
+  if (STT && STT.native) {
+    const err = await API().RecStart();
+    if (!err) { rec = { kind: "native", t0: Date.now() }; recUI(true); return; }
+    voiceCard({ error: err }); return;
+  }
+  voiceCard({ error: "No microphone is available to Blaze here. Check that one is connected and allowed. On Linux, installing pipewire (pw-record), pulseaudio-utils or alsa-utils also works." });
+}
+
+async function stopRec(cancel) {
+  const r = rec; if (!r) return;
+  rec = null; recUI(false);
+  let t = null;
+  if (r.kind === "web") {
+    try { r.node.disconnect(); r.src.disconnect(); r.stream.getTracks().forEach(x => x.stop()); r.ctx.close(); } catch (e) {}
+    if (cancel) return;
+    const secs = (Date.now() - r.t0) / 1000;
+    if (secs < 0.4) { toastLine("Hold on a little longer: click the mic, speak, then click again."); return; }
+    micBusy(true);
+    try { t = await API().Transcribe(wavB64(r.chunks, r.rate)); } catch (e) { t = { error: String(e) }; }
+  } else {
+    micBusy(!cancel);
+    try { t = await API().RecStop(!!cancel); } catch (e) { t = { error: String(e) }; }
+    if (cancel) { micBusy(false); return; }
+  }
+  micBusy(false);
+  if (!t) return;
+  if (t.error) { toastLine(t.error); return; }
+  if (!t.text) { toastLine("Didn't catch any words. Try again a little closer to the mic."); return; }
+  insertText(t.text);
+}
+
+function insertText(s) {
+  const i = $("#input"); if (!i) return;
+  const a = i.selectionStart ?? i.value.length, b = i.selectionEnd ?? i.value.length;
+  const pre = i.value.slice(0, a), post = i.value.slice(b);
+  const sep = pre && !/\s$/.test(pre) ? " " : "";
+  i.value = pre + sep + s + post;
+  const at = (pre + sep + s).length; i.focus(); i.setSelectionRange(at, at);
+  grow();
+}
+
+let recTimer = 0;
+function recUI(onOff) {
+  const m = $("#mic", pane), line = $("#recline", pane); if (!m) return;
+  m.classList.toggle("rec", onOff);
+  m.title = onOff ? "Stop and transcribe" : "Voice input · Ctrl+Shift+M (local Whisper)";
+  line.style.display = onOff ? "" : "none";
+  clearInterval(recTimer);
+  if (onOff) {
+    const t0 = Date.now(), tl = $(".rtime", line);
+    const tick = () => { const s = Math.floor((Date.now() - t0) / 1000); tl.textContent = `${Math.floor(s / 60)}:${pad(s % 60)}`; if (s >= 180 && rec) stopRec(false); };
+    tick(); recTimer = setInterval(tick, 1000);
+  }
+}
+function micBusy(b) { const m = $("#mic", pane); if (m) { m.classList.toggle("busy", b); m.disabled = b; } if (b) toastLine("Transcribing on this PC…"); else hintText(); }
+
+// Mono float chunks at `rate` → 16 kHz 16-bit WAV, base64.
+function wavB64(chunks, rate) {
+  let n = 0; chunks.forEach(c => n += c.length);
+  const all = new Float32Array(n); let o = 0; chunks.forEach(c => { all.set(c, o); o += c.length; });
+  const ratio = rate / 16000, len = Math.floor(all.length / ratio);
+  const buf = new ArrayBuffer(44 + len * 2), v = new DataView(buf);
+  const str = (p, s) => { for (let i = 0; i < s.length; i++) v.setUint8(p + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + len * 2, true); str(8, "WAVE"); str(12, "fmt "); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 16000, true); v.setUint32(28, 32000, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, "data"); v.setUint32(40, len * 2, true);
+  for (let i = 0; i < len; i++) {
+    const a = Math.floor(i * ratio), b = Math.min(all.length, Math.floor((i + 1) * ratio));
+    let s = 0; for (let j = a; j < b; j++) s += all[j];
+    const x = Math.max(-1, Math.min(1, s / Math.max(1, b - a)));
+    v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+  }
+  const bytes = new Uint8Array(buf); let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+// ---------- events from Go ----------
+on("modes", m => applyModes(m));
+on("autoreply", () => {
+  // Autopilot answered the agent's question: close this answer, note it, and keep streaming.
+  if (typeof current === "undefined" || !current) return;
+  thinking(false);
+  renderAnswer(current, true);
+  const col = $("#log .col", pane);
+  col.append(apNote());
+  current = blazeMsg(); col.append(current.el);
+  thinking(true, "Deciding and continuing");
+  scrollDown();
+});
+function apNote() { return h("div", "apnote", `<span class="label acc">Autopilot</span><span>You're away, so Blaze decides by best practice and keeps going.</span>`); }
+on("ap_blocked", b => {
+  if (!current) return;
+  current.el.append(h("div", "apnote bad", `<span class="label ink">Blocked</span><span>${esc(b.title)} <span class="mono">${esc((b.detail || "").slice(0, 120))}</span>: ${esc(b.why)}.</span>`));
+});
