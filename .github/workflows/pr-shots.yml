@@ -20,6 +20,8 @@ jobs:
         run: |
           mkdir -p /tmp/jd && npm i -s --prefix /tmp/jd jsdom@30.1.2
           NODE_PATH=/tmp/jd/node_modules node ci/picker.test.js
+      - name: Test the Specialists strip in jsdom (a finished round tucks away)
+        run: NODE_PATH=/tmp/jd/node_modules node ci/specs.test.js
       - name: Screenshot the UI
         run: |
           pip install -q playwright && python -m playwright install --with-deps chromium
