@@ -105,6 +105,9 @@ func ResultMessage(v View) string {
 	if v.Kind == Specialist {
 		b.WriteString("\nThis was your specialist " + strconv.Quote(v.Handle) + " (" + v.Mode + ").")
 		switch {
+		case IsDirection(v.Handle) && v.Review == "pending":
+			b.WriteString(" It is one of the user's Directions (v0.8.0): the user compares the branches side by side in the Design tab and mixes them there. Do NOT apply or discard it; don't review it either. When the last direction is in, tell the user in one short line that the directions are ready to compare.")
+			return b.String()
 		case v.Review == "pending":
 			fmt.Fprintf(&b, " It changed %d file(s) in its isolated copy: %s. Review them (check_specialist with diff: true), then apply_specialist apply or discard. Nothing has reached the user's folder yet.", len(v.Changes), changeList(v.Changes, 15))
 		case v.Review == "none":
@@ -114,3 +117,10 @@ func ResultMessage(v View) string {
 	}
 	return b.String()
 }
+
+// DirectionPrefix starts the handle of a Directions branch (a specialist the user
+// compares and mixes in the Design tab instead of the lead reviewing it).
+const DirectionPrefix = "direction-"
+
+// IsDirection reports whether a handle is a Directions branch.
+func IsDirection(handle string) bool { return strings.HasPrefix(handle, DirectionPrefix) }

@@ -209,6 +209,12 @@ func (m *Manager) prepare(a *Agent) error {
 	if err != nil {
 		return fmt.Errorf("couldn't make an isolated copy of %s: %v", a.Workdir, err)
 	}
+	if IsDirection(a.Handle) {
+		// A Directions branch redesigns what the user sees now, committed or not.
+		if err := iso.CarryDirty(); err != nil {
+			m.Status(a.Handle, "Couldn't copy uncommitted changes: "+err.Error())
+		}
+	}
 	m.mu.Lock()
 	a.Iso = iso
 	a.Folder = iso.Workdir()
