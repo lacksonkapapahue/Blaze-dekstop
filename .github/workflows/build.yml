@@ -42,7 +42,7 @@ jobs:
         shell: bash
         run: |
           exec > >(tee -a build.log) 2>&1
-          go test ./internal/notify/ ./internal/screen/
+          go test ./...
           choco install nsis -y --no-progress
           export PATH="$PATH:/c/Program Files (x86)/NSIS"
           go install $WAILS
@@ -73,7 +73,7 @@ jobs:
         shell: bash
         run: |
           exec > >(tee -a build.log) 2>&1
-          go test ./internal/notify/ ./internal/screen/
+          go test ./...
           go install $WAILS
           V=$(cat VERSION)
           wails build -platform darwin/universal -ldflags "-X main.version=v$V"
