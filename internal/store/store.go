@@ -63,7 +63,7 @@ func Open(path string) (*DB, error) {
 	// instead of failing; _txlock=immediate makes every BEGIN a BEGIN IMMEDIATE, so a
 	// transaction takes the write lock up front and never has to upgrade a read lock
 	// mid-way (the SQLITE_BUSY that broke a first run when both apps created blaze.db).
-	dsn := "file:" + filepath.ToSlash(path) + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)&_txlock=immediate"
+	dsn := "file:" + filepath.ToSlash(path) + "?_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)&_txlock=immediate"
 	s, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -132,6 +132,11 @@ func (d *DB) migrate() error {
 	}
 	if v > len(migrations) {
 		return fmt.Errorf("%w (schema v%d, this build knows v%d)", ErrNewerSchema, v, len(migrations))
+	}
+	// WAL lets Desktop read while the CLI writes. Switched on only after the version
+	// check, so a newer file we refuse is left byte-for-byte as it was.
+	if _, err := d.sql.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+		return err
 	}
 	for v < len(migrations) {
 		// BEGIN IMMEDIATE (via _txlock) holds the write lock; re-read the version

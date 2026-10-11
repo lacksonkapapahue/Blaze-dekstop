@@ -59,6 +59,7 @@ type MemGraph struct {
 	Sorting  bool      `json:"sorting"`
 	Unsorted int       `json:"unsorted"`
 	CanSort  bool      `json:"can_sort"`
+	Notice   string    `json:"notice,omitempty"` // "please update Blaze" when blaze.db is newer than this build
 }
 
 var memSort struct {
@@ -205,7 +206,7 @@ func shortLabel(s string) string {
 // MemoryGraph returns every memory, skill and project with inferred links.
 func (a *App) MemoryGraph() MemGraph {
 	facts := tools.Facts()
-	g := MemGraph{AISort: a.memAISort(), CanSort: len(llm.Targets(a.cfg, false)) > 0}
+	g := MemGraph{AISort: a.memAISort(), CanSort: len(llm.Targets(a.cfg, false)) > 0, Notice: tools.UpdateNotice()}
 
 	projects := loadProjects()
 	projName := map[string]string{}
