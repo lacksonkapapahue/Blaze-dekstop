@@ -39,6 +39,9 @@
     const d = describe(ev);
     $$(".ltoast").forEach(t => t.remove());
     const t = h("div", "ltoast " + d.kind, `<span class="sq"></span><span class="label">${esc(d.word)}</span><span class="lt">${esc(d.text)}</span>`);
+    // Sit just above the composer box (it grows with the draft), never on top of it.
+    const box = document.querySelector("#composer .inbox");
+    if (box && box.offsetParent) { const r = box.getBoundingClientRect(); if (r.top > 0 && r.height) t.style.bottom = Math.max(16, Math.round(innerHeight - r.top + 12)) + "px"; }
     document.body.append(t);
     requestAnimationFrame(() => t.classList.add("in"));
     setTimeout(() => { t.classList.remove("in"); setTimeout(() => t.remove(), 250); }, 3200);
