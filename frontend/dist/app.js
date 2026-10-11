@@ -835,6 +835,7 @@ on("design", d => {
   if (mode === "always") { show("design"); return; }
   $("#designDot").className = "dotnew";
   if (mode === "never") return;
+  if (!d || !d.target) return;
   const what = d.target.kind === "url" ? d.target.url : d.target.path;
   const card = h("div", "card confirm", `<div class="title"><span class="label acc">Design ready</span></div><div>Preview <span class="mono">${esc(what || "the design")}</span> live, with versions and point-to-edit.</div>
     <div class="actions"><button class="btn accent sm yes">Open Design</button><button class="btn line sm no">Not now</button><button class="btn ghost sm al">Always open</button></div>`);
