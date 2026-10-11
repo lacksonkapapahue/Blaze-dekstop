@@ -217,11 +217,11 @@ with sync_playwright() as p:
         pg.evaluate("document.querySelector('#attach .achip .ax').click()"); pg.wait_for_timeout(100)
         if pg.evaluate("document.querySelectorAll('#attach .achip').length") != 4:
             errs.append("removing a chip didn't work")
-        pg.evaluate("S.vision = ''; drawAttach()"); pg.wait_for_timeout(200)
+        pg.evaluate("S.vision_model = ''; drawAttach()"); pg.wait_for_timeout(200)
         pg.screenshot(path=str(out / f"composer-novision-{theme}.png"))
         if not pg.evaluate("document.querySelector('#visionwarn').style.display !== 'none'"):
             errs.append("no vision warning without a vision model")
-        pg.evaluate("S.vision = 'Google Gemini · gemini-3.8-flash'; submit()"); pg.wait_for_timeout(200)
+        pg.evaluate("S.vision_model = 'Google Gemini · gemini-3.8-flash'; submit()"); pg.wait_for_timeout(200)
         pg.evaluate("""fire('route', {route: 'Google Gemini · gemini-3.8-flash'});
           fire('delta', 'The hero image is a fixed **1440px** wide, so phones scroll sideways. I set it to `max-width: 100%` in `sections/hero.liquid`.');
           fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 5.2});""")
