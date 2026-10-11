@@ -443,15 +443,15 @@ func asksUser(text string) bool {
 }
 
 // autoReply answers the agent's question for the away user (at most 8 times per run).
-func (a *App) autoReply(r *autopilotRun, text string) bool {
+func (a *App) autoReply(s *session, r *autopilotRun, text string) bool {
 	if !r.on || r.replies >= 8 || a.approval() != "autopilot" || !asksUser(text) {
 		return false
 	}
 	r.replies++
 	a.mu.Lock()
-	a.history = append(a.history, llm.Message{Role: "user", Content: autoPrefix + AutoReply})
+	s.hist = append(s.hist, llm.Message{Role: "user", Content: autoPrefix + AutoReply})
 	a.mu.Unlock()
-	emit(a.ctx, "autoreply", AutoReply)
+	a.temit(s, "autoreply", AutoReply)
 	return true
 }
 
