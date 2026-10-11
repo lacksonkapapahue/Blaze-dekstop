@@ -940,7 +940,7 @@ const COMMANDS = [
   { name: "retry", desc: "Ask the last message again", run: () => retry() },
   { name: "stop", desc: "Stop the current task", run: () => API().Stop() },
   { name: "clear", desc: "Clear this chat and start fresh", run: () => newChat() },
-  { name: "skills", desc: "Use one of your skills", sub: async () => { const s = (await API().State()).skills || []; return s.length ? s.map(x => ({ name: x.split(":")[0], desc: x.split(":").slice(1).join(":").trim(), run: () => { const i = $("#input"); i.value = `Use the ${x.split(":")[0]} skill: `; i.focus(); } })) : [{ name: "No skills yet", desc: "Ask Blaze to save one after a task", run: () => {} }]; } },
+  { name: "skills", desc: "Use one of your skills", sub: skillMenuItems },
   { name: "plan", desc: "Plan mode: read and scout only, then a plan (Ctrl+Tab)", run: () => setWorkMode("plan") },
   { name: "build", desc: "Build mode: every tool (Ctrl+Tab)", run: () => setWorkMode("build") },
   { name: "autopilot", desc: "Work until done; decide instead of asking (Shift+Tab)", run: () => setApproval("autopilot") },
@@ -957,24 +957,53 @@ const COMMANDS = [
   { name: "update", desc: "Check for a new version of Blaze", run: () => show("settings", "updates") },
 ];
 
+// /skills: the skills Blaze can use, with their tags (Settings › Skills) for the filter.
+async function skillMenuItems() {
+  const s = (await API().State()).skills || [];
+  if (!s.length) return [{ name: "No skills yet", desc: "Ask Blaze to save one after a task", run: () => {} }];
+  let tags = {};
+  try { (await API().SkillList() || []).forEach(v => { tags[v.name] = v.tags || []; }); } catch (e) { tags = {}; }
+  return s.map(x => { const n = x.split(":")[0]; return { name: n, desc: x.split(":").slice(1).join(":").trim(), tags: tags[n] || [], run: () => { const i = $("#input"); i.value = `Use the ${n} skill: `; i.focus(); } }; });
+}
+
+// Every menu narrows as you type with the same ranker (filter.js): the "/" menu, the pickers
+// it opens (skills, model, project, theme…) and @files. A picker filters on the text typed
+// after it opened (menu.base); "/skills sli" opens the skills picker already narrowed.
 let menu = { items: [], idx: 0, kind: "" };
 const menuOpen = () => $("#menu") && $("#menu").style.display !== "none";
-function matchCommands(q) { q = q.toLowerCase(); return COMMANDS.filter(c => c.name.startsWith(q)).concat(COMMANDS.filter(c => !c.name.startsWith(q) && (c.name.includes(q) || c.desc.toLowerCase().includes(q)))); }
-function closeMenu() { const m = $("#menu"); if (m) m.style.display = "none"; menu.kind = ""; }
+const matchCommands = q => PickFilter.rank(COMMANDS, q);
+const NOUN = { skills: "skill", model: "model", project: "project", theme: "theme", commands: "command", attach: "item" };
+function closeMenu() { const m = $("#menu"); if (m) m.style.display = "none"; menu.kind = ""; menu.all = null; menu.cmd = ""; }
 
-async function openMenu(kind, items, title) {
+async function openMenu(kind, items, title, opts = {}) {
   if (kind === "root") items = COMMANDS.map(c => ({ ...c, slash: true }));
   if (kind === "model") { items = await modelMenuItems(); title = "Model"; }
-  menu = { items: items || [], idx: 0, kind, title };
+  const pickers = kind === "sub" || kind === "model" || kind === "root";
+  const input = $("#input");
+  menu = { items: items || [], all: pickers ? (items || []) : null, idx: 0, kind, title, q: "",
+    base: opts.base != null ? opts.base : (input ? input.value : ""), cmd: opts.cmd || "" };
+  if (pickers && opts.q) filterMenu(opts.q); else drawMenu();
+}
+
+// Narrow an open picker to q; the first match is selected.
+function filterMenu(q) {
+  if (!menu.all) return;
+  menu.q = q || "";
+  menu.items = menu.q.trim() ? PickFilter.rank(menu.all, menu.q) : menu.all.map(it => ({ ...it, _pos: null, _dpos: null }));
+  menu.idx = 0;
   drawMenu();
 }
 
 function drawMenu() {
   const m = $("#menu"); if (!m) return;
-  if (!menu.items.length) { closeMenu(); return; }
-  m.innerHTML = (menu.title ? `<div class="mhead label">${esc(menu.title)}</div>` : "") +
-    menu.items.slice(0, 60).map((it, i) => `<button class="mi ${i === menu.idx ? "on" : ""}" data-i="${i}"><span class="mn">${it.icon ? cmIcon(it.icon) : ""}${it.slash ? "/" : ""}${esc(it.name)}${it.sub ? " ›" : ""}</span><span class="md2">${esc(it.desc || "")}</span></button>`).join("") +
-    `<div class="mfoot label weak">↑↓ move · Enter pick · Esc close</div>`;
+  if (!menu.items.length && !(menu.all && menu.q.trim())) { closeMenu(); return; }
+  const filtering = menu.all && menu.q.trim();
+  const head = menu.title ? `<div class="mhead label"><span>${esc(menu.title)}</span>${filtering ? `<span class="mcount">${menu.items.length} of ${menu.all.length}</span>` : ""}</div>` : "";
+  const noun = NOUN[String(menu.title || menu.cmd).toLowerCase()] || "item";
+  m.innerHTML = head + (menu.items.length
+    ? menu.items.slice(0, 60).map((it, i) => `<button class="mi ${i === menu.idx ? "on" : ""}" data-i="${i}"><span class="mn">${it.icon ? cmIcon(it.icon) : ""}${it.slash ? "/" : ""}${PickFilter.hl(it.name, it._pos)}${it.sub ? " ›" : ""}</span><span class="md2">${PickFilter.hl(it.desc || "", it._dpos)}</span></button>`).join("") +
+      `<div class="mfoot label weak">↑↓ move · Enter pick · Esc close</div>`
+    : `<div class="mempty">No ${esc(noun)} matches '${esc(menu.q.trim())}'</div><div class="mfoot label weak">Backspace to widen · Esc close</div>`);
   m.style.display = "";
   m.querySelectorAll(".mi").forEach(b => { b.onmouseenter = () => { menu.idx = +b.dataset.i; m.querySelectorAll(".mi").forEach(x => x.classList.toggle("on", x === b)); }; b.onclick = () => pickMenu(+b.dataset.i); });
   const sel = m.querySelector(".mi.on"); if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: "nearest" });
@@ -989,8 +1018,9 @@ async function pickMenu(i) {
     drawAttach(); closeMenu(); input.focus(); return;
   }
   if (menu.kind === "cmd" || menu.kind === "root") input.value = "";
+  else if (menu.all) input.value = menu.cmd ? "" : menu.base; // drop the filter text
   if (menu.kind === "plus" && !it.sub) { closeMenu(); await it.run(); return; }
-  if (it.sub) { openMenu("sub", await it.sub(), it.name); return; }
+  if (it.sub) { openMenu("sub", await it.sub(), it.name, { base: input.value }); return; }
   closeMenu(); grow();
   await it.run();
   if ((view === "work" || view === "design") && $("#input")) $("#input").focus();
@@ -1000,16 +1030,29 @@ let filesCache = null, filesAt = 0;
 async function onType() {
   const input = $("#input"), v = input.value.slice(0, input.selectionStart);
   if (/^\/\S*$/.test(v) && input.value === v) { openMenu("cmd", matchCommands(v.slice(1)).map(c => ({ ...c, slash: true }))); return; }
+  // "/skills sli", "/model gpt", "/theme d": open that command's picker, narrowed.
+  const pre = input.value === v && v.match(/^\/(\S+) (.*)$/s);
+  const pc = pre && COMMANDS.find(c => c.name === pre[1].toLowerCase() && c.sub);
+  if (pc) {
+    if (menu.all && menu.cmd === pc.name) { filterMenu(pre[2]); return; }
+    const items = await pc.sub();
+    const now = input.value.match(/^\/(\S+) (.*)$/s);
+    if (!now || now[1].toLowerCase() !== pc.name) { onType(); return; }
+    openMenu("sub", items, pc.name, { base: `/${now[1]} `, cmd: pc.name, q: now[2] });
+    return;
+  }
+  // An open picker (skills, model…) narrows to what was typed after it opened.
+  if (menu.all && menu.kind && input.value.startsWith(menu.base) && !menu.cmd) { filterMenu(input.value.slice(menu.base.length)); return; }
   const at = v.match(/(?:^|\s)@([^\s]*)$/);
   if (at) {
     if (!filesCache || Date.now() - filesAt > 15000) { filesCache = await API().Files() || []; filesAt = Date.now(); }
-    const q = at[1].toLowerCase();
-    const hits = filesCache.filter(f => f.toLowerCase().includes(q)).sort((a, b) => (base(a).toLowerCase().startsWith(q) ? 0 : 1) - (base(b).toLowerCase().startsWith(q) ? 0 : 1)).slice(0, 30);
-    openMenu("file", hits.length ? hits.map(f => ({ name: f, desc: "" })) : [], hits.length ? "Attach a file" : "");
-    if (!hits.length) { $("#menu").innerHTML = `<div class="mhead label">No matching files in this folder</div>`; $("#menu").style.display = ""; }
+    const hits = PickFilter.rank(filesCache.map(f => ({ name: f, base: base(f) })), at[1], { desc: () => "" })
+      .map(f => ({ ...f, prio: PickFilter.matchName(f.base, at[1].toLowerCase()) })).sort((a, b) => ((a.prio ? a.prio.tier : 9) - (b.prio ? b.prio.tier : 9))).slice(0, 30);
+    openMenu("file", hits.map(f => ({ name: f.name, desc: "", _pos: f._pos })), "Attach a file");
+    if (!hits.length) { $("#menu").innerHTML = `<div class="mhead label">Attach a file</div><div class="mempty">No file matches '${esc(at[1])}' in this folder</div>`; $("#menu").style.display = ""; }
     return;
   }
-  if (menu.kind === "cmd" || menu.kind === "file") closeMenu();
+  if (menu.kind === "cmd" || menu.kind === "file" || menu.all) closeMenu();
 }
 
 function onKey(e) {
@@ -1018,6 +1061,11 @@ function onKey(e) {
     if (e.key === "ArrowDown") { e.preventDefault(); menu.idx = (menu.idx + 1) % n; drawMenu(); return; }
     if (e.key === "ArrowUp") { e.preventDefault(); menu.idx = (menu.idx - 1 + n) % n; drawMenu(); return; }
     if (e.key === "Enter" || (e.key === "Tab" && !e.shiftKey && !e.ctrlKey)) { e.preventDefault(); pickMenu(menu.idx); return; }
+  }
+  // A picker filtered down to nothing: Enter/Tab don't send the filter text as a message
+  // (except a typed "/model is slow…" line, which closes the picker and sends as usual).
+  if (menuOpen() && menu.all && !menu.items.length && (e.key === "Enter" || e.key === "Tab")) {
+    if (menu.cmd && e.key === "Enter" && !e.shiftKey) closeMenu(); else { e.preventDefault(); return; }
   }
   if (e.key === "Escape") { closeMenu(); return; }
   if (e.key === "Backspace" && !e.target.value && popAttach()) return;

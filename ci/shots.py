@@ -22,6 +22,20 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"menu-{theme}.png"))
         pg.evaluate("closeMenu(); document.querySelector('#input').value='@hero'; onType()"); pg.wait_for_timeout(300)
         pg.screenshot(path=str(out / f"files-{theme}.png"))
+        # v0.7.4: pickers narrow as you type. /skills then "sli" leaves slide-deck (Luke's bug report).
+        pg.evaluate("""async () => { closeMenu(); const st = await go.main.App.State(); const sd = window.__skills.find(s => s.name === 'slide-deck');
+          window.__sdWas = { state: sd.state, enabled: sd.enabled }; window.__sdAdded = !st.skills.some(s => s.startsWith('slide-deck:'));
+          if (window.__sdAdded) st.skills.push('slide-deck: ' + sd.description); Object.assign(sd, { state: 'bundled', enabled: true });
+          const i = document.querySelector('#input'); i.value = '/skills'; await onType(); await pickMenu(menu.idx);
+          i.value = 'sli'; await onType(); }""")
+        pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"skills-filter-{theme}.png"))
+        if theme == "dark":
+            pg.evaluate("async () => { const i = document.querySelector('#input'); i.value = 'xyz'; await onType(); }"); pg.wait_for_timeout(200)
+            pg.screenshot(path=str(out / "skills-filter-empty.png"))
+        pg.evaluate("""async () => { closeMenu(); document.querySelector('#input').value = ''; const st = await go.main.App.State();
+          Object.assign(window.__skills.find(s => s.name === 'slide-deck'), window.__sdWas);
+          if (window.__sdAdded) st.skills.splice(st.skills.findIndex(s => s.startsWith('slide-deck:')), 1); }""")
         pg.evaluate("closeMenu(); document.querySelector('#input').value=''; show('project','p1')"); pg.wait_for_timeout(400)
         pg.screenshot(path=str(out / f"project-{theme}.png"))
         pg.evaluate("show('design')"); pg.wait_for_timeout(1200)
