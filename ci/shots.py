@@ -59,6 +59,40 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"worked-{theme}.png"))
         pg.evaluate("document.querySelector('.work.done').click()"); pg.wait_for_timeout(300)
         pg.screenshot(path=str(out / f"worked-open-{theme}.png"))
+        # v0.4.6: plain-words steps. Live: only plain words (the backend's raw "Running: …" status is
+        # translated); done: one "Worked · 6 steps · 14s" line; expanded: each step's exact command and output.
+        def steps_turn(pg, tag, size):
+            pg.evaluate("""newChat().then(() => { sendText('Why is the build slow? Fix it and run the tests.', []);
+              fire('route', {route: 'Google Gemini · gemini-3.8-flash'});
+              const T = window.__stepsTurn;
+              T.slice(0, 3).forEach((t, i) => { fire('tool', {id: 'p' + i, name: t.name, args: JSON.stringify(t.args)}); fire('tool_done', {id: 'p' + i, result: t.result}); });
+              fire('tool', {id: 'p3', name: T[3].name, args: JSON.stringify(T[3].args)}); fire('tool_done', {id: 'p3', result: T[3].result});
+              fire('tool', {id: 'p4', name: T[4].name, args: JSON.stringify(T[4].args)});
+              fire('status', 'Running: ' + T[4].args.command); })""")
+            pg.wait_for_timeout(800)
+            pg.screenshot(path=str(out / f"steps-{tag}live-{theme}.png"))
+            live = pg.evaluate("document.querySelector('.work.live .wt').textContent")
+            if live.strip() != "Running the tests" or any(c in live for c in "~;|$/"):
+                errs.append("live step line is not plain words: " + repr(live))
+            pg.evaluate("""const T = window.__stepsTurn;
+              fire('tool_done', {id: 'p4', result: T[4].result});
+              fire('tool', {id: 'p5', name: T[5].name, args: JSON.stringify(T[5].args)}); fire('tool_done', {id: 'p5', result: T[5].result});
+              fire('delta', 'Production builds were writing **full source maps**. I set `build.sourcemap` to `hidden`; `pnpm build` now takes **9.8s** instead of 41s. One test still fails on float rounding in `price.ts`.');
+              fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 14.2});""")
+            pg.wait_for_timeout(500)
+            pg.screenshot(path=str(out / f"steps-{tag}collapsed-{theme}.png"))
+            line = pg.evaluate("[...document.querySelectorAll('.msg.blaze')].pop().querySelector('.work.done').textContent.trim()")
+            if line != "Worked · 6 steps · 14s":
+                errs.append("collapsed line: " + repr(line))
+            pg.evaluate("""const m = [...document.querySelectorAll('.msg.blaze')].pop(); m.querySelector('.work.done').click();
+              const rows = m.querySelectorAll('.step'); rows[0].querySelector('.head').click(); rows[4].querySelector('.head').click();""")
+            pg.wait_for_timeout(400)
+            pg.evaluate("[...document.querySelectorAll('.msg.blaze')].pop().querySelector('.work').scrollIntoView({block: 'start'})"); pg.wait_for_timeout(200)
+            pg.screenshot(path=str(out / f"steps-{tag}expanded-{theme}.png"))
+            cmd = pg.evaluate("[...document.querySelectorAll('.msg.blaze')].pop().querySelector('.step .cmd').textContent")
+            if not cmd.startswith("cat ~/Projects/blaze/package.json"):
+                errs.append("expanded step lost its exact command: " + repr(cmd))
+        steps_turn(pg, "", None)
         # v0.4.2: AI chat titles. Mid-typewriter, then settled; rename on double-click.
         pg.evaluate("fire('title', {id: 'c2', title: 'Postgres Container For HomeGlow', source: 'auto'})"); pg.wait_for_timeout(560)
         pg.screenshot(path=str(out / f"titles-typing-{theme}.png"))
@@ -130,6 +164,7 @@ with sync_playwright() as p:
           fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 3.4});""")
         pg.wait_for_timeout(400)
         pg.screenshot(path=str(out / f"orb-chat-{theme}.png"))
+        steps_turn(pg, "orb-", None)
         pg.evaluate("""newChat().then(() => { sendText('How far is Blaze from 1.0?', []);
           fire('delta', window.__cardReply); fire('done', {route: 'Google Gemini · gemini-3.8-flash', seconds: 2.9}); })""")
         pg.wait_for_timeout(600)

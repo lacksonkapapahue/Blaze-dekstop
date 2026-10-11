@@ -315,19 +315,4 @@ COMMANDS.splice(COMMANDS.findIndex(c => c.name === "jobs"), 0, { name: "connect"
     .concat([{ name: "All accounts…", desc: "Connections, logins, API keys and MCP servers", run: () => show("accounts") }]);
 } });
 
-// Tool steps in the chat: a readable verb for connector tools.
-const CVERB = { gmail: "gmail", gcal: "calendar", drive: "drive", gcontacts: "contacts", github: "github", spotify: "spotify", notion: "notion", slack: "slack" };
-const describeBase = describe;
-describe = function (name, args) {
-  if (name === "connector_tools") { let a = {}; try { a = JSON.parse(args || "{}"); } catch (e) {} return ["load", String(a.group || "") + " tools"]; }
-  if (name === "suggest_connector") { let a = {}; try { a = JSON.parse(args || "{}"); } catch (e) {} return ["suggest", String(a.connector || "")]; }
-  const pre = name.split("_")[0];
-  if (CVERB[pre] || pre === "mcp") {
-    let a = {}; try { a = JSON.parse(args || "{}"); } catch (e) {}
-    const first = Object.values(a).find(v => typeof v === "string" && v) || "";
-    const verb = pre === "mcp" ? name.split("_")[1] : CVERB[pre];
-    const what = name.split("_").slice(pre === "mcp" ? 2 : 1).join(" ");
-    return [verb, (what + (first ? " · " + String(first).split("\n")[0].slice(0, 80) : ""))];
-  }
-  return describeBase(name, args);
-};
+// Tool steps for connector and MCP tools get their plain words from steps.js.
