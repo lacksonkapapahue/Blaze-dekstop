@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -100,6 +101,9 @@ func TestTwoAppsShareKeychainAndFallback(t *testing.T) {
 }
 
 func TestFallbackFileIsOwnerOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no Unix file modes; the file sits in the user's own profile folder")
+	}
 	dir := t.TempDir()
 	s := newStore(dir, &fakeKC{broken: true})
 	if _, err := s.Set("gemini", "AIza-x"); err != nil {
