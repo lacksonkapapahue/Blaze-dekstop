@@ -307,3 +307,53 @@ describe("sign in with GitHub / Google", () => {
     expect((await call("GET", `/v1/auth/spotify/start?state=${"g".repeat(20)}&code_challenge=${challenge}&redirect=${encodeURIComponent("http://127.0.0.1:7000/cb")}`)).status).toBe(404);
   });
 });
+
+describe("model key sync", () => {
+  async function session(email: string) {
+    const r = await call("POST", "/v1/auth/signup", { email, password: "hunter2hunter2" });
+    return ((await r.json()) as { token: string }).token;
+  }
+  const blob = btoa("x".repeat(60));
+
+  it("stores one encrypted blob per account with a revision check", async () => {
+    const a = await session("keys-a@example.com");
+    const b = await session("keys-b@example.com");
+    const A = { Authorization: `Bearer ${a}` };
+    expect((await call("GET", "/v1/keys")).status).toBe(401);
+
+    let r = await call("GET", "/v1/keys", undefined, A);
+    expect(r.status).toBe(200);
+    const g = (await r.json()) as { rev: number; blob: string; key: string };
+    expect(g.rev).toBe(0);
+    expect(g.blob).toBe("");
+    expect(atob(g.key).length).toBe(32);
+    const again = (await (await call("GET", "/v1/keys", undefined, A)).json()) as { key: string };
+    expect(again.key).toBe(g.key); // stable per account
+
+    r = await call("POST", "/v1/keys", { rev: 0, blob }, A);
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { rev: number }).rev).toBe(1);
+    r = await call("POST", "/v1/keys", { rev: 0, blob }, A);
+    expect(r.status).toBe(409);
+    expect(await r.json()).toMatchObject({ error: "conflict", rev: 1 });
+
+    for (const bad of [{ rev: 1, blob: "not base64!" }, { rev: 1, blob: "" }, { rev: 1, blob: "A".repeat(66000) }, { rev: -1, blob }, { blob }])
+      expect((await call("POST", "/v1/keys", bad, A)).status).toBe(400);
+
+    // Another account sees nothing of it and gets its own key.
+    const other = (await (await call("GET", "/v1/keys", undefined, { Authorization: `Bearer ${b}` })).json()) as { rev: number; key: string };
+    expect(other.rev).toBe(0);
+    expect(other.key).not.toBe(g.key);
+
+    const got = (await (await call("GET", "/v1/keys", undefined, A)).json()) as { rev: number; blob: string };
+    expect(got).toMatchObject({ rev: 1, blob });
+
+    expect((await call("POST", "/v1/account/delete", { confirm: "delete" }, A)).status).toBe(200);
+    expect(kv.m.has(`keys:${(await kvUser("keys-a@example.com"))}`)).toBe(false);
+    expect(kv.keys("keykey:").length).toBe(1); // only b's key is left
+  });
+
+  async function kvUser(email: string) {
+    return kv.m.get(`email:${email}`)?.v ?? "deleted";
+  }
+});

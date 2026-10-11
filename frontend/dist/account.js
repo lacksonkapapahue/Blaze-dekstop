@@ -1,6 +1,7 @@
 // Blaze account: sign in / create an account (Google, GitHub, email + password)
 // through Blaze's sign-in service, and Settings › Account. Optional: connectors,
-// keys and chats stay on this computer either way. Loaded after accounts.js.
+// chats stay on this computer either way; model keys sync with the account while
+// signed in (keysync.go). Loaded after accounts.js.
 
 IC.user = '<circle cx="8" cy="5.5" r="2.75"/><path d="M2.5 14c.6-2.9 2.8-4.5 5.5-4.5s4.9 1.6 5.5 4.5"/>';
 IC.mail = '<rect x="1.5" y="3.5" width="13" height="9"/><path d="m1.5 4 6.5 5 6.5-5"/>';
@@ -139,8 +140,22 @@ window.SETTINGS_FNS.account = async (col, redraw) => {
   }
   col.append(accountCard(false, redraw));
   const g = group("What your account does", "");
-  g.append(h("div", "box pad note2 acctnote", "Your Blaze account is who you are across Blaze apps. One-click connectors work with or without it, and your chats, memory, connectors and model keys never leave this computer."));
+  g.append(h("div", "box pad note2 acctnote", "Your Blaze account is who you are across Blaze apps. One-click connectors work with or without it, and your chats, memory and connectors never leave this computer. Your model keys follow your account to Blaze on your phone and other computers."));
   col.append(g);
+  const ks = group("Model keys", "Shared with Blaze CLI on this computer. While you're signed in, they also sync, encrypted, with Blaze on your phone and your other computers.");
+  const kb = h("div", "box pad keyrow");
+  const kn = h("div", "note2", "");
+  const fmt = st => st && st.lastSync ? "Last synced " + new Date(st.lastSync * 1000).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Not synced yet";
+  try { kn.textContent = fmt(await API().KeySyncState()); } catch (e) { kn.textContent = ""; }
+  const sb = h("button", "btn line sm", "Sync now");
+  sb.onclick = async () => {
+    sb.disabled = true;
+    const st = await API().KeySyncNow();
+    sb.disabled = false;
+    kn.textContent = fmt(st);
+    if (st && st.message) toast(st.message, st.available === false ? undefined : "ok");
+  };
+  kb.append(kn, sb); ks.append(kb); col.append(ks);
   const d = group("Delete account");
   const bx = h("div", "box pad keyrow dangerrow");
   bx.append(h("div", "note2", "Deletes your Blaze account and signs out everywhere. Nothing on this computer is removed."));

@@ -51,6 +51,7 @@ func (a *App) startCloud() {
 		a.cloud.refreshProviders(true)
 		a.conn.SetBroker(&broker{cs: a.cloud}) // redraw with what the service offers
 		a.checkSession()
+		a.startKeySync()
 	}()
 }
 
@@ -138,6 +139,7 @@ func (a *App) setSession(s *cloud.Session) error {
 	cs.mu.Unlock()
 	a.saveUser(&u)
 	a.emitAccount()
+	go func() { _, _ = a.syncKeys(false) }() // bring this account's model keys here, and ours there
 	return nil
 }
 

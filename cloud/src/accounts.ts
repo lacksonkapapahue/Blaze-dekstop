@@ -4,9 +4,11 @@
 //   ident:<provider>:<subject>  -> user id (Google / GitHub sign-in)
 //   sess:<sha256(token)>        a session, expires by TTL (90 days)
 //   rl:<kind>:<key>             rate-limit counters, expire by TTL
+//   keys:<id>, keykey:<id>      synced model keys (encrypted blob) and its key, see keys.ts
 // Session tokens are opaque random strings; only their SHA-256 is stored.
 
 import { Env, HttpError, randomToken, sha256 } from "./util";
+import { deleteKeys } from "./keys";
 import type { Profile, ProviderId } from "./providers";
 
 export const SESSION_TTL = 90 * 24 * 3600;
@@ -132,6 +134,7 @@ export async function deleteAccount(env: Env, u: User): Promise<void> {
   const owner = await env.KV.get(`email:${u.email}`);
   if (owner === u.id) await env.KV.delete(`email:${u.email}`);
   await env.KV.delete(`user:${u.id}`);
+  await deleteKeys(env, u.id);
 }
 
 // ---------------- sign-in with Google / GitHub ----------------
