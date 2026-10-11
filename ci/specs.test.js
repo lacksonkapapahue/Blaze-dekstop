@@ -35,6 +35,26 @@ const ok = (cond, msg) => { n++; if (!cond) { fails++; console.log("FAIL " + msg
   for (let i = 0; i < 100 && !d.querySelector("#input"); i++) await tick(30);
   if (!d.querySelector("#input")) { console.log(errs.slice(0,5).join("\n")); w.eval("show(\"work\")"); await tick(100); }
   ok(!!d.querySelector("#input"), "page: composer is up");
+  // v0.9 New design: a scratch artboard, drawn at its real size scaled to fit, with Export.
+  if (typeof w.show === "function") { w.show("design"); await tick(150); }
+  const nb = d.querySelector("#dnew");
+  ok(!!nb, "design: New button in the toolbar");
+  if (nb) {
+    nb.click(); await tick(60);
+    const opts = [...d.querySelectorAll(".pop .abfmt")];
+    ok(opts.length === 3 && /1080×1350/.test(opts[0].textContent), "design: New lists the formats with sizes");
+    opts[0].click(); await tick(200);
+    const ex = d.querySelector("#dexport"), dev = d.querySelector("#ddev");
+    ok(ex && ex.style.display !== "none" && dev && dev.style.display === "none", "design: an artboard shows Export and hides the device widths");
+    const fr = d.querySelector("#dstage .abholder iframe");
+    ok(!!fr && fr.style.width === "1080px" && fr.style.height === "1350px" && /scale\(/.test(fr.style.transform), "design: the frame is the real 1080×1350, scaled");
+    ex.click(); await tick(60);
+    const pdf = [...d.querySelectorAll(".pop .opt")].find(o => /PDF/.test(o.textContent));
+    ok(!!pdf, "design: Export offers PNG and PDF");
+    pdf.click(); await tick(80);
+    ok([...d.querySelectorAll(".toast")].some(t => /Saved .*exports\/summer-sale-v01\.pdf/.test(t.textContent)), "design: export says where it saved");
+  }
+
   // Settings › Notifications › Private vision renders and toggles.
   const col = d.createElement("div"); d.body.append(col);
   await w.SETTINGS_FNS.notifications(col, () => {}); await tick(60);
