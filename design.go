@@ -366,12 +366,14 @@ func containsStr(s []string, v string) bool {
 // ---------- bound API ----------
 
 type DesignView struct {
-	Base     string       `json:"base"`
-	Target   DesignTarget `json:"target"`
-	Versions []Version    `json:"versions"` // without file bodies
-	Files    []string     `json:"files"`    // previewable files in the project
-	Tracked  []string     `json:"tracked"`  // files this project's chats changed (the Current tab)
-	Head     int          `json:"head"`     // the version the live files are
+	Base     string         `json:"base"`
+	Target   DesignTarget   `json:"target"`
+	Versions []Version      `json:"versions"`           // without file bodies
+	Files    []string       `json:"files"`              // previewable files in the project
+	Tracked  []string       `json:"tracked"`            // files this project's chats changed (the Current tab)
+	Head     int            `json:"head"`               // the version the live files are
+	Artboard *studio.Format `json:"artboard,omitempty"` // the previewed file's fixed frame (v0.9)
+	Scratch  bool           `json:"scratch,omitempty"`  // the folder is a scratch design
 }
 
 func (a *App) Design() DesignView {
@@ -405,6 +407,12 @@ func (a *App) Design() DesignView {
 		}
 		v.Target = a.pv.state.Target
 		a.pv.mu.Unlock()
+	}
+	if f, ok := a.artboard(); ok {
+		v.Artboard = &f
+	}
+	if rel, err := filepath.Rel(designsDir(), a.prefs.Folder); err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+		v.Scratch = true
 	}
 	return v
 }
