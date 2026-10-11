@@ -9,6 +9,7 @@
 package connect
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -115,6 +116,10 @@ type MCPServer struct {
 	Header    string            `json:"header,omitempty"` // auth header name, default Authorization
 	Command   string            `json:"command,omitempty"`
 	Args      []string          `json:"args,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`     // stdio: extra environment (${VAR} expands)
+	Headers   map[string]string `json:"headers,omitempty"` // http/sse: extra headers (${VAR} expands)
+	Key       string            `json:"key,omitempty"`     // its name in mcp.json when that isn't the id
+	Synced    bool              `json:"synced,omitempty"`  // it has been in mcp.json (gone from the file = removed)
 	Disabled  bool              `json:"disabled,omitempty"`
 	Modes     map[string]string `json:"modes,omitempty"`
 	Tools     []MCPTool         `json:"tools,omitempty"`
@@ -134,6 +139,11 @@ type Store struct {
 	sec  Secrets
 	d    storeData
 	has  sync.Map // connector id -> bool: token present (saves a keychain read per check)
+
+	cfgPath string    // the shared ~/.blaze/mcp.json (mcpconfig.go)
+	cfgMod  time.Time // its mtime and size when last read
+	cfgSize int64
+	cfgErr  string
 }
 
 func OpenStore(dir string, sec Secrets) *Store {
@@ -238,6 +248,7 @@ func (s *Store) SetClientSecret(id, v string) error {
 func (s *Store) MCPList() []MCPServer {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_ = s.syncLocked(false)
 	out := make([]MCPServer, 0, len(s.d.MCP))
 	for _, m := range s.d.MCP {
 		out = append(out, copyMCP(m))
@@ -248,6 +259,7 @@ func (s *Store) MCPList() []MCPServer {
 func copyMCP(m *MCPServer) MCPServer {
 	cp := *m
 	cp.Args = append([]string(nil), m.Args...)
+	cp.Env, cp.Headers = copyMap(m.Env), copyMap(m.Headers)
 	cp.Tools = append([]MCPTool(nil), m.Tools...)
 	cp.Modes = map[string]string{}
 	for k, v := range m.Modes {
@@ -256,9 +268,21 @@ func copyMCP(m *MCPServer) MCPServer {
 	return cp
 }
 
+func copyMap(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 func (s *Store) MCP(id string) (MCPServer, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	_ = s.syncLocked(false)
 	for _, m := range s.d.MCP {
 		if m.ID == id {
 			return copyMCP(m), true
@@ -273,10 +297,16 @@ func (s *Store) PutMCP(m MCPServer) error {
 	for i, x := range s.d.MCP {
 		if x.ID == m.ID {
 			s.d.MCP[i] = &m
+			if err := s.writeConfigLocked([]*MCPServer{&m}, nil); err != nil {
+				return err
+			}
 			return s.saveLocked()
 		}
 	}
 	s.d.MCP = append(s.d.MCP, &m)
+	if err := s.writeConfigLocked([]*MCPServer{&m}, nil); err != nil {
+		return err
+	}
 	return s.saveLocked()
 }
 
@@ -285,7 +315,13 @@ func (s *Store) UpdateMCP(id string, fn func(m *MCPServer)) error {
 	defer s.mu.Unlock()
 	for _, m := range s.d.MCP {
 		if m.ID == id {
+			before, _ := json.Marshal(entryFor(m))
 			fn(m)
+			if after, _ := json.Marshal(entryFor(m)); !bytes.Equal(before, after) {
+				if err := s.writeConfigLocked([]*MCPServer{m}, nil); err != nil {
+					return err
+				}
+			}
 			return s.saveLocked()
 		}
 	}
@@ -295,13 +331,19 @@ func (s *Store) UpdateMCP(id string, fn func(m *MCPServer)) error {
 func (s *Store) RemoveMCP(id string) error {
 	s.mu.Lock()
 	var keep []*MCPServer
+	var gone []string
 	for _, m := range s.d.MCP {
 		if m.ID != id {
 			keep = append(keep, m)
+		} else {
+			gone = append(gone, m.key())
 		}
 	}
 	s.d.MCP = keep
-	err := s.saveLocked()
+	err := s.writeConfigLocked(nil, gone)
+	if e2 := s.saveLocked(); err == nil {
+		err = e2
+	}
 	s.mu.Unlock()
 	_ = s.sec.Delete(mcpKey(id))
 	return err
