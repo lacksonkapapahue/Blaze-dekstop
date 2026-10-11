@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/lacksonkapapahue/blaze-desktop/internal/config"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/llm"
+	"github.com/lacksonkapapahue/blaze-desktop/internal/ocr"
 )
 
 // Vision-capable fallbacks for providers whose default model can't see.
@@ -54,7 +56,23 @@ func VisionTargets(cfg *config.Config) []visionTarget {
 var vclient = &http.Client{Timeout: 60 * time.Second}
 
 // Describe sends the screenshot and the question to the first vision model that answers.
+// With Private vision on, the screenshot never leaves the computer: it is read here
+// (OCR, size, colours) and only that text comes back.
 func Describe(ctx context.Context, cfg *config.Config, jpeg []byte, question string) (string, string, error) {
+	if cfg.PrivateVision {
+		f, err := os.CreateTemp("", "blaze-look-*.jpg")
+		if err != nil {
+			return "", "", err
+		}
+		name := f.Name()
+		defer os.Remove(name)
+		_, werr := f.Write(jpeg)
+		f.Close()
+		if werr != nil {
+			return "", "", werr
+		}
+		return "Private vision is on, so the screenshot was read on this computer and not sent anywhere. It gives text and colours only; for layout or pictures, the window's text from read_screen helps most.\n" + ocr.Describe(ctx, name), "this computer (Private vision)", nil
+	}
 	targets := VisionTargets(cfg)
 	if len(targets) == 0 {
 		return "", "", errors.New("none of your models can look at images. Add a free Google Gemini key in Settings › Providers (Gemini models can see)")
