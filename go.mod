@@ -11,6 +11,7 @@ require (
 	golang.design/x/hotkey v0.6.4
 	golang.org/x/sys v0.49.0
 	modernc.org/sqlite v1.60.1
+	rsc.io/qr v0.2.0
 )
 
 require (
