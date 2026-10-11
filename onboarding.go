@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/godbus/dbus/v5"
+
+	"github.com/lacksonkapapahue/blaze-desktop/internal/notify"
 )
 
 // First-run onboarding: a full-screen step flow (Welcome, model, apps, permissions,
@@ -50,10 +52,16 @@ func (a *App) FinishOnboarding() {
 
 // OnboardNotifyTest sends one native notification so the OS asks for (or shows)
 // its permission. "" means it was handed to the OS.
+// It probes and caches the working method (~/.blaze/notify.json) first, so the
+// onboarding test and every later notification use the same one.
 func (a *App) OnboardNotifyTest() string {
-	err := sendNotification("Blaze", "Notifications are on. Blaze only uses them for things that matter.")
+	a.probeNotify()
+	_, err := a.send(notify.Note{Title: "Blaze", Body: "Notifications are on. Blaze only uses them for things that matter.", Kind: "test"})
 	if err != nil {
-		return err.Error()
+		// The direct per-OS call is the last resort (it also triggers macOS's permission prompt).
+		if err2 := sendNotification("Blaze", "Notifications are on. Blaze only uses them for things that matter."); err2 != nil {
+			return err.Error()
+		}
 	}
 	return ""
 }

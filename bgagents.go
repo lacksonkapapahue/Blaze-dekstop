@@ -253,6 +253,7 @@ func (a *App) turn(in agents.Input) {
 			a.mu.Unlock()
 			appendToConv(in.Conv, llm.Message{Role: "user", Content: in.Text})
 			a.emit("toast", map[string]string{"text": "Background agent " + in.Handle + " finished in another chat", "kind": "ok"})
+			a.agentElsewhere(in.Handle, in.Conv) // native notification when Blaze is hidden (notify_app.go)
 			return
 		}
 		a.history = append(a.history, llm.Message{Role: "user", Content: in.Text})

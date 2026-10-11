@@ -13,6 +13,11 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Debian/Ubuntu**: `sudo apt install ./blaze-desktop_*_amd64.deb`.
 - **Other Linux**: unpack the tar.gz and run `blaze-desktop` (needs GTK 3 + WebKitGTK 4.1).
 
+## What's in v0.4.5
+1. **Native notifications.** Blaze works out once per computer how to notify you (Windows toast, macOS Notification Center, or D-Bus on Linux, which covers GNOME, KDE, and mako/dunst/swaync on Hyprland or sway), caches it in `~/.blaze/notify.json`, and falls back to `notify-send`, `osascript` or a PowerShell toast. It tells you when a long answer or background job finishes while Blaze is hidden, and when a scheduled job runs (failures always; successes wait out quiet hours). The model gets a `notify` tool with just a title and a body. Settings › Notifications shows the method, a test button and recent notifications; clicking one opens Blaze on its chat.
+2. **Proactive suggestions (opt-in).** A frugal watcher glances at the front window at most every 10 minutes, only while you're at the computer, never in full screen or quiet hours (22:00–08:00 by default), at most 3 an hour and 8 a day, and backs off when you ignore it. It sleeps between checks instead of polling and speaks only when it can genuinely help (an error, a failing build, a confusing form).
+3. **Screen vision.** `read_screen` reads the front window's accessibility tree (UI Automation, AX, AT-SPI) as compact text; `see_screen` falls back to a downscaled screenshot (GDI, screencapture, grim on Hyprland/sway, the desktop portal on GNOME/KDE, X11) for a vision model. Reads are cached by window and picture hash, password fields are never read and are blurred in screenshots, and a bar at the top shows whenever the screen is being read, with a one-click off switch. Doctor checks notifications, screen reading, screenshots and suggestions, with Fix buttons for the macOS permissions.
+
 ## What's in v0.4.1
 **Answer cards.** Blaze answers in a sentence or four, and long detail (tables, step lists, reports, long code) folds into a card above it: clipped with a fade, one click (or the chevron) to read it all, a copy button for its Markdown. Short cards just show in full. Works while streaming, in saved chats and in the orb. Turn it off in Settings › Behaviour › *Fold long answers into cards*.
 
