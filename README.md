@@ -13,6 +13,46 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Debian/Ubuntu**: `sudo apt install ./blaze-desktop_*_amd64.deb`.
 - **Other Linux**: unpack the tar.gz and run `blaze-desktop` (needs GTK 3 + WebKitGTK 4.1).
 
+## What's in v0.8.0 (the Design studio)
+- **Edits that write back.** Double-click text to retype it, drag the MOVE tab or the corner to move or resize, use the
+  style controls or **Swap colour › Everywhere**: Blaze changes the real file (HTML, Vue, Svelte, Astro templates and
+  JSX/TSX `style={{…}}`) as a small diff, saves a version, and shows the diff with **Undo**. Anything too involved to
+  edit by hand (a style built from variables, text spread across tags) goes to the model as before.
+- **Directions as live branches.** Directions sends 3 specialists out on their own git worktrees (or copies), carrying
+  your uncommitted page with them, and shows the three side by side as they work. **Pick** one, or **Mix**: "header
+  from B, colours from C".
+- **Brand kit and taste memory.** Pull colours, fonts, radius and logo from a URL or a logo image; every design prompt
+  follows it. Blaze also learns the fonts, colours, radii and spacing you keep and the ones you undo
+  (`~/.blaze/desktop/taste.json`, Brand › Forget).
+- **Copy any window.** Rebuild the window behind Blaze, or a dropped or pasted screenshot, as code in your stack.
+- **The critic.** Each new version is audited at 390, 820 and 1280 px (contrast, alt text, labels, tap targets,
+  sideways scroll, DOM size, image weight, load time) and scored; below 85 Blaze fixes it once on its own (turn off in
+  the score card).
+- **Talk while you point.** Select an element, hold **Hold to talk**, say what to change.
+- **States board.** Default, hover, focus, pressed, empty, loading, error and dark mode in one grid.
+- **Visual history.** A branching timeline (restoring an old version starts a new branch), a before/after slider in
+  Compare, and **Restore this element from vNN**.
+- **Phone preview.** A QR code opens the live preview on your phone over Wi-Fi behind a secret link, with hot reload and
+  long-press comments that show up in Blaze.
+- **One-click ship.** Cloudflare Pages (wrangler via npx) or GitHub Pages (a `gh-pages` push), free tiers, with an
+  optional comment widget so friends can pin comments on the shared page (blaze-auth Worker 0.7.0:
+  `/v1/comments.js`, `/v1/comments/<site>`).
+- Fixes the flaky first-run SQLite lock (`TestConcurrentFirstRunInit`) that stopped the v0.7.7 Linux build.
+
+## What's in v0.8.0 (the Design studio)
+
+- **Edits that write back**: retype text in the preview (double-click), drag to move, drag the corner to resize, change colours and spacing with the controls, or swap a colour everywhere. Each edit lands in the real source (HTML, Vue, Svelte, JSX/TSX) as a small diff with Undo, without a model call. Anything too involved for a hand edit goes to Blaze.
+- **Directions as live branches**: three specialists redesign the page on their own git worktrees (or copies, carrying your uncommitted work), side by side. Pick one, or mix them: "header from B, colours from C".
+- **Brand kit and taste**: pull colours, fonts, radius and logo from a site or a logo. Blaze also learns the fonts, colours and spacing you keep and the ones you undo, and follows both.
+- **Copy any window**: rebuild the window behind Blaze, or a dropped or pasted screenshot, as editable code in the project's stack.
+- **The critic**: every version is checked at phone, tablet and desktop widths (contrast, alt text, labels, tap targets, overflow, weight, load time) and scored. Below 85 it fixes itself once (Settings: Fix automatically).
+- **Talk while you point**: hold the mic in the selection bar and say what to change.
+- **States board**: hover, focus, pressed, empty, loading, error and dark mode at once.
+- **Visual history**: a branching timeline, a before/after slider when comparing, and "restore just this element" from any version.
+- **Preview on your phone**: scan a QR code on the same Wi-Fi; it hot-reloads and a long press leaves a comment pinned to that spot.
+- **One-click ship**: Cloudflare Pages or GitHub Pages, free tiers, with optional pinned comments on the shared link (Worker 0.7.0: `/v1/comments`).
+- Fixed the flaky Linux CI test (`blaze.db: database is locked` when several openers create it at once).
+
 ## What's in v0.7.7 (keys shared with Blaze CLI and your phone)
 - **One key store with Blaze CLI** (`internal/keystore`, the same file in both repos): OS keychain service `blaze-cli`
   (`<provider>`, `<provider>#extra` for extra keys) or, with no keychain, `~/.blaze/keys.json` (0600) read fresh on
