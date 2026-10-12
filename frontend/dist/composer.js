@@ -13,6 +13,11 @@ const CIC = {
   folder: '<path d="M1.5 3.5h5l1.5 1.5h6.5v8h-13z"/>',
   mic: '<rect x="6" y="1.5" width="4" height="8"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5M5.5 14.5h5"/>',
   slash: '<path d="m10.5 2.5-5 11"/>',
+  at: '<circle cx="8" cy="8" r="2.5"/><path d="M10.5 8v1.25a1.75 1.75 0 0 0 3.5 0V8A6 6 0 1 0 11 13.2"/>',
+  plan: '<path d="M3 3.5h10M3 8h10M3 12.5h6"/>',
+  pilot: '<path d="m8 1.5 5 12.5-5-3-5 3z"/>',
+  model: '<circle cx="3.5" cy="8" r="1.5"/><circle cx="12.5" cy="4" r="1.5"/><circle cx="12.5" cy="12" r="1.5"/><path d="M5 8h3l3-3.5M8 8l3 3.5"/>',
+  views: '<rect x="2.5" y="2.5" width="4.5" height="4.5"/><rect x="9" y="2.5" width="4.5" height="4.5"/><rect x="2.5" y="9" width="4.5" height="4.5"/><rect x="9" y="9" width="4.5" height="4.5"/>',
 };
 const cmIcon = (n, cls = "i sm") => `<svg class="${cls}" viewBox="0 0 16 16">${CIC[n] || ""}</svg>`;
 const fmtSize = n => !n ? "" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
@@ -22,7 +27,9 @@ function composerBar() {
   return `<button id="plus" class="plusbtn" title="Attach images, files or a folder · commands">${icon("plus", "i sm")}</button>
     <button id="mic" class="plusbtn mic" title="Voice input · Ctrl+Shift+M (local Whisper)">${cmIcon("mic")}</button>
     <span id="recline" class="recline" style="display:none"><span class="rdot"></span><span class="rtime label ink">0:00</span><button class="btn ghost xs rcancel" title="Discard">${icon("x", "i sm")}</button></span>
+    <span id="modeChip" class="modechip label" title="Not the default mode · Ctrl+Tab / Shift+Tab" style="display:none"></span>
     <span class="grow"></span>
+    <button id="keysHelp" class="plusbtn keyshelp" title="">?</button>
     <div id="modes" class="modes">
       <div class="mseg" id="mWork" title="Work mode · Ctrl+Tab"><button data-m="plan">Plan</button><button data-m="build">Build</button></div>
       <div class="mseg" id="mAppr" title="Approval mode · Shift+Tab"><button data-a="auto">Auto</button><button data-a="autopilot">Autopilot</button></div>
@@ -61,6 +68,13 @@ function drawModes(p = pane) {
   const i = $("#input", p);
   if (i) i.placeholder = MODES.work_mode === "plan" ? "Plan mode: Blaze reads and scouts, then proposes a plan. It changes nothing." : (MODES.approval === "autopilot" ? "Autopilot: Blaze works until it's done and decides on its own." : "Ask Blaze to do something…");
   if (S) S.modes = MODES;
+  const chip = $("#modeChip", p);
+  if (chip) {
+    const off = MODES.work_mode !== "build" || MODES.approval !== "auto";
+    chip.style.display = off ? "" : "none";
+    chip.textContent = `${MODES.work_mode === "plan" ? "Plan" : "Build"} · ${MODES.approval === "autopilot" ? "Autopilot" : "Auto"}`;
+    chip.classList.toggle("pilot", MODES.approval === "autopilot");
+  }
   hintText(p);
 }
 function applyModes(m) { if (m && m.work_mode) { MODES = { work_mode: m.work_mode, approval: m.approval }; drawModes(); } }
@@ -88,6 +102,9 @@ addEventListener("keydown", e => { if (!e.defaultPrevented) modeKeys(e); }, true
 function hintText(p = pane) {
   const el = p && $("#hint", p); if (!el) return;
   if (busy) { el.textContent = (MODES.approval === "autopilot" ? "Autopilot is working…" : "Working…") + " send a message to interrupt · Stop ends this answer"; return; }
+  const kh = p && $("#keysHelp", p);
+  if (kh) kh.title = `/ commands · @ files · + attach · Shift+Enter new line · Ctrl+K search · Ctrl+Tab ${MODES.work_mode === "plan" ? "Plan" : "Build"} · Shift+Tab ${MODES.approval === "autopilot" ? "Autopilot" : "Auto"} · Ctrl+Shift+M voice`;
+  el.closest(".hintline") && el.closest(".hintline").classList.remove("flash");
   el.innerHTML = `/ commands · @ files · + attach · Shift+Enter new line<span class="hk"><span class="kbd">Ctrl Tab</span> ${MODES.work_mode === "plan" ? "Plan" : "Build"} · <span class="kbd">Shift Tab</span> ${MODES.approval === "autopilot" ? "Autopilot" : "Auto"}</span>`;
 }
 
@@ -157,6 +174,12 @@ function plusItems() {
     { name: "Image…", icon: "image", desc: "png, jpg, gif, webp · or paste one", run: () => pick("image") },
     { name: "File…", icon: "file", desc: "any file; text goes in the message", run: () => pick("file") },
     { name: "Folder…", icon: "folder", desc: "Blaze gets its file tree", run: () => pick("folder") },
+    { name: "Voice", icon: "mic", desc: "speak instead of typing · Ctrl+Shift+M", run: () => micClick() },
+    { name: "@ File", icon: "at", desc: "or type @ in the box", run: () => { const i = $("#input"); i.value += (i.value && !i.value.endsWith(" ") ? " @" : "@"); i.focus(); i.dispatchEvent(new Event("input")); } },
+    { name: MODES.work_mode === "plan" ? "Build mode" : "Plan mode", icon: "plan", desc: (MODES.work_mode === "plan" ? "switch back to every tool (now Plan)" : "read and scout only, then a plan") + " · Ctrl+Tab", run: () => setWorkMode(MODES.work_mode === "plan" ? "build" : "plan") },
+    { name: MODES.approval === "autopilot" ? "Auto mode" : "Autopilot", icon: "pilot", desc: (MODES.approval === "autopilot" ? "ask before risky actions again (now Autopilot)" : "work until done, decide instead of asking") + " · Shift+Tab", run: () => setApproval(MODES.approval === "autopilot" ? "auto" : "autopilot") },
+    { name: "Model", icon: "model", desc: (($("#routeText") || {}).textContent || "") + " · BlazeRouter", run: () => { const r = $("#route"); modelPopover($("#plus") || r); } },
+    { name: "Views", icon: "views", desc: "Memory, Jobs, Schedule, Accounts, Doctor…", sub: async () => window.BlazeViews ? BlazeViews.items() : [] },
     { name: "Commands", icon: "slash", desc: "type / in the box", sub: async () => COMMANDS.map(c => ({ ...c, slash: true })) },
   ];
 }
@@ -173,6 +196,7 @@ let toastT = 0;
 function toastLine(t) {
   const el = pane && $("#hint", pane); if (!el) return;
   el.textContent = t; clearTimeout(toastT); toastT = setTimeout(hintText, 4000);
+  if (el.closest(".hintline")) el.closest(".hintline").classList.add("flash");
 }
 
 // ---------- voice ----------

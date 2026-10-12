@@ -1,0 +1,50 @@
+/* The calm shell (v0.11.0). Classic Blaze look: square hairlines, mono uppercase labels. */
+
+/* Top bar: Chat | Projects, Exit chip, Search, router dot, avatar. The old tabs, theme
+   button and model chip stay in the DOM (handlers intact) but move into menus. */
+body.shell #tabs, body.shell #top > #themeBtn, body.shell #route { display: none; }
+.shpill button { min-width: 74px; justify-content: center; }
+.shexit { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 4px 0 10px; border: 1px solid var(--ink); background: var(--raised); }
+.shexit .label { font: 500 10.5px var(--mono); letter-spacing: .12em; color: var(--ink); }
+.shexit .btn { height: 22px; }
+.shsearch { gap: 8px; color: var(--sub); }
+.shsearch .kbd { margin-left: 4px; }
+.shsearch:hover { color: var(--ink); }
+body.shell .routerbtn .bt { display: none; }
+body.shell .routerbtn { padding: 0 8px; }
+.shavatar { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border: 1px solid var(--hair2); background: var(--ink); color: var(--paper); }
+.shavatar .i { stroke: var(--paper); }
+.shavatar:hover { border-color: var(--ink); }
+.shmenu .shwho { font: 11px var(--mono); color: var(--sub); max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 980px) { .shsearch span:not(.kbd), .shsearch .kbd { display: none; } }
+
+/* Rail: Chat mode = recent chats; Projects mode = projects with status chips. The old
+   sidebar buttons moved into /views. */
+body.shell .sidefoot .nav { display: none; }
+body.shell .sidefoot { border-top: 0; padding-top: 0; }
+body.shell.mode-chat #projects, body.shell.mode-chat #side .sect:has(#newProject) { display: none; }
+.shchip { margin-left: auto; font: 500 9.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent); padding: 0 5px; line-height: 16px; flex: none; }
+@media (max-width: 1100px) {
+  body.shell.mode-chat #app { grid-template-columns: 0 1fr; }
+  body.shell.mode-chat #side { overflow: hidden; padding: 0; border: 0; }
+}
+
+/* Centre column: user messages on an ink bubble (paper text in dark mode). */
+body.shell #log .col { max-width: 760px; }
+body.shell .msg.user .bubble { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+body.shell .msg.user .bubble .label.acc { color: var(--paper); opacity: .7; }
+body.shell .msg.user.cont .bubble { background: var(--raised); color: var(--sub); border-color: var(--hair2); }
+
+/* One live work card per turn: "● Working · 4 steps · 1m 12s ›". */
+.work .wmeta { font: 500 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink); margin-right: 10px; white-space: nowrap; flex: none; }
+body.shell .work.live, body.shell .work.done { border: 1px solid var(--hair2); background: var(--raised); padding: 6px 10px; }
+
+/* Composer: + on the left, Send on the right. Voice, Plan/Build, Auto/Autopilot and the
+   model live in the + menu; a chip shows the mode only when it isn't the default; the
+   shortcut strip is a ? tooltip (the line still flashes for messages). */
+body.shell #mic:not(.on):not(.rec), body.shell #modes { display: none; }
+.modechip { font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink); border: 1px solid var(--hair2); padding: 2px 7px; margin-left: 6px; white-space: nowrap; }
+.modechip.pilot { color: var(--accent); border-color: var(--accent); }
+.keyshelp { font: 600 12px var(--mono); color: var(--sub); margin-right: 6px; }
+body.shell .hintline { visibility: hidden; height: 0; overflow: hidden; }
+body.shell .hintline.flash { visibility: visible; height: auto; }
