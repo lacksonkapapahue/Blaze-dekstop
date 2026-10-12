@@ -594,7 +594,8 @@ function liveMeta(turn) {
   const draw = () => {
     if (turn.finished) { clearInterval(turn.tick); turn.tick = 0; m.remove(); return; }
     const n = turn.order.length, secs = (Date.now() - turn.started) / 1000;
-    m.textContent = ["Working", n ? `${n} step${n === 1 ? "" : "s"}` : "", secs >= 1 ? (secs >= 60 ? `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s` : `${Math.round(secs)}s`) : ""].filter(Boolean).join(" · ");
+    const tk = turn.tokens, k = v => v >= 1000 ? (v / 1000).toFixed(1) + "k" : String(v);
+    m.textContent = ["Working", n ? `${n} step${n === 1 ? "" : "s"}` : "", secs >= 1 ? (secs >= 60 ? `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s` : `${Math.round(secs)}s`) : "", tk ? `in ${k(tk.in)} · out ${k(tk.out)}` : ""].filter(Boolean).join(" · ");
   };
   draw();
   if (!turn.tick) turn.tick = setInterval(draw, 1000);
@@ -861,6 +862,20 @@ on("repair", r => {
   fx.title = (r.dropped || []).join("\n");
 });
 on("route", r => { if (r && r.route) setModel(r.route); });
+// Token meter (long-chat engine): the live card shows in/out; near the model's limit,
+// offer a fresh chat that starts from a summary (once per chat).
+let freshOffered = null;
+on("tokens", t => {
+  if (!t) return;
+  if (current) { current.tokens = t; if (current.workEl && !current.finished && current.workEl.classList.contains("live")) liveMeta(current); }
+  if (t.high && freshOffered !== convId && current) {
+    freshOffered = convId;
+    const c = h("div", "card freshoffer", `<div class="title"><span class="label acc">Long chat</span></div><div class="detail">This chat is near the model's limit (${Math.round(t.in / 1000)}k of ${Math.round(t.limit / 1000)}k tokens). Start a fresh chat that picks up from a summary?</div><div class="actions"><button class="btn accent sm go">Start a fresh chat with a summary</button><button class="btn ghost sm no">Not now</button></div>`);
+    $(".go", c).onclick = async () => { $(".go", c).disabled = true; $(".go", c).textContent = "Summarising…"; const id = await API().FreshChat(); if (id) { await refreshSide(); openChat(id); } else c.remove(); };
+    $(".no", c).onclick = () => c.remove();
+    current.el.append(c); scrollDown();
+  }
+});
 on("model", m => { if (m) setModel(m.label, m.selection); });
 on("confirm", c => {
   if (c.agent && Agents.confirm(c)) return; // a background agent's approval shows on its card
@@ -1217,6 +1232,19 @@ async function projectView(el, id) {
   sv.onclick = async () => { await API().UpdateProject(p.id, nm.value, ins.value); sv.textContent = "Saved"; setTimeout(() => sv.textContent = "Save", 1200); refreshSide(); };
   box.append(nm, ins, sv); g2.append(box);
 
+  // The pinned brief Blaze sends with every turn and keeps up to date (update_brief).
+  const gb = group("Brief", "Pinned for Blaze every turn: purpose, rules, key files, in progress. Blaze updates it too.");
+  const bbox = h("div", "box pad formgrid");
+  const bt = h("textarea", "field brief"); bt.placeholder = "Purpose: …\nRules: …\nKey files: …\nIn progress: …"; bt.maxLength = 2400;
+  const bcount = h("span", "label weak");
+  const bsv = h("button", "btn line sm", "Save brief"); bsv.style.justifySelf = "start";
+  const bdraw = () => bcount.textContent = `${bt.value.length} / 2400`;
+  bt.oninput = bdraw;
+  if (API().ProjectBrief) API().ProjectBrief(p.id).then(b => { bt.value = b || ""; bdraw(); });
+  bsv.onclick = async () => { const err = await API().SetProjectBrief(p.id, bt.value); bsv.textContent = err ? "Couldn't save" : "Saved"; setTimeout(() => bsv.textContent = "Save brief", 1200); };
+  const brow = h("div", "brow"); brow.append(bsv, bcount);
+  bbox.append(bt, brow); gb.append(bbox);
+
   const g3 = group("Git");
   g3.append(d.branch ? h("div", "", `<div style="margin-bottom:8px">Branch <span class="mono acc2">${esc(d.branch)}</span></div><div class="logbox">${esc(d.status || "Clean")}</div>`) : h("div", "rows", `<div class="empty">Not a git repository.</div>`));
 
@@ -1234,7 +1262,7 @@ async function projectView(el, id) {
   const del = h("button", "btn ghost sm danger", `${icon("trash", "i sm")}Remove project`);
   del.onclick = async () => { if (del.dataset.sure) { await API().DeleteProject(p.id); await refreshSide(); hero(); show("work"); } else { del.dataset.sure = 1; del.textContent = "Remove it and its chats? Files stay on disk. Click again"; } };
   g5.append(del);
-  col.append(g1, g2, g3, g4, g5);
+  col.append(g1, g2, gb, g3, g4, g5);
 }
 
 // ---------- design ----------

@@ -48,3 +48,8 @@ body.shell #mic:not(.on):not(.rec), body.shell #modes { display: none; }
 .keyshelp { font: 600 12px var(--mono); color: var(--sub); margin-right: 6px; }
 body.shell .hintline { visibility: hidden; height: 0; overflow: hidden; }
 body.shell .hintline.flash { visibility: visible; height: auto; }
+
+/* Long-chat engine (v0.12.0): project brief editor, fresh-chat offer. */
+textarea.field.brief { min-height: 120px; font: 12.5px/1.55 var(--mono); }
+.brow { display: flex; align-items: center; gap: 12px; }
+.card.freshoffer { margin-top: 10px; }

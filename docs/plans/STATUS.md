@@ -13,14 +13,17 @@ Done:
 - THIRD_PARTY_NOTICES.md, README credits, CHANGELOG v0.10.0, docs/plans/plan-blazerouter.md, VERSION + wails.json 0.10.0
 - Checks: gofmt, go vet ./internal/..., go test ./internal/..., GOOS=windows go build ., node --check, ci/*.test.js (jsdom) all pass; curl :20128/v1/models lists auto/* presets, 401 without key
 
-## Step 2 — Redesign part A (branch `redesign-a`, v0.11.0) — READY, merging on green CI
+## Step 2 — Redesign part A (branch `redesign-a`, v0.11.0, PR #47) — MERGED (99f6ec6)
 Done: shell.js/shell.css (Chat|Projects, Exit chip, Search Ctrl+K, avatar menu, rail modes), views.js (/views picker, view:open), view_app.go open_view tool + test + prompt line, ink user bubbles, live work card counter (liveMeta), + menu composer (Voice, @ File, Plan/Autopilot, Model, Views), mode chip, ? shortcuts tooltip, shots (shell-*), CHANGELOG, plan-redesign-a.md, VERSION/wails.json 0.11.0.
 
-## Remaining steps after this PR
-2. Redesign (part A)
-3. Long-chat engine (part B)
-4. Student pack (part C)
-5. Marketer pack (part D)
+## Self-knowledge (PR #49, branch `self-knowledge`, v0.12.0) — MERGED (e586e3c), released v0.12.0 (6 assets)
+internal/selfknow (ABOUT YOU block + about_blaze tool), identical in Blaze-cli (PR #15, v0.10.0). Blaze Link not in build yet (linkInBuild=false in selfknow_app.go) until Step 3b.
 
-## Next: Step 3 — Long-chat engine part B (branch long-chat off main after redesign-a merges, v0.12.0)
-See plan-v1.0-redesign.md part B. Hook: app.go turn loop uses trim(s.hist) (~line 585, max 60 msgs); store schema in internal/store/store.go (FTS5 already used for memories).
+## Step 3 — Long-chat engine part B (PR #48, branch `long-chat`, v0.13.0) — rebased on main, merging on green CI
+Done: internal/longchat (db, compact, artifacts) + tests; longchat_app.go wired into app.go; tools search_chat/read_turn/read_artifact/update_brief (core, next to about_blaze); token meter + fresh-chat offer; project Brief editor; shots longchat-*; CHANGELOG v0.13.0; plan-longchat.md; VERSION + wails.json 0.13.0.
+Checks: gofmt, vet ./internal/..., go test ./internal/..., GOOS=windows build, node --check, ci/*.test.js.
+
+## Next, in order
+- Step 3b — Blaze Link PC side (branch `blaze-link`, v0.14.0): port pair.go from closed PR #3 (branch feature/phone-pairing), match Android DesktopLink.kt, flip linkInBuild, devices.json status in about_blaze.
+- Step 4 — Student pack (part C, branch `student-pack`, v0.15.0): classroom_courses / classroom_coursework tools, skills study-planner, tutor, lecture-notes, essay-coach, group-project, classroom-sync; low-data mode; UPDATE_SKILL_INDEX=1 go test ./internal/skillpack/; README skill count.
+- Step 5 — Marketer pack (part D), own PR.

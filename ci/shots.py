@@ -126,7 +126,22 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"shell-livecard-{theme}.png"))
         if not pg.evaluate("!!document.querySelector('.work.live .wmeta')"):
             errs.append("live work card counter missing")
+        # v0.13.0 long-chat engine: token meter in the live card, fresh-chat offer, project brief.
+        pg.evaluate("fire('tokens', {in: 4200, out: 600, limit: 32768, high: false})"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"longchat-meter-{theme}.png"))
+        if "in 4.2k" not in pg.evaluate("(document.querySelector('.work.live .wmeta') || {}).textContent || ''"):
+            errs.append("token meter missing from the live card")
+        pg.evaluate("fire('tokens', {in: 27500, out: 900, limit: 32768, high: true})"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"longchat-fresh-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('.card.freshoffer .go')"):
+            errs.append("fresh-chat offer missing")
         pg.evaluate("fire('done', {seconds: 72}); show('work')"); pg.wait_for_timeout(300)
+        pg.evaluate("show('project', 'p1')"); pg.wait_for_timeout(700)
+        pg.evaluate("document.querySelector('textarea.brief').scrollIntoView({block: 'center'})"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"longchat-brief-{theme}.png"))
+        if not pg.evaluate("(document.querySelector('textarea.brief') || {}).value || ''").startswith("Purpose"):
+            errs.append("project brief missing")
+        pg.evaluate("show('work')"); pg.wait_for_timeout(200)
         pg.evaluate("""closePop(); sendText('Make the hero section blue', []);
           fire('route', {route: 'Google Gemini · gemini-3.8-flash'});
           for (let i = 0; i < 8; i++) { fire('tool', {id: 'x'+i, name: i < 2 ? 'file_read' : 'file_edit', args: '{"path":"index.html"}'});

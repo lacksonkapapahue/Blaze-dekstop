@@ -26,6 +26,7 @@ import (
 	"github.com/lacksonkapapahue/blaze-desktop/internal/config"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/connect"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/llm"
+	"github.com/lacksonkapapahue/blaze-desktop/internal/longchat"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/sched"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/sysinfo"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/tools"
@@ -421,6 +422,9 @@ func (a *App) DeleteConversation(id string) {
 	delete(titles.m, id)
 	titles.Unlock()
 	_ = os.Remove(filepath.Join(convDir(), id+".json"))
+	if d, err := longchat.Default(); err == nil {
+		d.Forget(id)
+	}
 	a.mu.Lock()
 	if s := a.live[id]; s != nil && s.cancel != nil {
 		s.cancel() // deleting a chat stops its turn
@@ -584,10 +588,11 @@ func (a *App) run(ctx context.Context, s *session) {
 			return
 		}
 		a.mu.Lock()
-		hist := trim(s.hist)
+		full := append([]llm.Message(nil), s.hist...)
 		a.mu.Unlock()
+		hist, longExtra := a.longContext(ctx, s, full) // brief + rolling summary + recent turns (longchat_app.go)
 		conv := "chat:" + s.id
-		sys := a.system(recentQuery(hist)) + tools.ExtraLine(conv) + agents.Delegation + agents.Orchestration
+		sys := a.system(recentQuery(hist)) + tools.ExtraLine(conv) + agents.Delegation + agents.Orchestration + longChatLine + longExtra
 		if note != "" {
 			sys += "\nABOUT YOUR LAST REPLY\n" + note + "\n"
 		}
@@ -619,6 +624,7 @@ func (a *App) run(ctx context.Context, s *session) {
 			return
 		}
 		a.temit(s, "route", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless})
+		a.emitTokens(s, r, msgs)
 		// The gatekeeper: repair what can be repaired; never save a call with no name or
 		// unreadable arguments (the provider would refuse every later request with a 400).
 		n := llm.NormalizeCalls(r.ToolCalls, known)
@@ -696,7 +702,7 @@ func (a *App) run(ctx context.Context, s *session) {
 				changed, urls = a.designTouch(tc.Function.Name, tc.Function.Arguments, res, changed, urls)
 				a.temit(s, "tool_done", map[string]string{"id": tc.ID, "result": res})
 				a.mu.Lock()
-				s.hist = append(s.hist, llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: res})
+				s.hist = append(s.hist, llm.Message{Role: "tool", ToolCallID: tc.ID, Name: tc.Function.Name, Content: asideResult(tc.Function.Name, res)})
 				a.mu.Unlock()
 			})
 		if !completed {

@@ -88,6 +88,8 @@ func (a *App) startSession(s *session, cancel context.CancelFunc) {
 		if a.env != nil && (s.env == nil || s.env.Root != a.env.Root) {
 			e := *a.env
 			e.Status = func(st string) { a.temit(s, "status", st) }
+			id := s.id
+			e.Conv = func() string { return "chat:" + id } // this chat's tools, search and brief (not the one on screen)
 			s.env = &e
 		}
 	}
