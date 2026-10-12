@@ -318,6 +318,8 @@ func TestSpecialistGuardStops(t *testing.T) {
 	m.rt.Guard = func(a *Agent) string { return "stopped: today's spend cap ($1.00) is reached" }
 	m.HandleLeadTool("dispatch_specialist", `{"name":"g","brief":"guarded","mode":"plan"}`, Lead{Conv: "c1", Mode: "build"})
 	waitFor(t, "failed", func() bool { return status(m, "g") == Failed })
+	// The lead is told just after the status flips (Windows CI is slow enough to see the gap).
+	waitFor(t, "lead told", func() bool { return len(*results) == 1 })
 	v, _ := m.Get("g")
 	if !strings.Contains(v.Error, "spend cap") || len(*results) != 1 {
 		t.Fatalf("%+v", v)
