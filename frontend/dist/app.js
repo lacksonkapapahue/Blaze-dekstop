@@ -62,6 +62,7 @@ async function boot() {
   await refreshSide();
   hero();
   show("work");
+  if (oneMind() && API().OpenMain) { const c = await API().OpenMain(); convId = "main"; if (c && c.messages && c.messages.length) loadConv(c); }
   if (window.Onboard && Onboard.shouldOpen(S)) show("setup"); // first run, or still no model
   setInterval(refreshJobCount, 4000);
   if (window.refreshConnCount) refreshConnCount(S.connected);
@@ -154,7 +155,22 @@ let LIVE = new Set(); // chats whose answer is running
 function markLive() { $$("#chats .chat[data-id]").forEach(b => b.classList.toggle("live", LIVE.has(b.dataset.id))); }
 on("live", ids => { LIVE = new Set(ids || []); markLive(); });
 
+// One mind (v0.16): Chat mode has one continuous conversation. "New chat" there starts a
+// fresh context instead; projects keep their own chats.
+const oneMind = () => !(S && S.project);
+async function clearContext() {
+  if (!API().ClearContext) return;
+  await API().ClearContext();
+  if (view !== "work" && view !== "design") show("work");
+  const col = $("#log .col", pane);
+  if (col && col.children.length && !$(".hero", col)) {
+    col.append(h("div", "ctxsep", `<span class="label">Fresh context</span><span class="d">Blaze looks older things up from memory</span>`));
+    scrollDown(true);
+  }
+  $("#input").focus();
+}
 async function newChat() {
+  if (oneMind()) return clearContext();
   leaveTurn();
   await API().NewConversation(); convId = ""; attachments = []; ATT = []; drawAttach();
   hero(); show(tab === "design" ? "design" : "work"); refreshSide();
@@ -280,6 +296,23 @@ async function refreshSide() {
 
   $("#chatsLabel").textContent = "Chats";
   $("#chatsCtx").textContent = "· " + (S.project ? S.project.name : "General");
+  const nb = $("#newChat"); if (nb) nb.style.display = pid ? "" : "none"; // one mind: no new chats in Chat mode
+  if (!pid) { // one mind: the one conversation, plus the read-only archive of old chats
+    $("#chatsLabel").textContent = "Conversation";
+    $("#chatsCtx").textContent = "· one mind";
+    const nav = $("#chats"); nav.innerHTML = "";
+    const m = h("button", "chat main" + ((view === "work" || view === "design") && (convId === "main" || !convId) ? " on" : ""), `<span class="t">Blaze</span><span class="when">${esc(S.version || "")}</span>`);
+    m.title = "Your one continuous conversation. /clear starts a fresh context.";
+    m.onclick = () => openChat("main");
+    nav.append(m);
+    const arch = API().ArchivedConversations ? await API().ArchivedConversations() || [] : [];
+    if (arch.length) {
+      const a = h("button", "chat arch", `<span class="t">Archive</span><span class="when">${arch.length}</span>`);
+      a.title = "Chats from before one mind (read-only)"; a.onclick = () => show("archive");
+      nav.append(a);
+    }
+    return;
+  }
   const list = await API().Conversations(pid) || [];
   if (API().Live) LIVE = new Set(await API().Live() || []);
   const nav = $("#chats"); nav.innerHTML = "";
@@ -1031,7 +1064,7 @@ async function modelMenuItems() {
 }
 
 const COMMANDS = [
-  { name: "new", desc: "Start a new chat", run: () => newChat() },
+  { name: "new", desc: "New chat in a project (in Chat: a fresh context)", run: () => newChat() },
   { name: "model", desc: "Switch provider and model, or Auto", sub: modelMenuItems },
   { name: "router", desc: "BlazeRouter: providers, keys, combos, usage", run: () => show("router") },
   { name: "project", desc: "Switch project or make a new one", sub: async () => [{ name: "General", desc: "No project", run: () => switchProject("") }].concat((await API().Projects() || []).map(p => ({ name: p.name, desc: p.folder, run: () => switchProject(p.id) }))).concat([{ name: "New project…", desc: "Pick a folder", run: () => newProject() }]) },
@@ -1041,7 +1074,7 @@ const COMMANDS = [
   { name: "attach", desc: "Attach a project file (or type @)", run: () => { const i = $("#input"); i.value += (i.value && !i.value.endsWith(" ") ? " " : "") + "@"; i.focus(); onType(); } },
   { name: "retry", desc: "Ask the last message again", run: () => retry() },
   { name: "stop", desc: "Stop the current task", run: () => API().Stop() },
-  { name: "clear", desc: "Clear this chat and start fresh", run: () => newChat() },
+  { name: "clear", desc: "Fresh context window (the conversation and memory stay)", run: () => clearContext() },
   { name: "skills", desc: "Use one of your skills", sub: skillMenuItems },
   { name: "plan", desc: "Plan mode: read and scout only, then a plan (Ctrl+Tab)", run: () => setWorkMode("plan") },
   { name: "build", desc: "Build mode: every tool (Ctrl+Tab)", run: () => setWorkMode("build") },

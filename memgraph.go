@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -236,7 +237,24 @@ func (a *App) MemoryGraph() MemGraph {
 	}
 
 	var toks [][]string
+	// One mind: the memories table is the source of truth. Its lines come first; a
+	// blaze.db line it mirrors (kept for Blaze CLI) isn't shown twice.
+	mirrored := map[string]bool{}
+	if md := mindDB(); md != nil {
+		for _, m := range md.All() {
+			if m.Mirror != 0 {
+				mirrored[tools.FactID(m.Mirror)] = true
+			}
+			n := MemNode{ID: mindNodeID(m.ID), Kind: "memory", Label: shortLabel(m.Subject + ": " + m.Text), Text: m.Text, Cat: cat(kindCat(m.Kind)), AI: true,
+				Created: m.Created * 1000}
+			g.Nodes = append(g.Nodes, n)
+			toks = append(toks, linkTokens(m.Subject+" "+m.Related+" "+m.Text))
+		}
+	}
 	for _, f := range facts {
+		if mirrored[f.ID] {
+			continue
+		}
 		t := linkTokens(f.Text)
 		name, ai := localCategory(t), false
 		if f.Category != "" {
@@ -411,7 +429,36 @@ type MemEdit struct {
 }
 
 // EditMemory changes one memory's text; the id changes with the text.
+// mindNodeID is a memories-table line's id in the graph ("k<id>").
+func mindNodeID(id int64) string { return "k" + strconv.FormatInt(id, 10) }
+
+func mindIDOf(nodeID string) (int64, bool) {
+	if !strings.HasPrefix(nodeID, "k") {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(nodeID[1:], 10, 64)
+	return n, err == nil
+}
+
+// kindCat names a memory kind as a graph category.
+func kindCat(k string) string {
+	return map[string]string{"profile": "Profile", "preference": "Preferences", "person": "People", "project": "Projects & plans", "decision": "Decisions", "fact": "Facts"}[k]
+}
+
 func (a *App) EditMemory(id, text string) MemEdit {
+	if mid, ok := mindIDOf(id); ok {
+		md := mindDB()
+		if md == nil {
+			return MemEdit{Error: "memory isn't available"}
+		}
+		if err := md.Update(mid, text, "", ""); err != nil {
+			return MemEdit{Error: err.Error()}
+		}
+		if m, ok := md.Get(mid); ok && m.Mirror != 0 {
+			_, _ = tools.EditFact(tools.FactID(m.Mirror), m.Text)
+		}
+		return MemEdit{ID: id}
+	}
 	nid, err := tools.EditFact(id, text)
 	if err != nil {
 		return MemEdit{Error: err.Error()}
@@ -421,6 +468,19 @@ func (a *App) EditMemory(id, text string) MemEdit {
 
 // ForgetMemory removes one memory. Returns "" or a plain error.
 func (a *App) ForgetMemory(id string) string {
+	if mid, ok := mindIDOf(id); ok {
+		md := mindDB()
+		if md == nil {
+			return "memory isn't available"
+		}
+		if m, ok := md.Get(mid); ok && m.Mirror != 0 {
+			_ = tools.ForgetFact(tools.FactID(m.Mirror))
+		}
+		if err := md.Delete(mid); err != nil {
+			return err.Error()
+		}
+		return ""
+	}
 	if err := tools.ForgetFact(id); err != nil {
 		return err.Error()
 	}
@@ -445,6 +505,11 @@ func (a *App) SearchMemory(q string) []string {
 		return nil
 	}
 	var out []string
+	if md := mindDB(); md != nil {
+		for _, m := range md.Search(q, "", 40) {
+			out = append(out, mindNodeID(m.ID))
+		}
+	}
 	for _, m := range d.Search(q, 200) {
 		out = append(out, tools.FactID(m.ID))
 	}

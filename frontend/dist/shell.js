@@ -89,7 +89,7 @@ const Shell = (() => {
     leaveTurn(); const p = await API().OpenProject(id); convId = "";
     if (p && p.folder) { S.prefs.folder = p.folder; setFolder(p.folder); }
     hero(); await refreshSide();
-    if (id) show("project", id); else show("work");
+    if (id) show("project", id); else { show("work"); if (typeof openChat === "function") openChat("main"); }
   }
 
   // Account, Settings, BlazeRouter, Theme, Model, Updates, Sign out.

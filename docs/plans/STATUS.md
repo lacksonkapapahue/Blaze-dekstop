@@ -26,12 +26,18 @@ Checks: gofmt, vet ./internal/..., go test ./internal/..., GOOS=windows build, n
 ## Step 3b — Blaze Link PC side (PR #50, branch `blaze-link`, v0.14.0) — MERGED (5b9f86d)
 Done: pair.go (port of PR #3, protocol = Android DesktopLink.kt, documented in plan-blaze-link.md), phone_ask tool + Env.Phone, PAIRED PHONE prompt line, linkInBuild=true + live online phone in about_blaze, Phone view (link.js/css, /views, /phone, open_view phone), qrImage fix, pair_test.go, mock + shots link-*, CHANGELOG, VERSION/wails.json 0.14.0.
 
-## Step 4 — Student pack (branch `student-pack`, v0.15.0) — READY, merging on green CI
+## Step 4 — Student pack (PR #51, branch `student-pack`, v0.15.0) — MERGED (066940b)
 Done: classroom_courses/classroom_coursework (on-demand scopes), schedule `once`, 6 skills (34 total, index + README), flashcards pkg + tools + Learn view, low-data mode (prompt, see_screen hidden, MB per task), tests, mock + shots student-*, CHANGELOG, plan-student-pack.md, VERSION/wails.json 0.15.0.
 Manual for Luke: add Classroom scopes + enable Classroom API in Cloud project blaze-511220 (one-click Google broker).
 
 ## Signed updates (PR #23, branch `signed-updates`, v0.15.1) — MERGED (ad34ff3), released v0.15.1 (8 assets incl. SHA256SUMS + SHA256SUMS.sig; signature verified against updsig.PublicKey)
 Rebased onto main after v0.15.0; ed25519-signed SHA256SUMS + SHA256SUMS.sig in the release job (ci/sign, ci/verify), internal/updsig (PublicKey A/yWqdv1xeM1tQhvGj/2uzF2bFpp6OTBrONLxkkctUA=), updater refuses unsigned updates. BLAZE_UPDATE_SIGNING_KEY secret added by Luke. Publish-once-per-VERSION guard kept.
 
+## Signed updates (PR #23, v0.15.1) — MERGED (ad34ff3) by another agent
+
+## One mind (branch `one-mind`, v0.16.0) — PR open, merging on green CI
+Done: internal/mind (journal + memories with FTS5, dedupe/newest wins, pinned core + subject index, ladder, shared prompt text); mind_app.go (one-time migration of old chats + blaze.db memories, save-as-you-go after each turn, idle review on BlazeRouter auto/best-free with llm.Quick fallback, memory_search/save/update, WHAT YOU KNOW block); search_chat/read_turn over the journal; ladder in longContext; main thread "main", /clear = fresh context; Archive view (read-only); Memory graph on the new table; Settings toggle; tests; mock + shots mind-*; CHANGELOG; plan-one-mind.md (schema + prompt text for Android); VERSION/wails.json 0.16.0.
+Checks: gofmt, vet ./internal/..., go test ./internal/..., go test -tags webkit2_41 . (root), GOOS=windows build, node --check, ci/*.test.js, shots.py both themes.
+
 ## Next, in order
-- Step 5 — Marketer pack (part D), own PR.
+- Step 5 — Marketer pack (part D), branch `marketer-pack` (dd31a54): rebase onto main after one-mind, v0.17.0, own PR.

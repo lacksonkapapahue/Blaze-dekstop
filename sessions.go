@@ -26,6 +26,7 @@ type session struct {
 	cancel  context.CancelFunc
 	ml      *agents.Mainline
 	app     *App
+	ctxFrom int // /clear: the model's context starts at this message (the transcript keeps everything)
 }
 
 // tenv is the env this chat's tools run in.
@@ -71,7 +72,15 @@ func (a *App) arm(s *session) {
 // nameSession gives a new chat its id. Call with a.mu held.
 func (a *App) nameSession(s *session) {
 	if s.id == "" {
-		s.id = time.Now().Format("20060102-150405") + "-" + newID()[:4]
+		proj := s.project
+		if !s.started {
+			proj = a.prefs.Project
+		}
+		if proj == "" {
+			s.id = mainConv // one mind: Chat mode has one continuous conversation
+		} else {
+			s.id = time.Now().Format("20060102-150405") + "-" + newID()[:4]
+		}
 	}
 	if s == a.cur {
 		a.convID = s.id

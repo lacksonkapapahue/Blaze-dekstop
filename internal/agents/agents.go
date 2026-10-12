@@ -761,6 +761,23 @@ func (m *Manager) view(a *Agent) View {
 // state could win over "done".
 var saveMu sync.Mutex
 
+// readRetry reads a saved agent, retrying briefly: on Windows a save's rename (or an
+// antivirus scan) can hold the file for a moment, and a skipped file would lose the agent.
+func readRetry(p string) ([]byte, error) {
+	var err error
+	for i := 0; i < 5; i++ {
+		var b []byte
+		if b, err = os.ReadFile(p); err == nil {
+			return b, nil
+		}
+		if os.IsNotExist(err) {
+			return nil, err
+		}
+		time.Sleep(time.Duration(10*(i+1)) * time.Millisecond)
+	}
+	return nil, err
+}
+
 func (m *Manager) save(a *Agent) {
 	if m.dir == "" {
 		return
@@ -799,7 +816,7 @@ func (m *Manager) Load() int {
 		if !strings.HasSuffix(e.Name(), ".json") {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(m.dir, e.Name()))
+		b, err := readRetry(filepath.Join(m.dir, e.Name()))
 		if err != nil {
 			continue
 		}

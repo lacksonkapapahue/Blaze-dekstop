@@ -2,6 +2,14 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.16.0 (one mind)
+- **One continuous conversation**: Chat mode is one thread with Blaze; `/clear` opens a fresh context window instead of a new chat. Projects keep their own threads.
+- **Nothing lost**: every old chat is imported into a searchable journal on first launch and stays readable, read-only, in the new **Archive** view (`/views › Archive`). `search_chat` and `read_turn` reach all of it.
+- **Memory is the source of truth**: a new memories table (newest wins, no duplicates, inferences marked "(inferred)"), shown in the Memory graph and kept in step with Blaze CLI. The prompt carries only a pinned core and an index of subjects; Blaze looks the rest up with `memory_search`, `memory_save`, `memory_update`.
+- **Save as you go** after each turn, plus an **idle review** of older conversation on BlazeRouter's free `auto/best-free` (throttled: idle 10 min, on mains, CPU quiet). Toggle in Settings › Behaviour › Learning.
+- **Context ladder**: recent turns → rolling summary at 60% → when even the summary won't fit, core + index + the last turns, and Blaze looks things up instead of guessing.
+- Design notes (schema and shared prompt text for Android): `docs/plans/plan-one-mind.md`.
+
 ## v0.15.1 (signed updates)
 - **Releases are signed**: every release now carries `SHA256SUMS` (sha256 of every asset) and `SHA256SUMS.sig`, an ed25519 signature made in CI by `ci/sign` from the `BLAZE_UPDATE_SIGNING_KEY` Actions secret. `ci/verify` checks a release folder by hand.
 - **The updater refuses unsigned updates**: before installing, Blaze downloads both files, checks the signature against the public key built into the app (`internal/updsig`, `A/yWqdv1xeM1tQhvGj/2uzF2bFpp6OTBrONLxkkctUA=`) and the file's SHA-256. A missing or bad signature or a hash mismatch deletes the download and installs nothing. No grace period; `BLAZE_ALLOW_UNSIGNED_UPDATE=1` is for local testing only.
