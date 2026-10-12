@@ -89,8 +89,9 @@ func TestModelsMenuNeverOffersKeyless(t *testing.T) {
 	t.Setenv("GROQ_API_KEY", "gsk_test")
 	a.cfg.NoKeyless = false
 	items := a.Models()
-	if len(items) < 2 || items[0].Provider != config.Auto {
-		t.Fatalf("auto must lead: %+v", items)
+	// BlazeRouter leads (v0.10.0), then the classic Auto chain.
+	if len(items) < 3 || items[0].Provider != config.RouterID || items[1].Provider != config.Auto {
+		t.Fatalf("BlazeRouter then auto must lead: %+v", items)
 	}
 	for _, it := range items {
 		if it.Provider == config.KeylessID {
