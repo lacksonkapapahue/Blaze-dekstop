@@ -1,4 +1,4 @@
-# Marketer and seller pack (v0.16.0)
+# Marketer and seller pack (v0.17.0)
 
 Plan part D of `plan-v1.0-redesign.md`. Purpose: help Luke run and grow an online store (his HomeGlow Shopify dropshipping store) and its social media from inside Blaze, on free tools.
 
