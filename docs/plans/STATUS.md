@@ -37,7 +37,7 @@ Rebased onto main after v0.15.0; ed25519-signed SHA256SUMS + SHA256SUMS.sig in t
 Done: internal/mind (journal + memories with FTS5, dedupe/newest wins, pinned core + subject index, ladder, shared prompt text); mind_app.go (one-time migration of old chats + blaze.db memories, save-as-you-go after each turn, idle review on BlazeRouter auto/best-free with llm.Quick fallback, memory_search/save/update, WHAT YOU KNOW block); search_chat/read_turn over the journal; ladder in longContext; main thread "main", /clear = fresh context; Archive view (read-only); Memory graph on the new table; Settings toggle; tests; mock + shots mind-*; CHANGELOG; plan-one-mind.md (schema + prompt text for Android); VERSION/wails.json 0.16.0.
 Checks: gofmt, vet ./internal/..., go test ./internal/..., go test -tags webkit2_41 . (root), GOOS=windows build, node --check, ci/*.test.js, shots.py both themes.
 
-## Step 5 — Marketer pack (branch `marketer-pack`, v0.17.0) — rebased onto one-mind, PR next
+## Step 5 — Marketer pack (branch `marketer-pack`, v0.17.0) — rebased onto main after one mind, PR open, merging on green CI
 Done: skills content-calendar, product-listing, ad-lab, research-brief, whatsapp-replies, weekly-digest (40 total, index + README); phone_ask send approval via Env.Approve (never auto-approved) + test; shots marketer-*; CHANGELOG; plan-marketer-pack.md; VERSION/wails.json 0.17.0.
 
 ## Next, in order
