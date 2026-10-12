@@ -207,3 +207,26 @@ func TestQRImageScales(t *testing.T) {
 		t.Fatal("QR not drawn at scale")
 	}
 }
+
+// Messages sent through the phone always need the user's own yes on the PC first, even
+// when everything else is auto-approved.
+func TestPhoneAskSendNeedsApproval(t *testing.T) {
+	dir := t.TempDir()
+	sent := ""
+	asked := 0
+	env := &tools.Env{Root: dir, Yolo: true, Shell: tools.NewShell("sh", "/bin/sh", dir),
+		Phone:   func(task string) string { sent = task; return "The phone answered: sent" },
+		Confirm: func(string, string) bool { return true },
+		Approve: func(title, detail string) bool { asked++; return false }}
+	if out := tools.Run(env, "phone_ask", `{"task":"Send WhatsApp to HomeGlow customer Ruth: your order shipped today"}`); !strings.Contains(out, "didn't approve") || sent != "" || asked != 1 {
+		t.Fatalf("declined send went through: %q sent=%q", out, sent)
+	}
+	env.Approve = func(string, string) bool { asked++; return true }
+	if out := tools.Run(env, "phone_ask", `{"task":"Send WhatsApp to Ruth: your order shipped today"}`); sent == "" || !strings.Contains(out, "sent") {
+		t.Fatal("approved send should reach the phone")
+	}
+	sent = ""
+	if tools.Run(env, "phone_ask", `{"task":"What's my battery level?"}`); sent == "" || asked != 2 {
+		t.Fatal("a read-only phone request shouldn't ask")
+	}
+}

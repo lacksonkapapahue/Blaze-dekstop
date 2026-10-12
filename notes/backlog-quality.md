@@ -6,7 +6,8 @@ Short notes for the next agent: what shipped, what is known-broken, what to watc
 - v0.12.0 — self-knowledge (PR #49, e586e3c). Release published with 6 assets (Oct 12 2026).
 - v0.13.0 — long-chat engine (PR #48, merged eabc153).
 - v0.14.0 — Blaze Link PC side (PR #50, merged 5b9f86d).
-- v0.15.0 — student pack (branch student-pack).
+- v0.15.0 — student pack (PR #51, merged 066940b).
+- v0.16.0 — marketer pack (branch marketer-pack).
 
 ## Known quirks
 - `go vet .` at the repo root fails on Linux over hotkey.Mod1; vet ./internal/... instead.
