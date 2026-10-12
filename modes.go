@@ -266,6 +266,7 @@ func planGit(raw string) string {
 
 // modeTools filters the tool list for the current work mode.
 func (a *App) modeTools(all []llm.Tool) []llm.Tool {
+	all = a.lowDataTools(all)
 	if a.workMode() != "plan" {
 		return all
 	}

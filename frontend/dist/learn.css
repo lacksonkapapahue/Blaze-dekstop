@@ -45,3 +45,15 @@
 .skview pre { margin: 0; max-height: 320px; overflow: auto; padding: 10px 12px; background: var(--sunk); border: 1px solid var(--hair); font: 11.5px/1.5 var(--mono); color: var(--body); white-space: pre-wrap; }
 @media (max-width: 720px) { .skrows .r.skr { grid-template-columns: 1fr; } .skrows .r.skr .n { display: none; } .sksearch { width: 140px; } }
 @media (prefers-reduced-motion: reduce) { .learnmark { animation: none; } .ltoast { transition: none; } }
+
+/* Learn view: flashcards (v0.15) */
+.lrn-rows { border-top: 1px solid var(--hair); }
+.lrn-deck { display: grid; grid-template-columns: 32px 1fr auto auto; gap: 12px; align-items: center; width: 100%; padding: 12px 0; border: 0; border-bottom: 1px solid var(--hair); background: none; text-align: left; color: var(--ink); cursor: pointer; }
+.lrn-deck:hover { background: var(--faint2); }
+.lrn-deck .t { font: 500 14px/1.3 var(--sans); }
+.lrn-deck .s { color: var(--sub); font-size: 12.5px; }
+.lrn-card { border: 1px solid var(--hair2); background: var(--raised); padding: 28px 28px 22px; margin-top: 14px; min-height: 220px; }
+.lrn-q { font: 600 20px/1.35 var(--display); color: var(--ink); letter-spacing: -.01em; margin: 6px 0 18px; }
+.lrn-a { color: var(--body); font-size: 15px; line-height: 1.55; margin: 6px 0 18px; }
+.lrn-acts { display: flex; gap: 8px; margin-top: 8px; }
+.lrn-acts .label { margin-left: 6px; opacity: .7; }

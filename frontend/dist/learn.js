@@ -142,5 +142,74 @@
     return r;
   }
 
+  // ---------------- Settings › Behaviour › Data (low-data mode, v0.15) ----------------
+  function dataGroup() {
+    const g = group("Data", "For mobile data and slow connections.");
+    const bx = h("div", "box pad formgrid");
+    const on = !!(S && S.prefs && S.prefs.low_data);
+    const t = h("label", "toggle", `<input type="checkbox" ${on ? "checked" : ""}><span><span class="tt">Low-data mode</span><span class="td">Text first: Blaze reads the screen as text instead of screenshots, skips images, previews and big downloads unless you ask, keeps answers short, and shows the MB each task used in its work card.</span></span>`);
+    $("input", t).onchange = async e => { await API().SetLowData(e.target.checked); S.prefs.low_data = e.target.checked; };
+    bx.append(t); g.append(bx);
+    return g;
+  }
+  const _setBehaviourData = setBehaviour;
+  setBehaviour = async function (col, redraw) {
+    await _setBehaviourData(col, redraw);
+    const lg = $$(".group", col).find(x => ($(".gh .label", x) || {}).textContent === "Learning");
+    const g = dataGroup();
+    if (lg) lg.after(g); else col.append(g);
+  };
+
+  // ---------------- Learn view: flashcards with spaced repetition (tutor skill, v0.15) ----------------
+  const GRADES = [["Again", "<10m"], ["Hard", ""], ["Good", ""], ["Easy", ""]];
+  async function learnView(el, deck) {
+    const { col, acts } = page(el, "Learn", "Flashcards", "Cards the tutor skill made from your notes, PDFs and slides. Review what's due each day; cards you know come back less often.");
+    const ask = h("button", "btn line", "Make cards with Blaze");
+    ask.onclick = () => { show("work"); const i = $("#input"); i.value = "Turn my notes into flashcards: "; i.focus(); };
+    acts.append(ask);
+    const decks = (API().FlashDecks ? await API().FlashDecks() : []) || [];
+    if (deck) return review(col, deck);
+    const g = group("Decks", "", h("span", "count", String(decks.length)));
+    const rows = h("div", "lrn-rows");
+    decks.forEach((d, i) => {
+      const r = h("button", "lrn-deck", `<span class="label">${pad(i + 1)}</span><span class="t">${esc(d.name)}</span><span class="s">${d.cards} cards · ${d.new} new</span><span class="pill ${d.due ? "acc" : ""}">${d.due} due</span>`);
+      r.onclick = () => show("learn", d.name);
+      rows.append(r);
+    });
+    if (!decks.length) rows.append(h("div", "empty", "<b>No flashcards yet.</b>Ask Blaze: \"make flashcards from lecture 4\" and attach the PDF or slides."));
+    g.append(rows); col.append(g);
+  }
+
+  async function review(col, deck) {
+    const cards = (await API().FlashDue(deck)) || [];
+    let i = 0, flipped = false, done = 0;
+    const g = group(deck, "", h("span", "count", ""));
+    const back = h("button", "btn ghost xs", "All decks"); back.onclick = () => show("learn");
+    $(".gh", g).append(back);
+    const box = h("div", "lrn-card"); g.append(box); col.append(g);
+    const draw = () => {
+      $(".gh .count", g).textContent = `${Math.min(i + 1, cards.length)} / ${cards.length}`;
+      if (i >= cards.length) {
+        box.innerHTML = `<div class="label acc">Done</div><div class="lrn-q">${done ? `Reviewed ${done} card${done === 1 ? "" : "s"}.` : "Nothing due in this deck."}</div><div class="lrn-a">Come back tomorrow; due cards return on their own schedule.</div>`;
+        return;
+      }
+      const c = cards[i];
+      box.innerHTML = `<div class="label">Question</div><div class="lrn-q">${esc(c.front)}</div>` + (flipped ? `<div class="label">Answer</div><div class="lrn-a">${esc(c.back)}</div>` : "");
+      const row = h("div", "lrn-acts");
+      if (!flipped) {
+        const b = h("button", "btn accent", "Show answer"); b.onclick = () => { flipped = true; draw(); }; row.append(b);
+      } else GRADES.forEach(([n, hint], gi) => {
+        const b = h("button", "btn " + (gi === 2 ? "accent" : "line"), `${n}${hint ? `<span class="label">${hint}</span>` : ""}`);
+        b.onclick = async () => { await API().FlashReview(c.id, gi); i++; done++; flipped = false; draw(); };
+        row.append(b);
+      });
+      box.append(row);
+    };
+    draw();
+  }
+  window.VIEWS = window.VIEWS || {};
+  window.VIEWS.learn = learnView;
+  COMMANDS.push({ name: "learn", desc: "Flashcards: review what's due (spaced repetition)", run: () => show("learn") });
+
   window.Learn = { mark, toast };
 })();

@@ -270,7 +270,7 @@ func init() {
 			return fresh.Summary()
 		})
 
-	register("schedule", "Schedule a shell command or a Blaze prompt to run by itself (Windows Task Scheduler, cron on Linux/macOS). action=add|list|remove. when: 'daily 07:00', 'hourly', 'every 30m', 'weekly mon 09:00', 'boot' or a cron line.",
+	register("schedule", "Schedule a shell command or a Blaze prompt to run by itself (Windows Task Scheduler, cron on Linux/macOS). action=add|list|remove. when: 'daily 07:00', 'hourly', 'every 30m', 'weekly mon 09:00', 'once 2026-11-16 08:00' (one time, e.g. an assignment reminder), 'boot' or a cron line.",
 		[]prop{p("action", "string", "add, list or remove"), p("name", "string", "Short unique name"), p("when", "string", "Schedule"), p("command", "string", "Shell command to run"), p("prompt", "string", "Or: a prompt for Blaze to run")},
 		[]string{"action"}, func(e *Env, a args) string {
 			switch a.s("action") {

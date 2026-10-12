@@ -61,12 +61,12 @@ func New(dir string, sec Secrets, host Host) *Manager {
 // BuiltinTools is every connector tool, in display order.
 func BuiltinTools() []*Tool {
 	var all []*Tool
-	for _, l := range [][]*Tool{googleTools(), githubTools(), spotifyTools(), notionTools(), slackTools()} {
+	for _, l := range [][]*Tool{googleTools(), classroomTools(), githubTools(), spotifyTools(), notionTools(), slackTools()} {
 		all = append(all, l...)
 	}
 	for _, t := range all {
 		switch t.Group {
-		case "gmail", "calendar", "drive", "contacts":
+		case "gmail", "calendar", "drive", "contacts", "classroom":
 			t.Connector = "google"
 		default:
 			t.Connector = t.Group
@@ -522,7 +522,7 @@ func (m *Manager) wantScopes(c *Connector, st ConnState, extra []string) []strin
 	}
 	add(c.BaseScopes)
 	for _, n := range m.order {
-		if t := m.tools[n]; t.Connector == c.ID && t.Risk == Read {
+		if t := m.tools[n]; t.Connector == c.ID && t.Risk == Read && !t.OnDemand {
 			add(t.Scopes)
 		}
 	}

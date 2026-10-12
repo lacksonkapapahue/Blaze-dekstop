@@ -595,10 +595,18 @@ function liveMeta(turn) {
     if (turn.finished) { clearInterval(turn.tick); turn.tick = 0; m.remove(); return; }
     const n = turn.order.length, secs = (Date.now() - turn.started) / 1000;
     const tk = turn.tokens, k = v => v >= 1000 ? (v / 1000).toFixed(1) + "k" : String(v);
-    m.textContent = ["Working", n ? `${n} step${n === 1 ? "" : "s"}` : "", secs >= 1 ? (secs >= 60 ? `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s` : `${Math.round(secs)}s`) : "", tk ? `in ${k(tk.in)} · out ${k(tk.out)}` : ""].filter(Boolean).join(" · ");
+    m.textContent = ["Working", n ? `${n} step${n === 1 ? "" : "s"}` : "", secs >= 1 ? (secs >= 60 ? `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s` : `${Math.round(secs)}s`) : "", tk ? `in ${k(tk.in)} · out ${k(tk.out)}` : "", mbText(turn)].filter(Boolean).join(" · ");
   };
   draw();
   if (!turn.tick) turn.tick = setInterval(draw, 1000);
+}
+
+// Low-data mode (v0.15): data used by this task's model calls, "0.4 MB".
+const lowData = () => !!(S && S.prefs && S.prefs.low_data);
+function mbText(turn) {
+  if (!lowData() || !turn || !turn.bytes) return "";
+  const mb = turn.bytes / 1048576;
+  return (mb < 0.1 ? mb.toFixed(2) : mb.toFixed(1)) + " MB";
 }
 
 // When the turn ends the working line collapses to "Worked · 6 steps · 14s" (or nothing if
@@ -613,7 +621,7 @@ function finishWork(turn, seconds, label) {
   if (!turn.order.length) { w.style.display = "none"; w.classList.remove("live"); $(".wt", w).innerHTML = ""; return; }
   const secs = seconds != null ? seconds : (Date.now() - turn.started) / 1000;
   const n = turn.order.length;
-  const txt = label || STEPS.workedLine(n, secs);
+  const txt = (label || STEPS.workedLine(n, secs)) + (mbText(turn) ? " · " + mbText(turn) : "");
   w.classList.remove("live"); w.classList.add("done");
   $(".wt", w).innerHTML = `<span class="phrase">${esc(txt)}</span>`;
   w.title = `Click to ${turn.open ? "hide" : "see"} each step and its exact command`;
@@ -867,7 +875,7 @@ on("route", r => { if (r && r.route) setModel(r.route); });
 let freshOffered = null;
 on("tokens", t => {
   if (!t) return;
-  if (current) { current.tokens = t; if (current.workEl && !current.finished && current.workEl.classList.contains("live")) liveMeta(current); }
+  if (current) { current.tokens = t; current.bytes = (current.bytes || 0) + (t.bytes || 0); if (current.workEl && !current.finished && current.workEl.classList.contains("live")) liveMeta(current); }
   if (t.high && freshOffered !== convId && current) {
     freshOffered = convId;
     const c = h("div", "card freshoffer", `<div class="title"><span class="label acc">Long chat</span></div><div class="detail">This chat is near the model's limit (${Math.round(t.in / 1000)}k of ${Math.round(t.limit / 1000)}k tokens). Start a fresh chat that picks up from a summary?</div><div class="actions"><button class="btn accent sm go">Start a fresh chat with a summary</button><button class="btn ghost sm no">Not now</button></div>`);

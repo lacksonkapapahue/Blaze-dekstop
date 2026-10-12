@@ -68,6 +68,7 @@ type Tool struct {
 	Props     map[string]any
 	Required  []string
 	Risk      Risk
+	OnDemand  bool                                // scopes asked for on first use only, never with the first sign-in
 	Scopes    []string                            // needed scopes (any listed in implies also counts)
 	Ask       func(a args) (title, detail string) // the approval card
 	Run       func(c *call) (string, error)
@@ -87,6 +88,8 @@ var googleScopeNames = map[string]string{
 	gScope + "calendar.events":          "add and change calendar events",
 	gScope + "drive.readonly":           "see and download your Drive files",
 	gScope + "contacts.readonly":        "see your contacts",
+	scopeCourses:                        "see your Google Classroom classes",
+	scopeCoursework:                     "see your Classroom assignments and grades",
 }
 
 // implies: holding the key scope also satisfies the listed ones.
@@ -107,7 +110,7 @@ func ScopeLabel(s string) string {
 // Catalog is every built-in connector, in display order.
 var Catalog = []*Connector{
 	{
-		ID: "google", Name: "Google", Blurb: "Gmail, Calendar, Drive and Contacts", Auth: AuthOAuth,
+		ID: "google", Name: "Google", Blurb: "Gmail, Calendar, Drive, Contacts and Classroom", Auth: AuthOAuth,
 		AuthURL: "https://accounts.google.com/o/oauth2/v2/auth", TokenURL: "https://oauth2.googleapis.com/token",
 		BaseScopes: []string{"openid", "email"},
 		AuthParams: url.Values{"access_type": {"offline"}, "prompt": {"consent"}, "include_granted_scopes": {"true"}},
@@ -117,14 +120,14 @@ var Catalog = []*Connector{
 		},
 		Steps: []string{
 			"Open Google Cloud Console and create a project (any name).",
-			"APIs & Services › Library: enable Gmail API, Google Calendar API, Google Drive API and People API.",
+			"APIs & Services › Library: enable Gmail API, Google Calendar API, Google Drive API and People API (and Google Classroom API for the student tools).",
 			"OAuth consent screen: External, then add your own Google address as a test user.",
 			"Credentials › Create credentials › OAuth client ID › Application type: Desktop app.",
 			"Paste the client ID and client secret here, then Connect. Google signs in through 127.0.0.1, so there's no redirect URI to add.",
 		},
 		Console: "https://console.cloud.google.com/apis/credentials", ConsoleName: "Google Cloud Console",
 		AnyPort: true, SecretRequired: true,
-		Groups: []string{"gmail", "calendar", "drive", "contacts"},
+		Groups: []string{"gmail", "calendar", "drive", "contacts", "classroom"},
 		WhoAmI: googleWho,
 	},
 	{
@@ -180,7 +183,7 @@ var Catalog = []*Connector{
 
 // GroupNames are the tool groups in words, for the prompt and the UI.
 var GroupNames = map[string]string{
-	"gmail": "Gmail", "calendar": "Google Calendar", "drive": "Google Drive", "contacts": "Google Contacts",
+	"gmail": "Gmail", "calendar": "Google Calendar", "drive": "Google Drive", "contacts": "Google Contacts", "classroom": "Google Classroom",
 	"github": "GitHub", "spotify": "Spotify", "notion": "Notion", "slack": "Slack",
 }
 
