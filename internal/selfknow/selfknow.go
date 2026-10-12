@@ -51,6 +51,7 @@ type Account struct {
 	Service  string    `json:"service"`
 	Online   bool      `json:"online"`
 	KeysSync time.Time `json:"keys_sync,omitempty"` // last model-key sync with the account
+	SignIn   string    `json:"sign_in,omitempty"`   // how to sign in from this app
 }
 
 // Router is BlazeRouter, the local OpenAI-compatible gateway (Desktop only).
@@ -373,10 +374,8 @@ func one(f Facts, s string) string {
 			li("Model keys last synced: %s", f.Account.KeysSync.Format("2 Jan 2006 15:04"))
 		}
 		li("What it shares: your model keys (encrypted) across Desktop, CLI and Android; it is also your sign-in for one-click connectors. Chats, memory and connector tokens stay on this computer.")
-		if f.App == "Blaze CLI" {
-			li("Sign in: `blaze account login` (or /account). Sign out: `blaze account logout`.")
-		} else {
-			li("Sign in: /account or Settings › Account (email, Google or GitHub).")
+		if f.Account.SignIn != "" {
+			li("Sign in: %s", f.Account.SignIn)
 		}
 	case "link":
 		h("Blaze Link (phone ↔ PC)")

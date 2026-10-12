@@ -42,6 +42,7 @@ func buildLine() string {
 func (a *App) selfFacts(full bool) selfknow.Facts {
 	f := selfknow.Facts{App: "Blaze Desktop", Version: version, Build: buildLine(), DataDir: config.Dir(), PhonePrev: true}
 	f.Account.Service = selfknow.Worker
+	f.Account.SignIn = "/account or Settings › Account (email, Google or GitHub). Blaze CLI on this computer shares the sign-in."
 	if cs := a.cloud; cs != nil {
 		cs.mu.Lock()
 		f.Account.Online = cs.online
