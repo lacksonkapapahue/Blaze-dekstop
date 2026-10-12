@@ -174,9 +174,6 @@ func (a *App) maybeReflect(conv string, hist []llm.Message) {
 	if !dec.Reflect || d == nil {
 		return
 	}
-	if c := a.cfg.DailyCap; c > 0 && llm.TodayCost() >= c {
-		return // the spend cap is reached: no background calls
-	}
 	reflectState.Lock()
 	if reflectState.inflight || time.Since(reflectState.last) < reflectEvery {
 		reflectState.Unlock()

@@ -26,12 +26,10 @@ func agentsDir() string { return filepath.Join(config.Dir(), "desktop", "agents"
 // worktreesDir is where specialists get their own git worktree or folder copy (v0.6.0).
 func worktreesDir() string { return filepath.Join(config.Dir(), "desktop", "worktrees") }
 
-// agentGuard stops an agent at the lead's limits: the daily spend cap for every agent,
-// and Autopilot's time budget for a specialist (it inherits the lead's budgets).
+// agentGuard stops an agent at the lead's limits: Autopilot's time budget for a
+// specialist (it inherits the lead's budgets). The plan's daily tokens are enforced by
+// the Blaze service itself.
 func (a *App) agentGuard(ag *agents.Agent) string {
-	if c := a.cfg.DailyCap; c > 0 && llm.TodayCost() >= c {
-		return fmt.Sprintf("stopped: today's spend cap ($%.2f) is reached", c)
-	}
 	if ag.Kind == agents.Specialist && a.approval() == "autopilot" && !ag.Started.IsZero() {
 		a.mu.Lock()
 		mins := a.prefs.Composer.APMinutes

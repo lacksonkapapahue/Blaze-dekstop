@@ -1,17 +1,17 @@
 package llm
 
-// The router (ported from the Android app's FreeRouter.kt, KeyRing.kt and the
-// fallback parts of LlmClient.kt).
+// The router.
 //
-//   - Auto (free routing): the user's chain, fill-first. Cooling entries are skipped,
-//     flaky ones pushed back, and among equally healthy ones the fastest goes first.
-//   - A fixed default model is always tried first; if it fails and fallback is on,
-//     the chain carries the turn.
-//   - Each provider can hold several keys. A key that runs out of quota on a model
-//     rests and the next key carries on with the same model.
-//   - A model that can't call tools (Pollinations, or one the catalog or the provider
-//     says can't) is never used for a turn that sends tools. Keyless is only a
-//     plain-chat last resort when nothing else is set up, and only when the caller allows it.
+//   - Auto: the Blaze plan's model first (the Worker falls back across its own
+//     providers), then the user's local models (Ollama, a local server) in chain order,
+//     healthiest and fastest first. A local model takes over only when Blaze can't be
+//     reached or its providers are down, and the reply says so.
+//   - A chosen model (Blaze or local) is the only one tried: it never falls back. Its
+//     error is shown, so a chosen cloud model is never quietly swapped for Ollama.
+//   - The Blaze service's plan refusals (signed out, daily limit, a model above the
+//     plan, too many requests a minute) end the turn at once as a *PlanError, in Auto too.
+//   - A model that can't call tools (the catalog or the provider says so) is never used
+//     for a turn that sends tools.
 
 import (
 	"context"
@@ -38,8 +38,7 @@ type Health struct {
 }
 
 type persisted struct {
-	NoTools  map[string]bool      `json:"no_tools"`  // provider|model the provider said can't use tools
-	KeyRests map[string]time.Time `json:"key_rests"` // provider|model|keyhash -> resting until
+	NoTools map[string]bool `json:"no_tools"` // provider|model the provider said can't use tools
 }
 
 var (
@@ -54,24 +53,15 @@ func loadStore() {
 	if store != nil {
 		return
 	}
-	store = &persisted{NoTools: map[string]bool{}, KeyRests: map[string]time.Time{}}
+	store = &persisted{NoTools: map[string]bool{}}
 	b, _ := os.ReadFile(routerPath())
 	_ = json.Unmarshal(b, store)
 	if store.NoTools == nil {
 		store.NoTools = map[string]bool{}
 	}
-	if store.KeyRests == nil {
-		store.KeyRests = map[string]time.Time{}
-	}
 }
 
 func saveStore() {
-	now := time.Now()
-	for k, t := range store.KeyRests {
-		if t.Before(now) {
-			delete(store.KeyRests, k)
-		}
-	}
 	_ = os.MkdirAll(filepath.Dir(routerPath()), 0o700)
 	b, _ := json.Marshal(store)
 	_ = os.WriteFile(routerPath(), b, 0o600)
@@ -101,44 +91,14 @@ func h(k string) *Health {
 	return x
 }
 
-func keyHash(key string) string {
-	v := uint32(2166136261)
-	for _, c := range key {
-		v = (v ^ uint32(c)) * 16777619
-	}
-	return fmt.Sprintf("%08x", v)
-}
-
-func restKey(provider, model, key string, d time.Duration) {
-	hmu.Lock()
-	defer hmu.Unlock()
-	loadStore()
-	store.KeyRests[provider+"|"+model+"|"+keyHash(key)] = time.Now().Add(d)
-	saveStore()
-}
-
-func keyResting(provider, model, key string) bool {
-	hmu.Lock()
-	defer hmu.Unlock()
-	loadStore()
-	return store.KeyRests[provider+"|"+model+"|"+keyHash(key)].After(time.Now())
-}
-
-// ClearHealth forgets cool-downs and key rests for a provider (after adding a key, say).
+// ClearHealth forgets cool-downs for a provider (after it was set up again, say).
 func ClearHealth(provider string) {
 	hmu.Lock()
-	loadStore()
 	for k, x := range health {
 		if strings.HasPrefix(k, provider+"|") {
 			x.CoolUntil, x.Fails = time.Time{}, 0
 		}
 	}
-	for k := range store.KeyRests {
-		if strings.HasPrefix(k, provider+"|") {
-			delete(store.KeyRests, k)
-		}
-	}
-	saveStore()
 	hmu.Unlock()
 	ClearBudget(provider + "|")
 }
@@ -165,32 +125,13 @@ type Target struct {
 
 func (t Target) key() string { return t.Provider + "|" + t.Model }
 
-func usable(cfg *config.Config, provider string) bool {
-	if provider == config.KeylessID || provider == "" {
-		return false
-	}
+func usable(provider string) bool {
 	p, ok := config.ProviderByID(provider)
-	if !ok || p.BaseURL == "" {
-		return false
-	}
-	return provider == "ollama" || provider == config.Custom || cfg.Key(provider) != ""
+	return ok && p.BaseURL != ""
 }
 
-// Entries is the Auto chain: the saved chain, or (when it's empty) every free-tier
-// provider with a key, in the default fill-first order.
-func Entries(cfg *config.Config) []config.Entry {
-	ch := cfg.RouteChain()
-	if len(ch) > 0 {
-		return ch
-	}
-	var out []config.Entry
-	for _, id := range config.FreeOrder {
-		if cfg.Key(id) != "" {
-			out = append(out, config.Entry{Provider: id, Model: cfg.Model(id)})
-		}
-	}
-	return out
-}
+// Entries is the Auto chain's local models (the plan's Blaze model goes before them).
+func Entries(cfg *config.Config) []config.Entry { return cfg.RouteChain() }
 
 // Targets lists who a turn would try, in order. needTools drops models that can't use tools.
 func Targets(cfg *config.Config, needTools bool) []Target {
@@ -200,9 +141,8 @@ func Targets(cfg *config.Config, needTools bool) []Target {
 		if model == "" {
 			model = cfg.Model(provider)
 		}
-		model = ResolveModel(provider, model)
 		t := Target{Provider: provider, Model: model, Name: config.Name(provider), Fixed: fixed}
-		if model == "" || seen[t.key()] || !usable(cfg, provider) {
+		if model == "" || seen[t.key()] || !usable(provider) {
 			return
 		}
 		if needTools && !CanUseTools(provider, model) {
@@ -211,24 +151,17 @@ func Targets(cfg *config.Config, needTools bool) []Target {
 		seen[t.key()] = true
 		out = append(out, t)
 	}
-	auto := cfg.IsAuto()
-	if !auto && cfg.DailyCap > 0 {
-		if p, ok := config.ProviderByID(cfg.Default.Provider); ok && !p.Free && TodayCost() >= cfg.DailyCap {
-			auto = true // past today's spend cap: free chain only
-		}
-	}
-	if !auto {
+	if !cfg.IsAuto() {
+		// A chosen model is the only one tried: it never hands the turn to another.
 		push(cfg.Default.Provider, cfg.Default.Model, true)
-		if cfg.NoFallback {
-			return out
-		}
+		return out
 	}
-	var chain []Target
+	push(config.Blaze, BlazeDefault(), false)
 	start := len(out)
 	for _, e := range Entries(cfg) {
 		push(e.Provider, e.Model, false)
 	}
-	chain = append(chain, out[start:]...)
+	chain := append([]Target(nil), out[start:]...)
 	out = out[:start]
 	hmu.Lock()
 	now := time.Now()
@@ -258,8 +191,6 @@ func Targets(cfg *config.Config, needTools bool) []Target {
 			return fi < fj
 		}
 		if !cfg.NoFastest {
-			// Among equally healthy ones the fastest goes first; an untried model counts as
-			// fast so it gets measured.
 			return avg(ready[i]) < avg(ready[j])
 		}
 		return false
@@ -275,10 +206,7 @@ func Targets(cfg *config.Config, needTools bool) []Target {
 
 type Opts struct {
 	OnText   func(string)
-	OnStatus func(string) // "Groq is cooling down, back in 12s"
-	// PlainFallback lets the keyless model answer without tools when no model that
-	// can use tools is set up at all. Never set it for Design or unattended runs.
-	PlainFallback bool
+	OnStatus func(string) // "Ollama is cooling down, back in 12s"
 }
 
 // Complete routes one turn (kept for callers that only stream text).
@@ -317,10 +245,6 @@ func complete(ctx context.Context, cfg *config.Config, msgs []Message, tools []T
 	needTools := len(tools) > 0
 	list := Targets(cfg, needTools)
 	if len(list) == 0 {
-		// Nothing that can do this turn. Keyless may answer plain chat, never tools.
-		if (!needTools || o.PlainFallback) && cfg.AllowKeyless() {
-			return keyless(ctx, msgs, o)
-		}
 		if needTools && len(Targets(cfg, false)) > 0 {
 			return nil, &RouteError{NoTools: true}
 		}
@@ -346,101 +270,77 @@ func complete(ctx context.Context, cfg *config.Config, msgs []Message, tools []T
 	}
 	var resting []rest
 	allTooLarge := true
-	for _, t := range list {
+	skipped := ""
+	for i, t := range list {
 		p, _ := config.ProviderByID(t.Provider)
-		keys := cfg.AllKeys(t.Provider)
-		if len(keys) == 0 {
-			keys = []string{""} // ollama / custom without a key
+		key := Credential(t.Provider)
+		if t.Provider == config.Blaze && key == "" {
+			// Signed out: a chosen Blaze model (or Auto with nothing local after it) asks
+			// the user to sign in; Auto with a local model lets that model answer.
+			if t.Fixed || i == len(list)-1 {
+				return nil, ErrSignedOut
+			}
+			skipped = "You're signed out of Blaze"
+			continue
 		}
 		if w, why := Wait(t.key(), tokens); w > 0 {
 			resting = append(resting, rest{t.Name, w, why})
 			allTooLarge = allTooLarge && strings.HasPrefix(why, "request bigger")
 			continue
 		}
-		var lastErr error
-		answered := false
-		anyKey := false
-		for ki, key := range keys {
-			if len(keys) > 1 && keyResting(t.Provider, t.Model, key) {
-				continue
+		Spend(t.key(), tokens)
+		started := false
+		wrapped := func(s string) {
+			started = true
+			if o.OnText != nil {
+				o.OnText(s)
 			}
-			anyKey = true
-			Spend(t.key(), tokens)
-			started := false
-			wrapped := func(s string) {
-				started = true
-				if o.OnText != nil {
-					o.OnText(s)
-				}
-			}
-			t0 := time.Now()
-			r, err, note := callHealing(ctx, p, key, t.Model, msgs, tools, wrapped, &started)
-			if r != nil {
-				Headers(t.key(), r.Headers)
-			}
-			if err == nil {
-				ms := time.Since(t0).Milliseconds()
-				hmu.Lock()
-				x := h(t.key())
-				x.Fails, x.OK, x.CoolUntil, x.LastErr = 0, x.OK+1, time.Time{}, ""
-				if x.AvgMs == 0 {
-					x.AvgMs = ms
-				} else {
-					x.AvgMs = (x.AvgMs*3 + ms) / 4
-				}
-				hmu.Unlock()
-				RecordUsage(t.Provider, t.Model, chars(msgs, tools), r)
-				r.Provider, r.Model = t.Provider, t.Model
-				r.Route = t.Name + " · " + t.Model
-				if ki > 0 {
-					note = strings.TrimPrefix(note+" · key "+fmt.Sprint(ki+1), " · ")
-				}
-				if note != "" {
-					r.Route += " · " + note
-				}
-				if len(re.Failures) > 0 {
-					r.Note = re.Failures[0].Name + " couldn't answer, so " + t.Name + " did."
-				}
-				return r, nil
-			}
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			if started {
-				// Half an answer already shown: don't silently restart on another model.
-				return nil, &RouteError{Failures: []Failure{failure(t, err)}}
-			}
-			lastErr = err
-			if IsQuota(err) {
-				var he *HTTPError
-				ra := 0
-				if errors.As(err, &he) {
-					ra = he.RetryAfter
-				}
-				d := Limited(t.key(), err.Error(), ra)
-				if len(keys) > 1 {
-					// This key is out for this model: rest it and carry on with the next key.
-					if d < time.Hour && dailyRe.MatchString(err.Error()) {
-						d = time.Hour
-					}
-					restKey(t.Provider, t.Model, key, d)
-					ClearBudget(t.key())
-					continue
-				}
-			}
-			break
 		}
-		if answered {
-			continue
+		t0 := time.Now()
+		r, err, note := callHealing(ctx, p, key, t.Model, msgs, tools, wrapped, &started)
+		if r != nil {
+			Headers(t.key(), r.Headers)
 		}
-		if !anyKey {
-			resting = append(resting, rest{t.Name, time.Hour, "every key used up"})
-			continue
+		if err == nil {
+			ms := time.Since(t0).Milliseconds()
+			hmu.Lock()
+			x := h(t.key())
+			x.Fails, x.OK, x.CoolUntil, x.LastErr = 0, x.OK+1, time.Time{}, ""
+			if x.AvgMs == 0 {
+				x.AvgMs = ms
+			} else {
+				x.AvgMs = (x.AvgMs*3 + ms) / 4
+			}
+			hmu.Unlock()
+			RecordUsage(t.Provider, t.Model, chars(msgs, tools), r)
+			r.Provider, r.Model = t.Provider, t.Model
+			r.Route = t.Name + " · " + t.Model
+			if note != "" {
+				r.Route += " · " + note
+			}
+			switch {
+			case len(re.Failures) > 0:
+				r.Note = re.Failures[0].Name + " couldn't answer, so " + t.Name + " did."
+			case skipped != "":
+				r.Note = skipped + ", so " + t.Name + " answered."
+			}
+			return r, nil
 		}
-		if lastErr == nil {
-			continue
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
-		err := lastErr
+		if t.Provider == config.Blaze {
+			// The plan said no (signed out, daily limit, locked model, per-minute limit):
+			// show it and stop. Another model must never take over a plan refusal.
+			var pe *PlanError
+			if errors.As(blazeError(err), &pe) {
+				return nil, pe
+			}
+		}
+		if started {
+			// Half an answer already shown: don't silently restart on another model.
+			return nil, &RouteError{Failures: []Failure{failure(t, err)}}
+		}
 		if !TooLarge(err) {
 			allTooLarge = false
 		}
@@ -451,7 +351,12 @@ func complete(ctx context.Context, cfg *config.Config, msgs []Message, tools []T
 		}
 		cool := 10 * time.Second
 		switch {
-		case IsQuota(err):
+		case IsQuota(err) && t.Provider != config.Blaze:
+			ra := 0
+			if he != nil {
+				ra = he.RetryAfter
+			}
+			Limited(t.key(), err.Error(), ra)
 			w, why := Wait(t.key(), 0)
 			if w == 0 {
 				w = time.Minute
@@ -466,13 +371,16 @@ func complete(ctx context.Context, cfg *config.Config, msgs []Message, tools []T
 		case code >= 500 || code == 0:
 			cool = 20 * time.Second
 		}
+		if t.Provider == config.Blaze {
+			cool = 5 * time.Second // the Worker already tried its providers; ask again soon
+		}
 		hmu.Lock()
 		x := h(t.key())
 		x.Fails++
 		x.CoolUntil = time.Now().Add(cool)
 		x.LastErr = trunc(err.Error(), 160)
 		hmu.Unlock()
-		if !IsQuota(err) {
+		if !IsQuota(err) || t.Provider == config.Blaze {
 			re.Failures = append(re.Failures, failure(t, err))
 		}
 	}
@@ -546,28 +454,12 @@ func callHealing(ctx context.Context, p config.Provider, key, model string, msgs
 	return r, err, ""
 }
 
-// keyless answers plain chat on Pollinations, without tools.
-func keyless(ctx context.Context, msgs []Message, o Opts) (*Result, error) {
-	p, _ := config.ProviderByID(config.KeylessID)
-	r, err := Chat(ctx, p, "", p.DefaultModel, Flatten(msgs), nil, o.OnText)
-	if err != nil {
-		t := Target{Provider: p.ID, Model: p.DefaultModel, Name: config.Name(p.ID)}
-		return nil, &RouteError{Failures: []Failure{failure(t, err)}}
-	}
-	r.ToolCalls = nil
-	r.Keyless = true
-	r.Provider, r.Model = p.ID, p.DefaultModel
-	r.Route = "Pollinations (keyless) · chat only, no tools"
-	return r, nil
-}
-
 // ---------------- status for the UI ----------------
 
 type TargetStatus struct {
 	Target
 	Health
 	Cooling  int    `json:"cooling"` // seconds left
-	Keys     int    `json:"keys"`
 	CanTools bool   `json:"can_tools"`
 	Resting  string `json:"resting,omitempty"`
 }
@@ -577,7 +469,7 @@ func Status(cfg *config.Config) []TargetStatus {
 	var out []TargetStatus
 	all := Targets(cfg, false)
 	for _, t := range all {
-		s := TargetStatus{Target: t, Keys: len(cfg.AllKeys(t.Provider)), CanTools: CanUseTools(t.Provider, t.Model)}
+		s := TargetStatus{Target: t, CanTools: CanUseTools(t.Provider, t.Model)}
 		hmu.Lock()
 		if x := health[t.key()]; x != nil {
 			s.Health = *x

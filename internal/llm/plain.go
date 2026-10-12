@@ -23,17 +23,17 @@ type Failure struct {
 // RouteError is returned when no model in the route could answer.
 type RouteError struct {
 	Failures []Failure
-	Resting  []string // "Groq back in 40s (rate limit)"
+	Resting  []string // "Ollama back in 40s (busy)"
 	NoTools  bool     // nothing set up can use tools
 	NoModels bool     // nothing set up at all
 }
 
 func (e *RouteError) Error() string {
 	if e.NoModels {
-		return "No AI model is set up yet. Add a free Gemini or Groq key in Settings › Models (it takes a minute)."
+		return "No model is available. Sign in to your Blaze account, or pick a local model in Settings › Models."
 	}
 	if e.NoTools {
-		return "None of your models can use tools, so Blaze can't act. Add a free Gemini, Groq or Cerebras key in Settings › Models."
+		return "The chosen model can't use tools, so Blaze can't act. Switch to Auto or a Blaze model in the model menu."
 	}
 	var b strings.Builder
 	if len(e.Failures) == 0 && len(e.Resting) > 0 {
@@ -55,13 +55,17 @@ func Plain(err error) string {
 	if err == nil {
 		return ""
 	}
+	var pe *PlanError
+	if errors.As(err, &pe) {
+		return pe.Message
+	}
 	var re *RouteError
 	if errors.As(err, &re) {
 		if re.NoModels || re.NoTools {
 			return re.Error()
 		}
 		if len(re.Failures) == 0 && len(re.Resting) > 0 {
-			return "All your models are resting after hitting their limits (" + strings.Join(re.Resting, "; ") + "). Try again shortly, or add another free key so Blaze can switch."
+			return "All your models are resting after hitting their limits (" + strings.Join(re.Resting, "; ") + "). Try again shortly."
 		}
 		if len(re.Failures) == 1 && len(re.Resting) == 0 {
 			return re.Failures[0].Message
@@ -94,11 +98,11 @@ func PlainText(who string, code int, raw string) string {
 	low := strings.ToLower(t)
 	switch {
 	case code == 429 || strings.Contains(low, "quota") || strings.Contains(low, "rate limit") || strings.Contains(low, "resource_exhausted"):
-		return who + " hit its free limit for now. Blaze will use another model; limits reset by themselves (usually within a minute, or by tomorrow)."
-	case code == 401 || code == 403 || (strings.Contains(low, "api key") && (strings.Contains(low, "invalid") || strings.Contains(low, "not valid"))) || strings.Contains(low, "is a ") && strings.Contains(low, "key"):
-		return who + " didn't accept its key. Check it in Settings › Models."
+		return who + " is busy right now. Try again in a moment."
+	case code == 401 || code == 403:
+		return who + " refused the request (" + short(t) + "). Sign in again, or switch model."
 	case code == 404 || strings.Contains(low, "not found") || strings.Contains(low, "does not exist") || strings.Contains(low, "no model chosen"):
-		return who + " doesn't offer that model to your key. Pick another one in Settings › Models."
+		return who + " doesn't have that model. Pick another one in the model menu."
 	case NoToolSupport(&HTTPError{Code: code, Body: t}):
 		return who + " can't use tools with this model. Pick a model marked Tools."
 	case code == 400 && (strings.Contains(low, "invalid argument") || strings.Contains(low, "invalid_argument") || strings.Contains(low, "thought_signature") || strings.Contains(low, "function")):

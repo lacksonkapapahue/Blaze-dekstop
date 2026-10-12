@@ -81,6 +81,7 @@ type App struct {
 	pending map[string]chan int // confirm cards: 0 no, 1 yes, 2 always
 	conn    *connect.Manager
 	cloud   *cloudState // Blaze account + one-click connectors (account.go)
+	plans   planCache   // the account's plan and today's usage (plan.go)
 	convID  string      // the chat on screen (a.cur.id once it has one)
 	pv      *preview
 	ready   chan struct{} // closed when startup has finished
@@ -215,7 +216,8 @@ type State struct {
 	Modes       ModeView          `json:"modes"`
 	VisionModel string            `json:"vision_model"` // the first model that can see images ("" = none; composer)
 	Persona     string            `json:"persona"`
-	Keyless     bool              `json:"keyless"`
+	SignedIn    bool              `json:"signed_in"` // signed in to a Blaze account
+	Gate        string            `json:"gate"`      // "" | "setup" | "signin": what the app may show (plan.go)
 	Skills      []string          `json:"skills"`
 	Memory      string            `json:"memory"`
 	Project     *Project          `json:"project"`
@@ -241,7 +243,7 @@ func (a *App) State() State {
 	aiSort := a.memAISort()
 	prefs.MemoryAISort = &aiSort
 	s := State{Version: version, SetupDone: a.cfg.SetupDone, Info: a.info, Chain: a.cfg.RouteChain(), Prefs: prefs,
-		Yolo: a.cfg.AutoApprove, Persona: a.cfg.Persona, Keyless: a.cfg.AllowKeyless(), Missing: a.info.Missing(),
+		Yolo: a.cfg.AutoApprove, Persona: a.cfg.Persona, SignedIn: a.signedIn(), Gate: a.signInView(), Missing: a.info.Missing(),
 		Installs: map[string]string{}, Memory: tools.Memory(), Project: a.project(), Model: a.modelName(),
 		Selection: a.selection(), Routing: a.routing(), Providers: a.providerViews(), Desktop: a.desktopView(), Connected: a.conn.ConnectedCount(),
 		Notify: a.notifyView(false), Vision: a.prefs.Vision,
@@ -574,7 +576,7 @@ func (a *App) run(ctx context.Context, s *session) {
 	note, retries := "", 0
 	ap, steps := a.startAutopilot(steps)
 	for step := 0; step < steps; step++ {
-		if why := ap.stop(a.cfg.DailyCap, llm.TodayCost()); why != "" {
+		if why := ap.stop(); why != "" {
 			a.temit(s, "error", map[string]any{"message": why, "kind": "steps"})
 			return
 		}
@@ -597,9 +599,6 @@ func (a *App) run(ctx context.Context, s *session) {
 		r, err := llm.CompleteWith(ctx, a.cfg, msgs, a.modeTools(all), llm.Opts{
 			OnText:   func(t string) { partial.WriteString(t); a.temit(s, "delta", t) },
 			OnStatus: func(t string) { a.temit(s, "status", t) },
-			// Keyless may answer plain chat in Work when nothing that can use tools is set up.
-			// Never in Design: a design turn without tools can't change anything.
-			PlainFallback: !design,
 		})
 		if err != nil {
 			// Keep what the user already saw, so Continue picks up from there.
@@ -613,7 +612,7 @@ func (a *App) run(ctx context.Context, s *session) {
 			}
 			return
 		}
-		a.temit(s, "route", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless})
+		a.temit(s, "route", map[string]any{"route": r.Route, "note": r.Note})
 		// The gatekeeper: repair what can be repaired; never save a call with no name or
 		// unreadable arguments (the provider would refuse every later request with a 400).
 		n := llm.NormalizeCalls(r.ToolCalls, known)
@@ -635,7 +634,7 @@ func (a *App) run(ctx context.Context, s *session) {
 			if a.autoReply(s, &ap, r.Text) {
 				continue // Autopilot: the user is away, so the agent decides and keeps going
 			}
-			done := map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless, "seconds": time.Since(started).Seconds()}
+			done := map[string]any{"route": r.Route, "note": r.Note, "seconds": time.Since(started).Seconds()}
 			if r.Truncated() {
 				done["cut"] = true // ran out of output tokens or the stream broke: offer Continue
 			}
@@ -709,7 +708,7 @@ func (a *App) run(ctx context.Context, s *session) {
 				s.hist = append(s.hist, llm.Message{Role: "assistant", Content: line})
 				a.mu.Unlock()
 			}
-			a.temit(s, "done", map[string]any{"route": r.Route, "note": r.Note, "keyless": r.Keyless, "seconds": time.Since(started).Seconds(), "handoff": true})
+			a.temit(s, "done", map[string]any{"route": r.Route, "note": r.Note, "seconds": time.Since(started).Seconds(), "handoff": true})
 			return
 		}
 	}
@@ -735,6 +734,20 @@ func (a *App) keepPartial(s *session, text string) bool {
 // and whether switching model would help.
 func turnError(err error) map[string]any {
 	out := map[string]any{"message": llm.Plain(err), "detail": err.Error(), "kind": "model"}
+	var pe *llm.PlanError
+	if errors.As(err, &pe) {
+		out["kind"] = "plan"
+		out["code"] = pe.Code
+		out["upgrade"] = pe.Upgradable()
+		out["tier"] = pe.Upgrade
+		if pe.Required != "" {
+			out["tier"] = pe.Required
+		}
+		if pe.Code == "signed_out" {
+			out["kind"] = "signin"
+		}
+		return out
+	}
 	var re *llm.RouteError
 	if errors.As(err, &re) {
 		out["failures"] = re.Failures
@@ -957,9 +970,13 @@ func (a *App) Doctor() []Check {
 		resp.Body.Close()
 	}
 	add("Internet", online, map[bool]string{true: "Online", false: "Can't reach the internet"}[online])
+	add("Blaze account", a.signedIn(), map[bool]string{true: "Signed in", false: "Signed out: sign in to use Blaze's models"}[a.signedIn()])
+	if p := a.refreshPlan(false); p != nil {
+		add("Plan", p.Usage.Remaining > 0, fmt.Sprintf("%s · %d of %d tokens left today", p.Plan.Name, p.Usage.Remaining, p.Usage.Limit))
+	}
 	targets := llm.Targets(a.cfg, false)
 	if len(targets) == 0 {
-		add("Models", false, "No model is set up. Add a free Gemini or Groq key in Settings › Models.")
+		add("Models", false, "No model is available. Sign in to your Blaze account, or add a local model in Settings › Models.")
 	}
 	for _, t := range targets {
 		c := a.TestModel(t.Provider, t.Model)
@@ -969,7 +986,7 @@ func (a *App) Doctor() []Check {
 		out = append(out, c)
 	}
 	if len(targets) > 0 && len(llm.Targets(a.cfg, true)) == 0 {
-		add("Tools", false, "None of your models can use tools, so Blaze can't act. Add a Gemini, Groq or Cerebras key.")
+		add("Tools", false, "The chosen model can't use tools, so Blaze can't act. Switch to Auto or a Blaze model.")
 	}
 	sh := tools.NewShell(a.info.Shell, a.info.ShellPath, a.info.Home)
 	add("Shell", strings.Contains(sh.Run("echo blaze-ok", 20*time.Second), "blaze-ok"), a.info.Shell+" · "+a.info.ShellPath)

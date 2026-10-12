@@ -410,15 +410,12 @@ func (a *App) startAutopilot(steps int) (autopilotRun, int) {
 }
 
 // stop is why Autopilot must end now ("" = keep going).
-func (r *autopilotRun) stop(capUSD, spent float64) string {
+func (r *autopilotRun) stop() string {
 	if !r.on {
 		return ""
 	}
 	if !r.deadline.IsZero() && time.Now().After(r.deadline) {
 		return fmt.Sprintf("Autopilot stopped at its time budget (%s). Say \"continue\" to keep going.", r.deadline.Sub(r.started).Round(time.Minute))
-	}
-	if capUSD > 0 && spent >= capUSD {
-		return fmt.Sprintf("Autopilot stopped: today's spend cap ($%.2f) is reached. Raise it in Settings › Models, or continue tomorrow.", capUSD)
 	}
 	return ""
 }

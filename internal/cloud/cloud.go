@@ -6,6 +6,9 @@
 //     tokens, and hands them back to a 127.0.0.1 loopback here through a one-time
 //     code bound to our PKCE verifier.
 //   - Blaze accounts: email + password, or Sign in with Google / GitHub.
+//   - plans: the account's plan, today's usage and models (/v1/plan, /v1/models), and
+//     PayPal checkout / cancel. The models themselves are called through the llm
+//     package's "blaze" provider (/v1/chat/completions).
 //
 // No secret lives in the desktop binary. Tokens end up in the OS keychain.
 package cloud
@@ -93,7 +96,7 @@ func Message(err error) string {
 	case err == nil:
 		return ""
 	case errors.Is(err, ErrNotConfigured):
-		return "One-click sign-in isn't switched on for this yet. Use your own key instead."
+		return "That isn't switched on in Blaze's service yet."
 	case errors.Is(err, ErrCancelled):
 		return "Sign-in was cancelled."
 	case errors.As(err, &un):
@@ -114,6 +117,14 @@ func Message(err error) string {
 			return "You're signed out. Sign in again."
 		case "access_denied":
 			return "You declined access in the browser. Nothing changed."
+		case "already_subscribed":
+			return "You're already on that plan."
+		case "no_subscription":
+			return "You don't have an active subscription to cancel."
+		case "billing_unavailable":
+			return "PayPal didn't answer. Try again in a minute."
+		case "invalid_tier":
+			return "That isn't a plan Blaze offers."
 		}
 		return "Sign-in failed (" + ae.Code + ")."
 	}
@@ -145,6 +156,67 @@ type User struct {
 	HasPassword   bool     `json:"has_password"`
 	Providers     []string `json:"providers"`
 	CreatedAt     int64    `json:"created_at"`
+	Plan          string   `json:"plan,omitempty"` // basic | pro | max (Worker 0.9.0+)
+}
+
+// PlanModel is one model of the Blaze service (/v1/models, /v1/plan).
+type PlanModel struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Tier    string `json:"tier"`
+	Alias   bool   `json:"alias"`
+	Desc    string `json:"desc"`
+	Tools   bool   `json:"tools"`
+	Vision  bool   `json:"vision"`
+	Context int    `json:"context"`
+	Allowed bool   `json:"allowed"`
+}
+
+// TierInfo is one plan as the service sells it.
+type TierInfo struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	PriceUSD    float64 `json:"price_usd"`
+	DailyTokens int64   `json:"daily_tokens"`
+	RPM         int     `json:"rpm"`
+}
+
+// Plan is GET /v1/plan: the plan in force, today's usage, the models and billing state.
+type Plan struct {
+	Plan struct {
+		ID       string  `json:"id"`
+		Name     string  `json:"name"`
+		PriceUSD float64 `json:"price_usd"`
+	} `json:"plan"`
+	Usage struct {
+		Tokens    int64 `json:"tokens"`
+		Requests  int64 `json:"requests"`
+		Limit     int64 `json:"limit"`
+		Remaining int64 `json:"remaining"`
+		ResetAt   int64 `json:"reset_at"`
+	} `json:"usage"`
+	RPM          int    `json:"rpm"`
+	DefaultModel string `json:"default_model"`
+	PlanUntil    int64  `json:"plan_until"`
+	Source       string `json:"source"`
+	Billing      struct {
+		Enabled           bool   `json:"enabled"`
+		Provider          string `json:"provider"`
+		Status            string `json:"status"`
+		Tier              string `json:"tier"`
+		PeriodEnd         int64  `json:"period_end"`
+		CancelAtPeriodEnd bool   `json:"cancel_at_period_end"`
+	} `json:"billing"`
+	Tiers  []TierInfo  `json:"tiers"`
+	Models []PlanModel `json:"models"`
+}
+
+// Checkout is POST /v1/billing/checkout: where to approve the subscription in PayPal.
+type Checkout struct {
+	ApproveURL     string `json:"approve_url"`
+	SubscriptionID string `json:"subscription_id"`
+	Tier           string `json:"tier"`
+	Kind           string `json:"kind"` // new | revise
 }
 
 // Redeemed is what /oauth/redeem returns: provider tokens, or a Blaze session.
@@ -251,6 +323,29 @@ func (c *Client) Logout(ctx context.Context, token string) error {
 
 func (c *Client) DeleteAccount(ctx context.Context, token string) error {
 	return c.do(ctx, "POST", "/v1/account/delete", token, map[string]string{"confirm": "delete"}, nil)
+}
+
+// Plan reads the account's plan, today's usage and the plan's models.
+func (c *Client) Plan(ctx context.Context, token string) (*Plan, error) {
+	var p Plan
+	if err := c.do(ctx, "GET", "/v1/plan", token, nil, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// Checkout starts a PayPal subscription (or a Pro <-> Max change) and returns the approve URL.
+func (c *Client) Checkout(ctx context.Context, token, tier string) (*Checkout, error) {
+	var r Checkout
+	if err := c.do(ctx, "POST", "/v1/billing/checkout", token, map[string]string{"tier": tier}, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// CancelPlan cancels the PayPal subscription; the plan lasts until the paid period ends.
+func (c *Client) CancelPlan(ctx context.Context, token string) error {
+	return c.do(ctx, "POST", "/v1/billing/cancel", token, map[string]string{}, nil)
 }
 
 // Refresh swaps a provider refresh token for new tokens (the Worker adds the secret).

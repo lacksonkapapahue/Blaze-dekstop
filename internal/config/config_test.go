@@ -2,19 +2,11 @@ package config
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-
-	"github.com/lacksonkapapahue/blaze-desktop/internal/keystore"
 )
-
-type noKeychain struct{}
-
-func (noKeychain) Get(string) (string, error) { return "", errors.New("none") }
-func (noKeychain) Set(string, string) error   { return errors.New("none") }
-func (noKeychain) Delete(string) error        { return nil }
 
 func TestSaveKeepsDesktopFields(t *testing.T) {
 	dir := t.TempDir()
@@ -43,31 +35,54 @@ func TestSaveKeepsDesktopFields(t *testing.T) {
 	}
 }
 
-func TestKeysGoToSharedStore(t *testing.T) {
+// Blaze takes no cloud API keys any more: a local server must be on this computer, and a
+// default or chain entry left over from a cloud key is skipped (but kept in the file for Blaze CLI).
+func TestOnlyBlazeAndLocalProviders(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("BLAZE_HOME", dir)
-	t.Setenv("GROQ_API_KEY", "")
-	old := keystore.Keychain
-	keystore.Keychain = noKeychain{}
-	defer func() { keystore.Keychain = old }()
+	in := `{"chain":[{"provider":"groq","model":"m"},{"provider":"ollama","model":"qwen3"}],"default":{"provider":"groq","model":"m"},"custom_base":"https://api.example.com/v1"}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(in), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	c := Load()
-	where, err := c.SetKey("groq", "gsk_1")
-	if err != nil || where != "~/.blaze/keys.json (owner-only)" {
-		t.Fatalf("%q %v", where, err)
+	if !c.IsAuto() {
+		t.Fatal("a default on a provider Blaze no longer offers must count as Auto")
 	}
-	if Load().Key("groq") != "gsk_1" {
-		t.Fatal("key not read back")
+	if ch := c.RouteChain(); len(ch) != 1 || ch[0].Provider != "ollama" {
+		t.Fatalf("route chain should keep only local entries: %+v", ch)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "config.json")); err == nil {
-		b, _ := os.ReadFile(filepath.Join(dir, "config.json"))
-		var m map[string]any
-		_ = json.Unmarshal(b, &m)
-		if m["keys"] != nil {
-			t.Fatalf("key written to config.json: %s", b)
+	if p, _ := ProviderByID(Custom); p.BaseURL != "" {
+		t.Fatalf("a non-local custom server must not be used: %q", p.BaseURL)
+	}
+	c.CustomBase = "http://127.0.0.1:1234/v1"
+	_ = c.Save()
+	if p, _ := ProviderByID(Custom); p.BaseURL != "http://127.0.0.1:1234/v1" {
+		t.Fatalf("local server not used: %q", p.BaseURL)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "config.json"))
+	if !strings.Contains(string(b), `"groq"`) {
+		t.Fatalf("Blaze CLI's entries must survive a save: %s", b)
+	}
+	for _, id := range []string{"groq", "gemini", "openrouter", "pollinations"} {
+		if _, ok := ProviderByID(id); ok {
+			t.Fatalf("%s must not be a provider any more", id)
 		}
 	}
-	c.DeleteKey("groq")
-	if Load().Key("groq") != "" {
-		t.Fatal("key not deleted")
+	for u, want := range map[string]bool{"http://localhost:8080/v1": true, "http://127.0.0.2:1/v1": true, "http://[::1]:11434/v1": true,
+		"https://api.groq.com/openai/v1": false, "http://192.168.1.4:1234/v1": false, "ftp://127.0.0.1/": false, "": false} {
+		if LocalURL(u) != want {
+			t.Errorf("LocalURL(%q) = %v", u, !want)
+		}
+	}
+}
+
+func TestBlazeBase(t *testing.T) {
+	defer SetBlazeBase("")
+	if p, _ := ProviderByID(Blaze); p.BaseURL != DefaultBlazeBase+"/v1/" {
+		t.Fatalf("default base %q", p.BaseURL)
+	}
+	SetBlazeBase("http://127.0.0.1:8787/")
+	if p, _ := ProviderByID(Blaze); p.BaseURL != "http://127.0.0.1:8787/v1/" || p.Local {
+		t.Fatalf("base %q local=%v", p.BaseURL, p.Local)
 	}
 }

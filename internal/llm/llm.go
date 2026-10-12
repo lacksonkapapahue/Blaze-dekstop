@@ -60,7 +60,6 @@ type Result struct {
 	Provider  string
 	Model     string
 	Note      string // e.g. "Gemini was rate limited, Groq answered"
-	Keyless   bool   // answered by the keyless model, without tools
 	Usage     *Usage
 	Headers   map[string]string // x-ratelimit-* of the reply
 	Repairs   []string          // what the tool-call gatekeeper fixed
@@ -77,7 +76,8 @@ func (r *Result) Truncated() bool {
 type HTTPError struct {
 	Code       int
 	Body       string
-	RetryAfter int // seconds, from the Retry-After header
+	RetryAfter int    // seconds, from the Retry-After header
+	Raw        string // the response body as sent (the Blaze service's plan errors are read from it)
 }
 
 func (e *HTTPError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.Code, e.Body) }
@@ -94,18 +94,22 @@ var client = &http.Client{Transport: &http.Transport{
 // stallTimeout is the longest wait for the next streamed chunk before giving up.
 var stallTimeout = 120 * time.Second
 
-// AuthHeaders for a provider's key.
+// AuthHeaders for a provider's credential (the Blaze session token; local servers get none).
 func AuthHeaders(pid, key string) map[string]string {
 	h := map[string]string{}
-	if key == "" {
-		return h
-	}
-	h["Authorization"] = "Bearer " + key
-	if pid == "anthropic" {
-		h["x-api-key"] = key
-		h["anthropic-version"] = "2023-06-01"
+	if key != "" {
+		h["Authorization"] = "Bearer " + key
 	}
 	return h
+}
+
+// Credential is what a provider's requests carry: the Blaze session token, or nothing
+// for a local server.
+func Credential(provider string) string {
+	if provider == config.Blaze {
+		return BlazeToken()
+	}
+	return ""
 }
 
 // Chat does one streamed completion against one provider/model.
@@ -115,9 +119,6 @@ func Chat(ctx context.Context, p config.Provider, key, model string, msgs []Mess
 	}
 	if model == "" {
 		return nil, &HTTPError{Code: 404, Body: "no model chosen for " + p.Name}
-	}
-	if owner := KeyOwner(key); owner != "" && owner != p.ID && p.ID != config.Custom && !config.Keyless(p.ID) {
-		return nil, &HTTPError{Code: 401, Body: fmt.Sprintf("the key saved under %s is a %s key", p.Name, config.Name(owner))}
 	}
 	body := map[string]any{"model": model, "messages": wire(KeepRecentImages(msgs, 3), Info(p.ID, model).Vision, IsLocal(p)), "stream": true}
 	if len(tools) > 0 {
@@ -136,9 +137,8 @@ func Chat(ctx context.Context, p config.Provider, key, model string, msgs []Mess
 	for k, v := range AuthHeaders(p.ID, key) {
 		req.Header.Set(k, v)
 	}
-	if p.ID == "openrouter" {
-		req.Header.Set("HTTP-Referer", "https://github.com/lacksonkapapahue/Blaze-dekstop")
-		req.Header.Set("X-Title", "Blaze Desktop")
+	if p.ID == config.Blaze {
+		req.Header.Set("X-Blaze-Client", "desktop")
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -149,7 +149,7 @@ func Chat(ctx context.Context, p config.Provider, key, model string, msgs []Mess
 	if resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8000))
 		ra, _ := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After")))
-		return &Result{Headers: hdr}, &HTTPError{resp.StatusCode, cleanErr(string(raw)), ra}
+		return &Result{Headers: hdr}, &HTTPError{Code: resp.StatusCode, Body: cleanErr(string(raw)), RetryAfter: ra, Raw: string(raw)}
 	}
 	// Watchdog: a stream that goes quiet for too long is cancelled.
 	alive := make(chan struct{}, 1)
@@ -491,26 +491,4 @@ func cleanErr(s string) string {
 		s = s[:300]
 	}
 	return strings.TrimSpace(s)
-}
-
-// KeyOwner names the provider a key belongs to when its prefix is unmistakable.
-func KeyOwner(key string) string {
-	k := strings.TrimSpace(key)
-	switch {
-	case strings.HasPrefix(k, "nvapi-"):
-		return "nvidia"
-	case strings.HasPrefix(k, "gsk_"):
-		return "groq"
-	case strings.HasPrefix(k, "sk-or-"):
-		return "openrouter"
-	case strings.HasPrefix(k, "AIza"):
-		return "gemini"
-	case strings.HasPrefix(k, "sk-ant-"):
-		return "anthropic"
-	case strings.HasPrefix(k, "xai-"):
-		return "xai"
-	case strings.HasPrefix(k, "csk-"):
-		return "cerebras"
-	}
-	return ""
 }

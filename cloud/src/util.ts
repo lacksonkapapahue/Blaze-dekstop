@@ -15,6 +15,23 @@ export interface Env {
   NOTION_CLIENT_SECRET?: string;
   SLACK_CLIENT_ID?: string;
   SLACK_CLIENT_SECRET?: string;
+  // Managed models (0.9.0)
+  DB?: D1Database; // usage metering (usage.ts)
+  TIERS?: string; // JSON overrides for plans and models (tiers.ts)
+  GROQ_API_KEY?: string;
+  CEREBRAS_API_KEY?: string;
+  GEMINI_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
+  NVIDIA_API_KEY?: string;
+  MISTRAL_API_KEY?: string;
+  // Billing (billing.ts)
+  PAYPAL_CLIENT_ID?: string;
+  PAYPAL_SECRET?: string;
+  PAYPAL_ENV?: string; // sandbox | live
+  PAYPAL_PLAN_PRO?: string;
+  PAYPAL_PLAN_MAX?: string;
+  PAYPAL_WEBHOOK_ID?: string;
+  ADMIN_TOKEN?: string;
 }
 
 const enc = new TextEncoder();

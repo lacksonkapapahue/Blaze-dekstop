@@ -1,8 +1,8 @@
 {
   "name": "blaze-auth",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
-  "description": "Blaze accounts and the one-click OAuth connector broker, on Cloudflare Workers + KV (free tier).",
+  "description": "Blaze accounts, the one-click OAuth connector broker, managed models and plans (PayPal), on Cloudflare Workers + KV + D1 (free tier).",
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit",

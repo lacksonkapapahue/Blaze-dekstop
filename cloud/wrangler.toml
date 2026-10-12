@@ -1,4 +1,5 @@
-# Blaze accounts + one-click connector broker. Free tier only: Workers + one KV namespace.
+# Blaze accounts, one-click connector broker, managed models and plans.
+# Free tier: Workers + one KV namespace + one D1 database (usage metering).
 name = "blaze-auth"
 main = "src/index.ts"
 compatibility_date = "2025-10-01"
@@ -13,10 +14,27 @@ ALLOWED_ORIGINS = ""
 # WebCrypto in Workers caps PBKDF2 at 100000 iterations. Lower it (e.g. 60000) only if
 # free-tier sign-ins hit "exceeded CPU time"; each user's hash keeps its own count.
 PBKDF2_ITERATIONS = "100000"
+# PayPal: "sandbox" while testing, "live" for real payments.
+PAYPAL_ENV = "sandbox"
+# PAYPAL_PLAN_PRO / PAYPAL_PLAN_MAX: the plan ids from PayPal (Subscriptions > Plans).
+# Add them here once you have them (e.g. PAYPAL_PLAN_PRO = "P-1AB23456CD789012EFGHIJKL"),
+# or as secrets; not both, a var and a secret can't share a name.
+# Plans and models: JSON merged over the defaults in src/tiers.ts. Empty = defaults.
+# Example: TIERS = '{"basic":{"daily_tokens":80000},"pro":{"rpm":30}}'
+TIERS = ""
 
 [[kv_namespaces]]
 binding = "KV"
 id = "03a2047f64234d28946816100f97e46a"
+
+# Usage counters (tokens per day, requests per minute). Create once:
+#   npx wrangler d1 create blaze-usage        -> paste the printed database_id below
+#   npx wrangler d1 migrations apply blaze-usage --remote
+[[d1_databases]]
+binding = "DB"
+database_name = "blaze-usage"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
 
 # Secrets (never in this file): wrangler secret put <NAME>
 #   GOOGLE_CLIENT_ID   GOOGLE_CLIENT_SECRET    sign-in with Google + Google connector
@@ -25,3 +43,10 @@ id = "03a2047f64234d28946816100f97e46a"
 #   NOTION_CLIENT_ID   NOTION_CLIENT_SECRET
 #   SLACK_CLIENT_ID    SLACK_CLIENT_SECRET
 # A provider without both secrets answers 503 {"error":"not_configured"}.
+#
+# Managed models (Joey's keys; set any subset, providers without a key are skipped):
+#   GROQ_API_KEY  CEREBRAS_API_KEY  GEMINI_API_KEY  OPENROUTER_API_KEY  NVIDIA_API_KEY  MISTRAL_API_KEY
+# Billing (PayPal):
+#   PAYPAL_CLIENT_ID  PAYPAL_SECRET  PAYPAL_WEBHOOK_ID
+# Admin (manual plan changes through POST /v1/admin/plan; at least 16 characters):
+#   ADMIN_TOKEN

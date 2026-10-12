@@ -18,11 +18,10 @@ import (
 	"github.com/lacksonkapapahue/blaze-desktop/internal/ocr"
 )
 
-// Vision-capable fallbacks for providers whose default model can't see.
+// Vision-capable fallbacks for providers whose chosen model can't see. Blaze Fast is on
+// every plan, and the Blaze service sends image turns to a provider that can see.
 var visionFallback = map[string]string{
-	"groq":    "meta-llama/llama-4-scout-17b-16e-instruct",
-	"mistral": "mistral-small-latest",
-	"gemini":  "gemini-2.5-flash",
+	config.Blaze: "blaze-fast",
 }
 
 type visionTarget struct{ provider, model string }
@@ -75,7 +74,7 @@ func Describe(ctx context.Context, cfg *config.Config, jpeg []byte, question str
 	}
 	targets := VisionTargets(cfg)
 	if len(targets) == 0 {
-		return "", "", errors.New("none of your models can look at images. Add a free Google Gemini key in Settings › Providers (Gemini models can see)")
+		return "", "", errors.New("none of your models can look at images. Sign in to your Blaze account (its models can see), or pick a local model that can")
 	}
 	url := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(jpeg)
 	prompt := "You are looking at a screenshot of the user's screen (downscaled). " + question +
@@ -84,6 +83,11 @@ func Describe(ctx context.Context, cfg *config.Config, jpeg []byte, question str
 	for _, t := range targets {
 		p, ok := config.ProviderByID(t.provider)
 		if !ok || p.BaseURL == "" {
+			continue
+		}
+		key := llm.Credential(p.ID)
+		if p.ID == config.Blaze && key == "" {
+			errs = append(errs, "Blaze: you're signed out")
 			continue
 		}
 		body := map[string]any{
@@ -99,7 +103,7 @@ func Describe(ctx context.Context, cfg *config.Config, jpeg []byte, question str
 			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
-		for k, v := range llm.AuthHeaders(p.ID, cfg.Key(p.ID)) {
+		for k, v := range llm.AuthHeaders(p.ID, key) {
 			req.Header.Set(k, v)
 		}
 		resp, err := vclient.Do(req)

@@ -54,32 +54,9 @@ func saveUsage() {
 	_ = os.WriteFile(usagePath(), b, 0o600)
 }
 
-// price is USD per million tokens (input, output), matched by model-name substring.
-func price(provider, model string) (float64, float64, bool) {
-	m := strings.ToLower(model)
-	if strings.HasSuffix(m, ":free") {
-		return 0, 0, true
-	}
-	if p, ok := config.ProviderByID(provider); ok && p.Free && provider != "openrouter" && provider != "mistral" && provider != "deepseek" {
-		return 0, 0, true // free tiers (Gemini, Groq, Cerebras, NVIDIA, local) count as 0
-	}
-	table := []struct {
-		k       string
-		in, out float64
-	}{
-		{"gpt-4o-mini", 0.15, 0.6}, {"gpt-4.1-nano", 0.1, 0.4}, {"gpt-4.1-mini", 0.4, 1.6}, {"gpt-4.1", 2, 8}, {"gpt-4o", 2.5, 10},
-		{"gpt-5-nano", 0.05, 0.4}, {"gpt-5-mini", 0.25, 2}, {"gpt-5", 1.25, 10}, {"o4-mini", 1.1, 4.4},
-		{"claude-3-5-haiku", 0.8, 4}, {"haiku", 1, 5}, {"sonnet", 3, 15}, {"opus", 15, 75},
-		{"deepseek-chat", 0.27, 1.1}, {"deepseek-reasoner", 0.55, 2.19}, {"mistral-small", 0.1, 0.3}, {"mistral-large", 2, 6},
-		{"grok-4-fast", 0.2, 0.5}, {"grok-4", 3, 15}, {"grok-3-mini", 0.3, 0.5}, {"kimi-k2", 0.6, 2.5},
-	}
-	for _, t := range table {
-		if strings.Contains(m, t.k) {
-			return t.in, t.out, true
-		}
-	}
-	return 0, 0, false
-}
+// price is USD per million tokens (input, output). Blaze's models are part of the
+// user's plan and local models are free, so nothing is charged per token any more.
+func price(provider, model string) (float64, float64, bool) { return 0, 0, true }
 
 func today() string { return time.Now().Format("2006-01-02") }
 
@@ -205,15 +182,6 @@ func Report() UsageReport {
 		r.Days = append(r.Days, UsageDay{Day: day, Tokens: t.In + t.Out, Cost: t.Cost, Calls: t.Calls})
 	}
 	return r
-}
-
-// TodayCost is today's estimated spend in USD.
-func TodayCost() float64 {
-	umu.Lock()
-	defer umu.Unlock()
-	loadUsage()
-	t, _ := totals(today())
-	return t.Cost
 }
 
 func ResetUsage() {

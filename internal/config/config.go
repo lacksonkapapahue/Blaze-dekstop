@@ -1,8 +1,9 @@
-// Package config keeps Blaze's settings in ~/.blaze/config.json and API keys in
-// the shared key store (internal/keystore, the same code as Blaze CLI's): the OS
-// keychain (Windows Credential Manager, macOS Keychain, Linux Secret Service),
-// falling back to ~/.blaze/keys.json (mode 0600) when no keychain exists. A key saved
-// in Blaze CLI works here and the other way round.
+// Package config keeps Blaze's settings in ~/.blaze/config.json.
+//
+// Models come from the user's Blaze plan (provider "blaze", served by blaze-auth's
+// /v1/chat/completions with the account's session token) or from a model server on this
+// computer (Ollama, or any OpenAI-compatible server on localhost). Blaze no longer
+// takes the user's own cloud API keys.
 //
 // The file is shared with Blaze CLI. Every field added since v0.2 is optional
 // (omitempty) so an older config.json loads unchanged and an older CLI simply
@@ -12,68 +13,94 @@ package config
 
 import (
 	"encoding/json"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
-
-	"github.com/lacksonkapapahue/blaze-desktop/internal/keystore"
 )
 
 type Provider struct {
-	ID, Name, BaseURL, DefaultModel, KeyHint, KeyPage, Env string
-	Free                                                   bool
-	QuotaPage                                              string
+	ID, Name, BaseURL, DefaultModel string
+	Local                           bool   // runs on this computer, needs no account
+	Page                            string // where to get it (Ollama's download page)
 }
 
-// Custom is the id of the user's own OpenAI-compatible service (base URL in Config.CustomBase).
+// Blaze is the managed provider: the models of the user's Blaze plan.
+const Blaze = "blaze"
+
+// Custom is a local OpenAI-compatible server (LM Studio, llama.cpp, vLLM…), base URL in
+// Config.CustomBase. Only loopback addresses are accepted.
 const Custom = "custom"
 
-// Keyless is the keyless public endpoint: plain chat only, it can't call tools.
-const KeylessID = "pollinations"
+// DefaultBlazeBase is the deployed blaze-auth Worker (the app points it elsewhere with SetBlazeBase).
+const DefaultBlazeBase = "https://blaze-auth.blaze-app.workers.dev"
 
-// Providers mirrors the Android app's list (all OpenAI-compatible).
+// Providers Blaze can route to.
 var Providers = []Provider{
-	{"gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-3.8-flash", "AIza…", "https://aistudio.google.com/apikey", "GEMINI_API_KEY", true, "https://aistudio.google.com/rate-limit?timeRange=last-28-days"},
-	{"groq", "Groq", "https://api.groq.com/openai/v1/", "llama-3.3-70b-versatile", "gsk_…", "https://console.groq.com/keys", "GROQ_API_KEY", true, "https://console.groq.com/settings/limits"},
-	{"cerebras", "Cerebras", "https://api.cerebras.ai/v1/", "gpt-oss-120b", "csk-…", "https://cloud.cerebras.ai/platform", "CEREBRAS_API_KEY", true, "https://cloud.cerebras.ai/platform"},
-	{"openrouter", "OpenRouter", "https://openrouter.ai/api/v1/", "", "sk-or-…", "https://openrouter.ai/settings/keys", "OPENROUTER_API_KEY", true, "https://openrouter.ai/settings/credits"},
-	{"mistral", "Mistral", "https://api.mistral.ai/v1/", "mistral-small-latest", "…", "https://console.mistral.ai/api-keys", "MISTRAL_API_KEY", true, "https://admin.mistral.ai/plateforme/limits"},
-	{"nvidia", "NVIDIA NIM", "https://integrate.api.nvidia.com/v1/", "meta/llama-3.3-70b-instruct", "nvapi-…", "https://build.nvidia.com/settings/api-keys", "NVIDIA_API_KEY", true, "https://build.nvidia.com/"},
-	{"deepseek", "DeepSeek", "https://api.deepseek.com/v1/", "deepseek-chat", "sk-…", "https://platform.deepseek.com/api_keys", "DEEPSEEK_API_KEY", false, "https://platform.deepseek.com/usage"},
-	{"moonshot", "Kimi (Moonshot)", "https://api.moonshot.ai/v1/", "", "sk-…", "https://platform.moonshot.ai/console/api-keys", "MOONSHOT_API_KEY", false, "https://platform.moonshot.ai/console/limits"},
-	{"openai", "ChatGPT (OpenAI)", "https://api.openai.com/v1/", "", "sk-…", "https://platform.openai.com/api-keys", "OPENAI_API_KEY", false, "https://platform.openai.com/settings/organization/limits"},
-	{"anthropic", "Claude (Anthropic)", "https://api.anthropic.com/v1/", "", "sk-ant-…", "https://console.anthropic.com/settings/keys", "ANTHROPIC_API_KEY", false, "https://console.anthropic.com/settings/limits"},
-	{"xai", "Grok (xAI)", "https://api.x.ai/v1/", "", "xai-…", "https://console.x.ai/", "XAI_API_KEY", false, "https://console.x.ai/"},
-	{"ollama", "Ollama (local)", "http://127.0.0.1:11434/v1/", "", "(no key)", "https://ollama.com/download", "", true, ""},
-	{Custom, "Custom (OpenAI-compatible)", "", "", "Your key", "", "", false, ""},
-	{KeylessID, "Pollinations (keyless)", "https://text.pollinations.ai/openai/", "openai-fast", "(no key)", "https://pollinations.ai", "", true, ""},
+	{ID: Blaze, Name: "Blaze", BaseURL: DefaultBlazeBase + "/v1/", DefaultModel: "blaze-fast"},
+	{ID: "ollama", Name: "Ollama (local)", BaseURL: "http://127.0.0.1:11434/v1/", Local: true, Page: "https://ollama.com/download"},
+	{ID: Custom, Name: "Local server (OpenAI-compatible)", Local: true},
 }
-
-// FreeOrder is the default fill-first order for Auto (providers with a real free tier).
-var FreeOrder = []string{"gemini", "groq", "cerebras", "nvidia", "openrouter", "mistral", "deepseek", "moonshot"}
 
 var (
 	cmu        sync.RWMutex
 	customBase string
+	blazeBase  string
 )
+
+// SetBlazeBase points the Blaze provider at a blaze-auth Worker (its base URL, without /v1).
+func SetBlazeBase(base string) {
+	cmu.Lock()
+	blazeBase = strings.TrimRight(strings.TrimSpace(base), "/")
+	cmu.Unlock()
+}
+
+// LocalURL is true for an http(s) URL on this computer (localhost, 127.0.0.0/8, ::1).
+func LocalURL(u string) bool {
+	p, err := url.Parse(strings.TrimSpace(u))
+	if err != nil || (p.Scheme != "http" && p.Scheme != "https") || p.Host == "" {
+		return false
+	}
+	h := p.Hostname()
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
+}
 
 func ProviderByID(id string) (Provider, bool) {
 	for _, p := range Providers {
 		if p.ID == id {
-			if id == Custom {
-				cmu.RLock()
-				p.BaseURL = customBase
-				cmu.RUnlock()
+			cmu.RLock()
+			switch id {
+			case Custom:
+				p.BaseURL = ""
+				if LocalURL(customBase) {
+					p.BaseURL = customBase
+				}
+			case Blaze:
+				if blazeBase != "" {
+					p.BaseURL = blazeBase + "/v1/"
+				}
 			}
+			cmu.RUnlock()
 			return p, true
 		}
 	}
 	return Provider{}, false
 }
 
-// Name is the provider's display name without the bracketed note ("Kimi (Moonshot)" -> "Kimi").
+// Local is true for a provider that runs on this computer (no account needed).
+func Local(id string) bool {
+	p, ok := ProviderByID(id)
+	return ok && p.Local
+}
+
+// Name is the provider's display name without the bracketed note ("Ollama (local)" -> "Ollama").
 func Name(id string) string {
 	if p, ok := ProviderByID(id); ok {
 		if i := strings.Index(p.Name, " ("); i > 0 {
@@ -95,15 +122,13 @@ type Config struct {
 	SetupDone   bool    `json:"setup_done"`
 	MaxSteps    int     `json:"max_steps"`
 	Persona     string  `json:"persona,omitempty"`
-	NoKeyless   bool    `json:"no_keyless,omitempty"` // don't fall back to the keyless model
 
-	// v0.3 (desktop): model choice. Default nil or provider "auto" = Auto (free routing over Chain).
+	// v0.3 (desktop): model choice. Default nil, provider "auto" or a provider this Blaze
+	// doesn't offer any more = Auto (the plan's model, then local models in Chain).
 	Default    *Entry            `json:"default,omitempty"`
 	ModelFor   map[string]string `json:"model_for,omitempty"`   // chosen model per provider
-	NoFallback bool              `json:"no_fallback,omitempty"` // a fixed model doesn't fall back to the chain
 	NoFastest  bool              `json:"no_fastest,omitempty"`  // Auto keeps strict chain order
-	DailyCap   float64           `json:"daily_cap,omitempty"`   // USD; past it a paid default switches to Auto
-	CustomBase string            `json:"custom_base,omitempty"` // base URL of the custom provider
+	CustomBase string            `json:"custom_base,omitempty"` // base URL of the local OpenAI-compatible server
 	CustomName string            `json:"custom_name,omitempty"` // label for it
 
 	// Private vision (desktop v0.8.3, shared with Blaze CLI): pictures never leave the
@@ -113,7 +138,7 @@ type Config struct {
 	path          string
 }
 
-// Auto is the provider id that means "free routing".
+// Auto is the provider id that means "the plan's model, then local fallbacks".
 const Auto = "auto"
 
 func Dir() string {
@@ -201,9 +226,14 @@ func jsonNames(t reflect.Type) []string {
 	return out
 }
 
-// IsAuto is true when no fixed default model is chosen.
+// IsAuto is true when no fixed default model is chosen. A default on a provider Blaze
+// no longer offers (a cloud key from before managed plans) counts as Auto.
 func (c *Config) IsAuto() bool {
-	return c.Default == nil || c.Default.Provider == "" || c.Default.Provider == Auto
+	if c.Default == nil || c.Default.Provider == "" || c.Default.Provider == Auto {
+		return true
+	}
+	_, ok := ProviderByID(c.Default.Provider)
+	return !ok
 }
 
 // Model is the model Blaze uses for a provider: the user's pick, then its chain entry, then the built-in default.
@@ -229,127 +259,18 @@ func (c *Config) SetModelFor(provider, model string) {
 	c.ModelFor[provider] = model
 }
 
-// ---------------- keys ----------------
-
-// Keys is the shared key store (same as Blaze CLI's).
-func Keys() *keystore.Store { return keystore.Open(Dir()) }
-
-// KeysChanged, when set, runs after a provider's keys change (the account syncs them).
-var KeysChanged func(provider string)
-
-func keysChanged(provider string) {
-	if KeysChanged != nil && keystore.IsSynced(provider) {
-		KeysChanged(provider)
-	}
-}
-
-// Key returns the provider's main key: env var first, then the shared key store.
-func (c *Config) Key(provider string) string {
-	if p, ok := ProviderByID(provider); ok && p.Env != "" {
-		if v := strings.TrimSpace(os.Getenv(p.Env)); v != "" {
-			return v
-		}
-	}
-	return Keys().Main(provider)
-}
-
-// SetKey stores a provider's main key. Returns where it went.
-func (c *Config) SetKey(provider, key string) (string, error) {
-	where, err := Keys().Set(provider, key)
-	if err == nil {
-		keysChanged(provider)
-	}
-	return where, err
-}
-
-// DeleteKey removes every key of a provider (main and extras).
-func (c *Config) DeleteKey(provider string) {
-	_ = Keys().SetAll(provider, nil)
-	keysChanged(provider)
-}
-
-// ExtraKeys are the provider's additional keys (the key ring).
-func (c *Config) ExtraKeys(provider string) []string { return Keys().Extras(provider) }
-
-// AllKeys is the key ring: the main key (env var first) then the extras, without duplicates.
-func (c *Config) AllKeys(provider string) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, k := range append([]string{c.Key(provider)}, c.ExtraKeys(provider)...) {
-		k = strings.TrimSpace(k)
-		if k != "" && !seen[k] {
-			seen[k] = true
-			out = append(out, k)
-		}
-	}
-	return out
-}
-
-// AddKey adds a key to the ring: it becomes the main key when there is none yet.
-// Returns where it was stored, or "" when it was already saved.
-func (c *Config) AddKey(provider, key string) (string, error) {
-	key = strings.TrimSpace(key)
-	for _, k := range c.AllKeys(provider) {
-		if k == key {
-			return "", nil
-		}
-	}
-	ks := Keys()
-	if ks.Main(provider) == "" {
-		return c.SetKey(provider, key)
-	}
-	where, err := ks.SetExtras(provider, append(ks.Extras(provider), key))
-	if err == nil {
-		keysChanged(provider)
-	}
-	return where, err
-}
-
-// RemoveKey removes one key from the ring. Removing the main key promotes the first extra.
-func (c *Config) RemoveKey(provider, key string) error {
-	ks := Keys()
-	var keep []string
-	for _, k := range ks.All(provider) {
-		if k != key {
-			keep = append(keep, k)
-		}
-	}
-	if err := ks.SetAll(provider, keep); err != nil {
-		return err
-	}
-	keysChanged(provider)
-	return nil
-}
-
 // ---------------- routing helpers ----------------
 
-// HasAnyModel is true when at least one chain entry has what it needs.
-func (c *Config) HasAnyModel() bool {
-	for _, e := range c.Chain {
-		if (Keyless(e.Provider) && e.Provider != KeylessID) || c.Key(e.Provider) != "" {
-			return true
-		}
-	}
-	if !c.IsAuto() && (c.Key(c.Default.Provider) != "" || c.Default.Provider == "ollama") {
-		return true
-	}
-	return false
-}
-
-// Keyless providers need no API key.
-func Keyless(id string) bool { return id == "ollama" || id == KeylessID }
-
-// RouteChain is the chain without the keyless model; keyless is only ever a plain-chat
-// last resort and is added by the router itself, never as a chain entry.
+// RouteChain is the Auto chain's local entries (Ollama, a local server), in order. The
+// plan's Blaze model always goes first and isn't a chain entry; entries for providers
+// Blaze no longer offers (cloud keys from before managed plans, still read by an older
+// Blaze CLI) are kept in the file but skipped here.
 func (c *Config) RouteChain() []Entry {
 	var ch []Entry
 	for _, e := range c.Chain {
-		if e.Provider != KeylessID && e.Provider != "" {
+		if e.Provider != "" && Local(e.Provider) {
 			ch = append(ch, e)
 		}
 	}
 	return ch
 }
-
-// AllowKeyless is whether the keyless model may answer plain chat when nothing else can.
-func (c *Config) AllowKeyless() bool { return !c.NoKeyless }

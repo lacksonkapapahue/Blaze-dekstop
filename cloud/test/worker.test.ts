@@ -3,26 +3,7 @@ import worker from "../src/index";
 import { b64url, hashPassword, verifyPassword, loopbackRedirect, normEmail } from "../src/util";
 import type { Env } from "../src/util";
 
-// In-memory KV with TTLs, enough of the KVNamespace API for the Worker.
-class FakeKV {
-  m = new Map<string, { v: string; exp: number }>();
-  writes = 0;
-  async get(k: string, type?: string): Promise<any> {
-    const e = this.m.get(k);
-    if (!e || (e.exp && e.exp < Date.now())) return null;
-    return type === "json" ? JSON.parse(e.v) : e.v;
-  }
-  async put(k: string, v: string, o?: { expirationTtl?: number }) {
-    this.writes++;
-    this.m.set(k, { v, exp: o && o.expirationTtl ? Date.now() + o.expirationTtl * 1000 : 0 });
-  }
-  async delete(k: string) {
-    this.m.delete(k);
-  }
-  keys(prefix: string) {
-    return [...this.m.keys()].filter(k => k.startsWith(prefix));
-  }
-}
+import { FakeKV } from "./kv";
 
 const BASE = "https://blaze-auth.blaze-app.workers.dev";
 let kv: FakeKV;
@@ -308,54 +289,19 @@ describe("sign in with GitHub / Google", () => {
   });
 });
 
-describe("model key sync", () => {
-  async function session(email: string) {
-    const r = await call("POST", "/v1/auth/signup", { email, password: "hunter2hunter2" });
-    return ((await r.json()) as { token: string }).token;
-  }
-  const blob = btoa("x".repeat(60));
-
-  it("stores one encrypted blob per account with a revision check", async () => {
-    const a = await session("keys-a@example.com");
-    const b = await session("keys-b@example.com");
-    const A = { Authorization: `Bearer ${a}` };
-    expect((await call("GET", "/v1/keys")).status).toBe(401);
-
-    let r = await call("GET", "/v1/keys", undefined, A);
-    expect(r.status).toBe(200);
-    const g = (await r.json()) as { rev: number; blob: string; key: string };
-    expect(g.rev).toBe(0);
-    expect(g.blob).toBe("");
-    expect(atob(g.key).length).toBe(32);
-    const again = (await (await call("GET", "/v1/keys", undefined, A)).json()) as { key: string };
-    expect(again.key).toBe(g.key); // stable per account
-
-    r = await call("POST", "/v1/keys", { rev: 0, blob }, A);
-    expect(r.status).toBe(200);
-    expect(((await r.json()) as { rev: number }).rev).toBe(1);
-    r = await call("POST", "/v1/keys", { rev: 0, blob }, A);
-    expect(r.status).toBe(409);
-    expect(await r.json()).toMatchObject({ error: "conflict", rev: 1 });
-
-    for (const bad of [{ rev: 1, blob: "not base64!" }, { rev: 1, blob: "" }, { rev: 1, blob: "A".repeat(66000) }, { rev: -1, blob }, { blob }])
-      expect((await call("POST", "/v1/keys", bad, A)).status).toBe(400);
-
-    // Another account sees nothing of it and gets its own key.
-    const other = (await (await call("GET", "/v1/keys", undefined, { Authorization: `Bearer ${b}` })).json()) as { rev: number; key: string };
-    expect(other.rev).toBe(0);
-    expect(other.key).not.toBe(g.key);
-
-    const got = (await (await call("GET", "/v1/keys", undefined, A)).json()) as { rev: number; blob: string };
-    expect(got).toMatchObject({ rev: 1, blob });
-
+describe("model key sync (retired in 0.9.0)", () => {
+  it("answers 410 Gone, and deleting the account still removes keys an older app synced", async () => {
+    const r0 = await call("POST", "/v1/auth/signup", { email: "keys-a@example.com", password: "hunter2hunter2" });
+    const A = { Authorization: `Bearer ${((await r0.json()) as { token: string }).token}` };
+    expect((await call("GET", "/v1/keys", undefined, A)).status).toBe(410);
+    expect((await call("POST", "/v1/keys", { rev: 0, blob: btoa("x".repeat(60)) }, A)).status).toBe(410);
+    const uid = (await kv.get("email:keys-a@example.com")) as string;
+    await kv.put(`keys:${uid}`, JSON.stringify({ rev: 3, blob: "x", updated_at: 1 }));
+    await kv.put(`keykey:${uid}`, "k");
     expect((await call("POST", "/v1/account/delete", { confirm: "delete" }, A)).status).toBe(200);
-    expect(kv.m.has(`keys:${(await kvUser("keys-a@example.com"))}`)).toBe(false);
-    expect(kv.keys("keykey:").length).toBe(1); // only b's key is left
+    expect(kv.m.has(`keys:${uid}`)).toBe(false);
+    expect(kv.m.has(`keykey:${uid}`)).toBe(false);
   });
-
-  async function kvUser(email: string) {
-    return kv.m.get(`email:${email}`)?.v ?? "deleted";
-  }
 });
 
 describe("shared-page comments (v0.8.0)", () => {
@@ -384,14 +330,15 @@ describe("shared-page comments (v0.8.0)", () => {
 });
 
 describe("skill sync", () => {
-  it("stores the skills blob per account, shares the keys blob key, and is removed with the account", async () => {
+  it("stores the skills blob per account with a stable blob key, and is removed with the account", async () => {
     const r0 = await call("POST", "/v1/auth/signup", { email: "skills-a@example.com", password: "hunter2hunter2" });
     const A = { Authorization: `Bearer ${((await r0.json()) as { token: string }).token}` };
     expect((await call("GET", "/v1/skills")).status).toBe(401);
     const g = (await (await call("GET", "/v1/skills", undefined, A)).json()) as { rev: number; blob: string; key: string };
     expect(g).toMatchObject({ rev: 0, blob: "" });
-    const k = (await (await call("GET", "/v1/keys", undefined, A)).json()) as { key: string };
-    expect(g.key).toBe(k.key);
+    const again = (await (await call("GET", "/v1/skills", undefined, A)).json()) as { key: string };
+    expect(g.key).toBe(again.key); // one blob key per account
+    expect(g.key.length).toBeGreaterThan(40);
 
     const big = btoa("y".repeat(300000)); // larger than the keys limit, fine here
     let r = await call("POST", "/v1/skills", { rev: 0, blob: big }, A);

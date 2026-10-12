@@ -7,14 +7,14 @@ package llm
 import (
 	"context"
 	"errors"
-	"sort"
 	"time"
 
 	"github.com/lacksonkapapahue/blaze-desktop/internal/config"
 )
 
-// QuickTargets orders the usable models for a tiny call: free-tier ones first, then
-// the router's own order (health, then speed). Resting and cooling models are skipped.
+// QuickTargets is who a tiny call tries: the router's order with resting and cooling
+// models skipped. The plan's model is swapped for Blaze Fast (on every plan, and cheap
+// on the daily tokens).
 func QuickTargets(cfg *config.Config) []Target {
 	all := Targets(cfg, false)
 	now := time.Now()
@@ -24,16 +24,12 @@ func QuickTargets(cfg *config.Config) []Target {
 		if x := health[t.key()]; x != nil && x.CoolUntil.After(now) {
 			continue
 		}
+		if t.Provider == config.Blaze && !t.Fixed {
+			t.Model = "blaze-fast"
+		}
 		out = append(out, t)
 	}
 	hmu.Unlock()
-	free := func(t Target) bool {
-		if p, ok := config.ProviderByID(t.Provider); ok && p.Free {
-			return true
-		}
-		return Info(t.Provider, t.Model).Free || t.Provider == "ollama"
-	}
-	sort.SliceStable(out, func(i, j int) bool { return free(out[i]) && !free(out[j]) })
 	return out
 }
 
@@ -53,10 +49,10 @@ func Quick(ctx context.Context, cfg *config.Config, msgs []Message, timeout time
 			continue
 		}
 		p, _ := config.ProviderByID(t.Provider)
-		keys := cfg.AllKeys(t.Provider)
-		key := ""
-		if len(keys) > 0 {
-			key = keys[0]
+		key := Credential(t.Provider)
+		if t.Provider == config.Blaze && key == "" {
+			last = ErrSignedOut
+			continue
 		}
 		tried++
 		Spend(t.key(), tokens)
@@ -68,7 +64,12 @@ func Quick(ctx context.Context, cfg *config.Config, msgs []Message, timeout time
 		if r != nil {
 			Headers(t.key(), r.Headers)
 		}
-		if IsQuota(err) {
+		if t.Provider == config.Blaze {
+			var pe *PlanError
+			if errors.As(blazeError(err), &pe) {
+				return "", pe // a plan refusal: background calls stop here too
+			}
+		} else if IsQuota(err) {
 			var he *HTTPError
 			ra := 0
 			if errors.As(err, &he) {
@@ -80,13 +81,6 @@ func Quick(ctx context.Context, cfg *config.Config, msgs []Message, timeout time
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-	}
-	if tried == 0 && cfg.AllowKeyless() {
-		r, err := keyless(ctx, msgs, Opts{})
-		if err != nil {
-			return "", err
-		}
-		return r.Text, nil
 	}
 	if last == nil {
 		last = errors.New("no model free for a quick call")

@@ -1,17 +1,14 @@
 package llm
 
-// Model catalog: which models each provider offers, what they can do (tools,
-// vision), how big their context is, and the live list from the provider's own
-// API merged on top (ported from the Android app's ModelCatalog.kt and
-// Providers.kt). The built-in table only describes models; whether your key can
-// actually use one comes from the live list and, on request, a one-word probe.
+// Model catalog: what each model can do (tools, vision, context). Blaze's own models
+// come from the plan (/v1/models, see blaze.go) with the built-in aliases below as a
+// fallback; local servers (Ollama, LM Studio…) are listed live from their /models.
 
 import (
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -42,81 +39,20 @@ type ModelInfo struct {
 	Note    string `json:"note,omitempty"`
 	Live    bool   `json:"live"`  // seen in the provider's live list
 	Known   bool   `json:"known"` // in Blaze's built-in table
+	// Blaze plan models
+	Tier   string `json:"tier,omitempty"`   // the lowest plan that may use it: basic | pro | max
+	Locked bool   `json:"locked,omitempty"` // the user's plan doesn't include it
+	Alias  bool   `json:"alias,omitempty"`  // a plan alias (Blaze Fast / Smart / Max)
+	Desc   string `json:"desc,omitempty"`
 }
 
-func m(id, name string, tools Cap, vision bool, ctx int, free bool, note string) ModelInfo {
-	return ModelInfo{ID: id, Name: name, Tools: tools, Vision: vision, Context: ctx, Free: free, Note: note, Known: true}
-}
-
-// Catalog is Blaze's built-in knowledge of each provider's main chat models.
+// Catalog is Blaze's built-in knowledge of its plan aliases (the plan's live list,
+// from the Blaze service, adds the rest).
 var Catalog = map[string][]ModelInfo{
-	"gemini": {
-		m("gemini-3.8-flash", "Gemini 3.8 Flash", Yes, true, 1048576, true, "Blaze's default"),
-		m("gemini-2.5-pro", "Gemini 2.5 Pro", Yes, true, 1048576, true, "strongest, low free limits"),
-		m("gemini-2.5-flash", "Gemini 2.5 Flash", Yes, true, 1048576, true, ""),
-		m("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite", Yes, true, 1048576, true, "fastest"),
-		m("gemini-flash-latest", "Gemini Flash (latest)", Yes, true, 1048576, true, "always the newest Flash"),
-	},
-	"groq": {
-		m("llama-3.3-70b-versatile", "Llama 3.3 70B", Yes, false, 131072, true, ""),
-		m("openai/gpt-oss-120b", "GPT-OSS 120B", Yes, false, 131072, true, ""),
-		m("openai/gpt-oss-20b", "GPT-OSS 20B", Yes, false, 131072, true, "fast"),
-		m("moonshotai/kimi-k2-instruct-0905", "Kimi K2", Yes, false, 262144, true, ""),
-		m("qwen/qwen3-32b", "Qwen3 32B", Yes, false, 131072, true, ""),
-		m("meta-llama/llama-4-scout-17b-16e-instruct", "Llama 4 Scout", Yes, true, 131072, true, ""),
-		m("llama-3.1-8b-instant", "Llama 3.1 8B Instant", Yes, false, 131072, true, "small, chat only recommended"),
-	},
-	"cerebras": {
-		m("gpt-oss-120b", "GPT-OSS 120B", Yes, false, 131072, true, ""),
-		m("llama-3.3-70b", "Llama 3.3 70B", Yes, false, 65536, true, ""),
-		m("qwen-3-32b", "Qwen3 32B", Yes, false, 65536, true, ""),
-	},
-	"openrouter": {
-		m("openrouter/free", "OpenRouter free (auto pick)", Unknown, false, 0, true, "Blaze swaps in today's best free tool model"),
-	},
-	"mistral": {
-		m("mistral-small-latest", "Mistral Small", Yes, true, 131072, true, ""),
-		m("mistral-medium-latest", "Mistral Medium", Yes, true, 131072, true, ""),
-		m("mistral-large-latest", "Mistral Large", Yes, false, 131072, true, ""),
-		m("codestral-latest", "Codestral", Yes, false, 262144, true, "code"),
-	},
-	"nvidia": {
-		m("meta/llama-3.3-70b-instruct", "Llama 3.3 70B", Yes, false, 131072, true, ""),
-		m("openai/gpt-oss-120b", "GPT-OSS 120B", Yes, false, 131072, true, ""),
-		m("deepseek-ai/deepseek-v3.1", "DeepSeek V3.1", Yes, false, 131072, true, ""),
-		m("moonshotai/kimi-k2-instruct", "Kimi K2", Yes, false, 131072, true, ""),
-		m("qwen/qwen3-235b-a22b", "Qwen3 235B", Unknown, false, 131072, true, ""),
-	},
-	"deepseek": {
-		m("deepseek-chat", "DeepSeek Chat", Yes, false, 131072, false, ""),
-		m("deepseek-reasoner", "DeepSeek Reasoner", Unknown, false, 131072, false, "thinks first, slower"),
-	},
-	"moonshot": {
-		m("kimi-k2-0905-preview", "Kimi K2", Yes, false, 262144, false, ""),
-		m("kimi-k2-turbo-preview", "Kimi K2 Turbo", Yes, false, 262144, false, "faster"),
-		m("moonshot-v1-128k", "Moonshot v1 128K", Yes, false, 131072, false, ""),
-	},
-	"openai": {
-		m("gpt-5", "GPT-5", Yes, true, 400000, false, ""),
-		m("gpt-5-mini", "GPT-5 mini", Yes, true, 400000, false, ""),
-		m("gpt-5-nano", "GPT-5 nano", Yes, true, 400000, false, "cheapest"),
-		m("gpt-4.1", "GPT-4.1", Yes, true, 1047576, false, ""),
-		m("gpt-4.1-mini", "GPT-4.1 mini", Yes, true, 1047576, false, ""),
-		m("gpt-4o-mini", "GPT-4o mini", Yes, true, 128000, false, ""),
-	},
-	"anthropic": {
-		m("claude-sonnet-4-5", "Claude Sonnet 4.5", Yes, true, 200000, false, ""),
-		m("claude-opus-4-1", "Claude Opus 4.1", Yes, true, 200000, false, "most capable, priciest"),
-		m("claude-haiku-4-5", "Claude Haiku 4.5", Yes, true, 200000, false, "fast"),
-	},
-	"xai": {
-		m("grok-4", "Grok 4", Yes, true, 256000, false, ""),
-		m("grok-4-fast", "Grok 4 Fast", Yes, true, 2000000, false, ""),
-		m("grok-code-fast-1", "Grok Code Fast", Yes, false, 256000, false, "code"),
-		m("grok-3-mini", "Grok 3 mini", Yes, false, 131072, false, ""),
-	},
-	config.KeylessID: {
-		m("openai-fast", "Pollinations (keyless)", No, false, 0, true, "plain chat only, can't use tools"),
+	config.Blaze: {
+		{ID: "blaze-fast", Name: "Blaze Fast", Tools: Yes, Vision: true, Context: 131072, Free: true, Note: "Basic", Known: true, Tier: "basic"},
+		{ID: "blaze-smart", Name: "Blaze Smart", Tools: Yes, Vision: true, Context: 1048576, Note: "Pro", Known: true, Tier: "pro"},
+		{ID: "blaze-max", Name: "Blaze Max", Tools: Yes, Vision: true, Context: 1048576, Note: "Max", Known: true, Tier: "max"},
 	},
 }
 
@@ -124,7 +60,7 @@ var (
 	nonChat = []string{"tts", "image", "imagen", "veo", "lyria", "embedding", "embed", "transcribe", "robotics", "native-audio",
 		"audio", "computer-use", "omni", "banana", "aqa", "deep-research", "antigravity", "learnlm", "whisper", "dall-e",
 		"moderation", "davinci", "babbage", "realtime", "sora", "rerank", "guard", "nemoretriever", "ocr", "speech", "-live", "live-"}
-	noToolsRe = regexp.MustCompile(`(?i)(gemma|deepseek-r1|-r1\b|r1-distill|o1-mini|\bo1-preview|-base\b|instruct-v0\.1|search-preview|pollinations)`)
+	noToolsRe = regexp.MustCompile(`(?i)(gemma|deepseek-r1|-r1\b|r1-distill|o1-mini|\bo1-preview|-base\b|instruct-v0\.1|search-preview)`)
 	visionRe  = regexp.MustCompile(`(?i)(vision|-vl\b|-vl-|gemini|gpt-4o|gpt-4\.1|gpt-5|claude|pixtral|llava|llama-4|grok-4|mistral-small|mistral-medium)`)
 )
 
@@ -141,33 +77,27 @@ func IsChat(id string) bool {
 
 // Info describes a model: the built-in entry when there is one, otherwise a guess from its name.
 func Info(provider, model string) ModelInfo {
+	if provider == config.Blaze {
+		if mi, ok := BlazeModel(model); ok {
+			return mi
+		}
+	}
 	for _, mi := range Catalog[provider] {
 		if mi.ID == model {
 			return mi
 		}
 	}
 	mi := ModelInfo{ID: model, Name: model, Tools: Unknown}
-	if provider == config.KeylessID {
+	if noToolsRe.MatchString(model) {
 		mi.Tools = No
-	} else if noToolsRe.MatchString(model) {
-		mi.Tools = No
-	} else if provider != "ollama" && provider != config.Custom && IsChat(model) {
-		mi.Tools = Unknown
 	}
 	mi.Vision = visionRe.MatchString(model)
-	if provider == "openrouter" {
-		mi.Free = strings.HasSuffix(model, ":free") || model == "openrouter/free"
-	} else if p, ok := config.ProviderByID(provider); ok {
-		mi.Free = p.Free
-	}
+	mi.Free = config.Local(provider)
 	return mi
 }
 
 // CanUseTools is false only when the model is known (or learned) not to support tool calls.
 func CanUseTools(provider, model string) bool {
-	if provider == config.KeylessID {
-		return false
-	}
 	if learnedNoTools(provider, model) {
 		return false
 	}
@@ -246,11 +176,10 @@ func Options(ctx context.Context, p config.Provider, key string, refresh bool) M
 	cacheMu.Unlock()
 	tag := keyTag(p, key)
 	fresh := ok && ce.Tag == tag && time.Since(ce.At) < 12*time.Hour
-	needKey := !config.Keyless(p.ID) && p.ID != "openrouter"
 	if fresh && !refresh {
 		live, out.Plan = ce.Models, ce.Plan
 		out.Fetched = ce.At.Format("Jan 2 15:04")
-	} else if p.ID != config.KeylessID && (key != "" || !needKey) && p.BaseURL != "" {
+	} else if p.BaseURL != "" && (key != "" || p.Local) {
 		ls, err := ListModels(ctx, p, key)
 		if err != nil {
 			out.Error = err.Error()
@@ -324,11 +253,8 @@ func rank(id string) int {
 	return 0
 }
 
-// ListModels asks the provider which models the key can see (chat models only).
+// ListModels asks a server which chat models it has (Ollama and other local servers).
 func ListModels(ctx context.Context, p config.Provider, key string) ([]ModelInfo, error) {
-	if p.ID == "gemini" {
-		return listGemini(ctx, key)
-	}
 	u := strings.TrimRight(p.BaseURL, "/") + "/models"
 	req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
 	for k, v := range AuthHeaders(p.ID, key) {
@@ -380,20 +306,17 @@ func ListModels(ctx context.Context, p config.Provider, key string) ([]ModelInfo
 			mi.Name = n
 		}
 		mi.Context = max(d.ContextLength, d.ContextWindow, d.MaxModelLen)
-		if p.ID == "openrouter" {
-			mi.Tools = No
-			for _, s := range d.SupportedParameters {
-				if s == "tools" {
-					mi.Tools = Yes
-				}
-			}
-			for _, s := range d.Architecture.InputModalities {
-				if s == "image" {
-					mi.Vision = true
-				}
+		for _, s := range d.SupportedParameters {
+			if s == "tools" {
+				mi.Tools = Yes
 			}
 		}
-		if d.Capabilities.FunctionCalling != nil { // Mistral
+		for _, s := range d.Architecture.InputModalities {
+			if s == "image" {
+				mi.Vision = true
+			}
+		}
+		if d.Capabilities.FunctionCalling != nil {
 			if *d.Capabilities.FunctionCalling {
 				mi.Tools = Yes
 			} else {
@@ -411,77 +334,6 @@ func ListModels(ctx context.Context, p config.Provider, key string) ([]ModelInfo
 			mi := Info(p.ID, id)
 			mi.Live = true
 			out = append(out, mi)
-		}
-	}
-	if p.ID == "openrouter" {
-		// OpenRouter lists hundreds; keep the free ones that can use tools first, then the rest of the free ones.
-		var free []ModelInfo
-		for _, mi := range out {
-			if mi.Free {
-				free = append(free, mi)
-			}
-		}
-		sort.SliceStable(free, func(i, j int) bool { return free[i].Tools == Yes && free[j].Tools != Yes })
-		out = free
-	}
-	return dedupe(out), nil
-}
-
-func listGemini(ctx context.Context, key string) ([]ModelInfo, error) {
-	var out []ModelInfo
-	token := ""
-	for page := 0; page < 10; page++ {
-		u := "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000"
-		if token != "" {
-			u += "&pageToken=" + url.QueryEscape(token)
-		}
-		req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
-		req.Header.Set("x-goog-api-key", key)
-		resp, err := (&http.Client{Timeout: 25 * time.Second}).Do(req)
-		if err != nil {
-			return nil, err
-		}
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
-		resp.Body.Close()
-		if resp.StatusCode >= 300 {
-			return nil, &HTTPError{Code: resp.StatusCode, Body: cleanErr(string(raw))}
-		}
-		var r struct {
-			Models []struct {
-				Name             string   `json:"name"`
-				DisplayName      string   `json:"displayName"`
-				InputTokenLimit  int      `json:"inputTokenLimit"`
-				SupportedMethods []string `json:"supportedGenerationMethods"`
-			} `json:"models"`
-			Next string `json:"nextPageToken"`
-		}
-		if err := json.Unmarshal(raw, &r); err != nil {
-			return nil, err
-		}
-		for _, g := range r.Models {
-			id := strings.TrimPrefix(g.Name, "models/")
-			gen := false
-			for _, s := range g.SupportedMethods {
-				if s == "generateContent" {
-					gen = true
-				}
-			}
-			if !strings.HasPrefix(id, "gemini") || !gen || !IsChat(id) {
-				continue
-			}
-			mi := Info("gemini", id)
-			mi.Known, mi.Live = false, true
-			mi.Name = firstNonEmpty(g.DisplayName, id)
-			mi.Context = g.InputTokenLimit
-			if mi.Tools == Unknown {
-				mi.Tools = Yes // every Gemini chat model takes function declarations
-			}
-			mi.Vision, mi.Free = true, true
-			out = append(out, mi)
-		}
-		token = r.Next
-		if token == "" {
-			break
 		}
 	}
 	return dedupe(out), nil
@@ -506,205 +358,6 @@ func firstNonEmpty(s ...string) string {
 		}
 	}
 	return ""
-}
-
-// ---------------- plan detection ----------------
-
-// Detect probes each listed model with a one-word request and keeps the ones the
-// key's plan allows (404 / 403 / a quota of 0 drop a model; a 429 keeps it as busy).
-// Big catalogues (over 20 models) are not probed, to save quota.
-func Detect(ctx context.Context, p config.Provider, key string) ModelList {
-	ls, err := ListModels(ctx, p, key)
-	out := ModelList{Provider: p.ID, Fetched: time.Now().Format("Jan 2 15:04")}
-	if err != nil {
-		out.Error = err.Error()
-		return out
-	}
-	if len(ls) == 0 {
-		out.Error = "This key can't see any chat models."
-		return out
-	}
-	if len(ls) > 20 {
-		out.Plan = "Key verified"
-		if p.ID == "openrouter" {
-			if info := OpenRouterKey(ctx, key); info != nil {
-				if f, _ := info["is_free_tier"].(bool); f {
-					out.Plan = "Free tier"
-				} else {
-					out.Plan = "Paid credits"
-				}
-			}
-		}
-		out.Models = ls
-	} else {
-		type res struct {
-			i      int
-			status string
-			free   bool
-		}
-		ch := make(chan res, len(ls))
-		gate := make(chan struct{}, 4)
-		for i, mi := range ls {
-			go func(i int, id string) {
-				gate <- struct{}{}
-				defer func() { <-gate }()
-				st, free := probe(ctx, p, key, id)
-				ch <- res{i, st, free}
-			}(i, mi.ID)
-		}
-		sawFree, proOK, okN := false, false, 0
-		keep := make([]bool, len(ls))
-		for range ls {
-			r := <-ch
-			if r.free {
-				sawFree = true
-			}
-			switch r.status {
-			case "ok":
-				keep[r.i] = true
-				okN++
-				if strings.Contains(ls[r.i].ID, "pro") {
-					proOK = true
-				}
-			case "busy":
-				keep[r.i] = true
-				ls[r.i].Note = "rate limited right now"
-				okN++
-			}
-		}
-		for i, mi := range ls {
-			if keep[i] {
-				out.Models = append(out.Models, mi)
-			}
-		}
-		switch {
-		case p.ID != "gemini":
-			if okN == len(ls) {
-				out.Plan = "All models allowed"
-			} else {
-				out.Plan = "Limited (" + itoa(okN) + " of " + itoa(len(ls)) + ")"
-			}
-		case sawFree && !proOK:
-			out.Plan = "Free tier"
-		case proOK || (!sawFree && okN == len(ls)):
-			out.Plan = "Paid (billing on)"
-		default:
-			out.Plan = "Free tier"
-		}
-		if len(out.Models) == 0 {
-			out.Error = "Your key's plan doesn't allow any chat model right now."
-		}
-	}
-	cacheMu.Lock()
-	loadCache()
-	if len(out.Models) > 0 {
-		cache[p.ID] = cacheEntry{At: time.Now(), Tag: keyTag(p, key), Plan: out.Plan, Models: out.Models}
-		saveCache()
-	}
-	cacheMu.Unlock()
-	return out
-}
-
-func probe(ctx context.Context, p config.Provider, key, id string) (string, bool) {
-	body, _ := json.Marshal(map[string]any{"model": id, "max_tokens": 16, "messages": []Message{{Role: "user", Content: "Say ok"}}})
-	req, _ := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(p.BaseURL, "/")+"/chat/completions", strings.NewReader(string(body)))
-	req.Header.Set("Content-Type", "application/json")
-	for k, v := range AuthHeaders(p.ID, key) {
-		req.Header.Set(k, v)
-	}
-	resp, err := (&http.Client{Timeout: 45 * time.Second}).Do(req)
-	if err != nil {
-		return "blocked", false
-	}
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	resp.Body.Close()
-	low := strings.ToLower(string(raw))
-	free := strings.Contains(low, "free_tier")
-	switch c := resp.StatusCode; {
-	case c < 300:
-		return "ok", free
-	case c == 429 && (strings.Contains(low, "limit: 0") || strings.Contains(low, `"limit": 0`)):
-		return "blocked", free
-	case c == 429:
-		return "busy", free
-	case c == 400 && !strings.Contains(low, "not found") && !strings.Contains(low, "not supported") && !strings.Contains(low, "not available"):
-		return "ok", free
-	}
-	return "blocked", free
-}
-
-// ---------------- OpenRouter: today's best free tool models ----------------
-
-var (
-	orWeak   = regexp.MustCompile(`(?i)(code|coder|codestral|devstral|mini|nano|tiny|small|lite|micro|guard|embed|vision|-vl|ocr|reward|math|\b[0-9]b\b|\b(1\.5|0\.5|1|2|3|4|7|8|9|12|14)b\b|e2b|e4b|uncensored|roleplay|rp\b)`)
-	orStrong = []string{"deepseek", "qwen3", "kimi", "glm", "gpt-oss", "llama-4", "gemini", "mistral-large", "nemotron-ultra", "hermes", "maverick", "grok"}
-	orMu     sync.Mutex
-	orPicks  []string
-	orAt     time.Time
-)
-
-// OpenRouterPicks returns the strongest free OpenRouter models that support tools,
-// refreshed in the background at most once a day ("openrouter/free" otherwise hands
-// a turn to a random, sometimes tiny, model).
-func OpenRouterPicks() []string {
-	orMu.Lock()
-	defer orMu.Unlock()
-	if time.Since(orAt) > 24*time.Hour {
-		orAt = time.Now()
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-			defer cancel()
-			p, _ := config.ProviderByID("openrouter")
-			ls, err := ListModels(ctx, p, "")
-			if err != nil {
-				return
-			}
-			var c []ModelInfo
-			for _, mi := range ls {
-				if mi.Free && mi.Tools == Yes && !orWeak.MatchString(mi.ID) && strings.HasSuffix(mi.ID, ":free") {
-					c = append(c, mi)
-				}
-			}
-			score := func(id string) int {
-				for i, s := range orStrong {
-					if strings.Contains(strings.ToLower(id), s) {
-						return len(orStrong) - i
-					}
-				}
-				return 0
-			}
-			sort.SliceStable(c, func(i, j int) bool {
-				si, sj := score(c[i].ID), score(c[j].ID)
-				if si != sj {
-					return si > sj
-				}
-				return c[i].Context > c[j].Context
-			})
-			var top []string
-			for i := 0; i < len(c) && i < 3; i++ {
-				top = append(top, c[i].ID)
-			}
-			if len(top) > 0 {
-				orMu.Lock()
-				orPicks = top
-				orMu.Unlock()
-			}
-		}()
-	}
-	return append([]string(nil), orPicks...)
-}
-
-// ResolveModel swaps "openrouter/free" (and tiny OpenRouter models) for today's best free pick.
-func ResolveModel(provider, model string) string {
-	if provider == "openrouter" && (model == "" || model == "openrouter/free" || (strings.HasSuffix(model, ":free") && orWeak.MatchString(model))) {
-		if p := OpenRouterPicks(); len(p) > 0 {
-			return p[0]
-		}
-		if model == "" {
-			return "openrouter/free"
-		}
-	}
-	return model
 }
 
 // PickModel chooses a sensible default from a provider's list: the catalog's default

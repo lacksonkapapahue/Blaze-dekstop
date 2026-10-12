@@ -20,6 +20,10 @@ import (
 // Blaze accounts and one-click connectors, through blaze-auth (cloud/ in this repo,
 // a free Cloudflare Worker). The session token lives in the OS keychain; the signed-in
 // user's name and email are cached in ~/.blaze/desktop/account.json for the UI.
+//
+// The account is required: Blaze's models are served through it (plan.go), and the app
+// shows only the sign-in screen while signed out. Losing the session (signed out
+// elsewhere, deleted, a 401 from any request) goes straight back to that screen.
 
 const sessionKey = "blaze-account:session"
 
@@ -40,6 +44,8 @@ func accountFile() string { return filepath.Join(config.Dir(), "desktop", "accou
 func (a *App) startCloud() {
 	dir := filepath.Join(config.Dir(), "desktop")
 	a.cloud = &cloudState{client: cloud.New(cloud.BaseURL(dir)), sec: connect.Keychain()}
+	config.SetBlazeBase(a.cloud.client.Base) // Blaze's models are served by the same Worker
+	a.startPlans()
 	if b, err := os.ReadFile(accountFile()); err == nil {
 		var u cloud.User
 		if json.Unmarshal(b, &u) == nil && u.ID != "" {
@@ -51,7 +57,7 @@ func (a *App) startCloud() {
 		a.cloud.refreshProviders(true)
 		a.conn.SetBroker(&broker{cs: a.cloud}) // redraw with what the service offers
 		a.checkSession()
-		a.startKeySync()
+		a.refreshPlan(true)
 	}()
 }
 
@@ -127,7 +133,9 @@ func (a *App) setSession(s *cloud.Session) error {
 		cs.user = nil
 		cs.mu.Unlock()
 		a.saveUser(nil)
-		a.emitAccount()
+		a.refreshPlan(true) // clears the plan
+		a.emitAccount()     // the UI goes back to the sign-in screen
+		a.emitModel()
 		return nil
 	}
 	if err := cs.sec.Set(sessionKey, s.Token); err != nil {
@@ -139,7 +147,7 @@ func (a *App) setSession(s *cloud.Session) error {
 	cs.mu.Unlock()
 	a.saveUser(&u)
 	a.emitAccount()
-	go func() { _, _ = a.syncKeys(false) }() // bring this account's model keys here, and ours there
+	go a.refreshPlan(true) // the plan's models and today's usage
 	return nil
 }
 
@@ -153,6 +161,7 @@ type AccountView struct {
 	Online   bool            `json:"online"`
 	Pending  string          `json:"pending"` // provider while its browser sign-in runs
 	Service  string          `json:"service"` // the Worker's base URL
+	Gate     string          `json:"gate"`    // "" | "setup" | "signin" (plan.go)
 }
 
 func (a *App) AccountState() AccountView {
@@ -164,7 +173,7 @@ func (a *App) AccountState() AccountView {
 	go cs.refreshProviders(false)
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	v := AccountView{User: cs.user, SignedIn: cs.user != nil, Online: cs.online, Pending: cs.pending, Service: cs.client.Base,
+	v := AccountView{User: cs.user, SignedIn: cs.user != nil, Online: cs.online, Pending: cs.pending, Service: cs.client.Base, Gate: signInGate(a.cfg.SetupDone, cs.user != nil),
 		Login: map[string]bool{"email": cs.online}}
 	if cs.prov != nil {
 		for k, on := range cs.prov.Login {
@@ -281,7 +290,7 @@ func (a *App) AccountSignOut() string {
 	return ""
 }
 
-// AccountDelete deletes the Blaze account (connectors and keys on this computer stay).
+// AccountDelete deletes the Blaze account (and cancels its subscription); connectors on this computer stay.
 func (a *App) AccountDelete() string {
 	tok, _ := a.cloud.sec.Get(sessionKey)
 	if tok == "" {

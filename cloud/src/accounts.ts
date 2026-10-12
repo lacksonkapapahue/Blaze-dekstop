@@ -4,12 +4,17 @@
 //   ident:<provider>:<subject>  -> user id (Google / GitHub sign-in)
 //   sess:<sha256(token)>        a session, expires by TTL (90 days)
 //   rl:<kind>:<key>             rate-limit counters, expire by TTL
-//   keys:<id>, keykey:<id>      synced model keys (encrypted blob) and its key, see keys.ts
+//   keys:<id>, keykey:<id>      old synced model keys (retired in 0.9.0; still removed with the account)
+//   paypalsub:<subscription id> -> user id (billing.ts)
+// The user's plan lives on the account record and changes only on billing events (rare
+// writes). Usage counters live in D1 (usage.ts), never in KV.
 // Session tokens are opaque random strings; only their SHA-256 is stored.
 
 import { Env, HttpError, randomToken, sha256 } from "./util";
 import { deleteKeys } from "./keys";
 import { deleteSkills } from "./skills";
+import { deleteUsage } from "./usage";
+import type { TierId } from "./tiers";
 import type { Profile, ProviderId } from "./providers";
 
 export const SESSION_TTL = 90 * 24 * 3600;
@@ -32,6 +37,29 @@ export interface User {
   sessions: string[]; // session hashes, oldest first
   created_at: number;
   updated_at: number;
+  // Plan (0.9.0). Missing = Basic.
+  plan?: TierId;
+  plan_source?: "paypal" | "admin";
+  plan_until?: number; // unix seconds the plan is paid up to (with grace); 0/missing = no end
+  billing?: Billing;
+}
+
+/** The account's PayPal subscription, as PayPal last told us. */
+export interface Billing {
+  provider: "paypal";
+  subscription_id: string;
+  tier: TierId;
+  status: string; // APPROVAL_PENDING | ACTIVE | CANCELLED | SUSPENDED | EXPIRED
+  period_end: number; // next billing time (unix seconds), 0 = unknown
+  cancel_at_period_end?: boolean;
+  updated_at: number;
+}
+
+/** The plan in force right now: a paid plan whose time ran out is Basic again. */
+export function effectivePlan(u: User, t = Math.floor(Date.now() / 1000)): TierId {
+  if (!u.plan || u.plan === "basic") return "basic";
+  if (u.plan_until && u.plan_until < t) return "basic";
+  return u.plan;
 }
 
 interface Session {
@@ -51,6 +79,7 @@ export function publicUser(u: User) {
     has_password: !!u.password_hash,
     providers: u.identities.map(i => i.provider),
     created_at: u.created_at,
+    plan: effectivePlan(u),
   };
 }
 
@@ -135,8 +164,10 @@ export async function deleteAccount(env: Env, u: User): Promise<void> {
   const owner = await env.KV.get(`email:${u.email}`);
   if (owner === u.id) await env.KV.delete(`email:${u.email}`);
   await env.KV.delete(`user:${u.id}`);
-  await deleteKeys(env, u.id);
+  await deleteKeys(env, u.id); // model keys synced before 0.9.0
   await deleteSkills(env, u.id);
+  if (u.billing?.subscription_id) await env.KV.delete(`paypalsub:${u.billing.subscription_id}`);
+  await deleteUsage(env, u.id).catch(e => console.error("deleteUsage", e));
 }
 
 // ---------------- sign-in with Google / GitHub ----------------

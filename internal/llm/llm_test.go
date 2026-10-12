@@ -286,22 +286,19 @@ func TestGeminiSchemaScrub(t *testing.T) {
 }
 
 func TestToolCapability(t *testing.T) {
-	if CanUseTools(config.KeylessID, "openai-fast") {
-		t.Fatal("keyless must never be used for tools")
+	if !CanUseTools(config.Blaze, "blaze-fast") || !CanUseTools(config.Blaze, "blaze-max") {
+		t.Fatal("Blaze's plan aliases use tools")
 	}
-	if !CanUseTools("gemini", "gemini-3.8-flash") {
-		t.Fatal("gemini default should use tools")
-	}
-	if CanUseTools("gemini", "gemma-3-27b-it") {
-		t.Fatal("gemma can't call functions on the Gemini API")
+	if CanUseTools("ollama", "gemma-3-27b-it") {
+		t.Fatal("gemma can't call functions")
 	}
 }
 
 func TestPlainErrors(t *testing.T) {
 	for raw, want := range map[string]string{
-		"HTTP 429: Resource has been exhausted (e.g. check quota).": "free limit",
+		"HTTP 429: Resource has been exhausted (e.g. check quota).": "busy",
 		"HTTP 400: Request contains an invalid argument.":           "format",
-		"HTTP 401: invalid api key":                                 "key",
+		"HTTP 401: invalid api key":                                 "Sign in again",
 		"HTTP 503: overloaded":                                      "trouble",
 	} {
 		if got := PlainText("Google Gemini", 0, raw); !strings.Contains(got, want) {
@@ -325,8 +322,6 @@ func TestRouterNeverSendsBrokenHistory(t *testing.T) {
 	home := t.TempDir()
 	os.Setenv("BLAZE_HOME", home)
 	defer os.Unsetenv("BLAZE_HOME")
-	os.Setenv("GROQ_API_KEY", "gsk_test")
-	defer os.Unsetenv("GROQ_API_KEY")
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -350,12 +345,12 @@ func TestRouterNeverSendsBrokenHistory(t *testing.T) {
 	saved := config.Providers
 	defer func() { config.Providers = saved }()
 	for i := range config.Providers {
-		if config.Providers[i].ID == "groq" {
+		if config.Providers[i].ID == "ollama" {
 			config.Providers[i].BaseURL = srv.URL
 		}
 	}
 	cfg := config.Load()
-	cfg.Chain = []config.Entry{{Provider: "groq", Model: "llama-3.3-70b-versatile"}}
+	cfg.Default = &config.Entry{Provider: "ollama", Model: "qwen3:8b"}
 	bad := ToolCall{ID: "e1", Type: "function"}
 	bad.Function.Arguments = `{"path":`
 	hist := []Message{{Role: "user", Content: "hi"}, {Role: "assistant", ToolCalls: []ToolCall{bad}}, {Role: "tool", ToolCallID: "e1", Content: "Error"}}
@@ -369,26 +364,5 @@ func TestRouterNeverSendsBrokenHistory(t *testing.T) {
 	}
 	if r.Text != "done" || calls != 1 {
 		t.Fatalf("text %q after %d calls", r.Text, calls)
-	}
-}
-
-// Pollinations is never used for a tool turn, even when nothing else is set up.
-func TestKeylessNeverForTools(t *testing.T) {
-	home := t.TempDir()
-	os.Setenv("BLAZE_HOME", home)
-	defer os.Unsetenv("BLAZE_HOME")
-	cfg := config.Load()
-	cfg.Chain = []config.Entry{{Provider: config.KeylessID, Model: "openai-fast"}}
-	var tl Tool
-	tl.Function.Name = "file_list"
-	for _, tg := range Targets(cfg, true) {
-		if tg.Provider == config.KeylessID {
-			t.Fatal("keyless in a tool route")
-		}
-	}
-	_, err := CompleteWith(context.Background(), cfg, []Message{{Role: "user", Content: "hi"}}, []Tool{tl}, Opts{})
-	var re *RouteError
-	if !errors.As(err, &re) || !re.NoModels {
-		t.Fatalf("want a 'no model set up' error, got %v", err)
 	}
 }

@@ -79,15 +79,7 @@ func updateToken() string {
 	return ""
 }
 
-func (a *App) updateToken() string {
-	if t := updateToken(); t != "" {
-		return t
-	}
-	if a.cfg != nil {
-		return a.cfg.Key("github") // keychain entry "github" under blaze-cli, if the user saved one
-	}
-	return ""
-}
+func (a *App) updateToken() string { return updateToken() }
 
 // CheckUpdate asks GitHub for the latest release.
 func (a *App) CheckUpdate() UpdateInfo {

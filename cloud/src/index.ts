@@ -1,5 +1,6 @@
 // blaze-auth: Blaze accounts + the one-click OAuth connector broker.
-// Cloudflare Workers + one KV namespace, free tier. See ../README.md.
+// Cloudflare Workers + one KV namespace + one D1 database (usage), free tier. See ../README.md.
+// 0.9.0: managed models (proxy.ts), plans (tiers.ts), PayPal billing (billing.ts).
 
 import {
   Env, HttpError, json, redirect, html, esc, readJSON, clientIP, randomToken, sha256, pkceChallenge, safeEqual,
@@ -11,11 +12,12 @@ import {
   publicUser, userByEmail, createUser, createSession, requireUser, endSession, deleteAccount, getUser, userForIdentity,
   checkLimit, hit,
 } from "./accounts";
-import { getKeys, putKeys } from "./keys";
 import { getSkills, putSkills } from "./skills";
 import { comments } from "./comments";
+import { chat, models, plan } from "./proxy";
+import { checkout, billingReturn, cancel, webhook, adminPlan, cancelOnDelete, billingConfigured } from "./billing";
 
-export const VERSION = "0.8.0";
+export const VERSION = "0.9.0";
 const STATE_TTL = 600; // the user has 10 minutes to finish at the provider
 const CODE_TTL = 120; // the desktop redeems within seconds of the loopback redirect; 2 minutes is slack, and the KV minimum is 60
 
@@ -79,7 +81,7 @@ function cors(env: Env, req: Request): Record<string, string> | null {
 // ---------------- router ----------------
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     // Shared-page comments are open to every origin (shipped sites call them from the browser).
     const cpath = new URL(req.url).pathname.replace(/\/+$/, "");
     if (cpath.startsWith("/v1/comments")) {
@@ -97,7 +99,7 @@ export default {
     if (ch === null && req.method !== "GET") return json({ error: "forbidden_origin" }, 403);
     let res: Response;
     try {
-      res = await route(req, env);
+      res = await route(req, env, ctx);
     } catch (e) {
       if (e instanceof HttpError) res = json({ error: e.code, ...e.extra }, e.status, e.status === 429 ? { "Retry-After": String(e.extra.retry_after || 60) } : {});
       else {
@@ -114,7 +116,7 @@ export default {
   },
 };
 
-async function route(req: Request, env: Env): Promise<Response> {
+async function route(req: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   const m = req.method;
@@ -137,11 +139,35 @@ async function route(req: Request, env: Env): Promise<Response> {
     await endSession(env, user, hash);
     return json({ ok: true });
   }
-  if (path === "/v1/keys" && (m === "GET" || m === "POST")) {
+  // Bring-your-own-key sync is retired: Blaze provides the models through the plan.
+  if (path === "/v1/keys") throw new HttpError(410, "gone", { hint: "Blaze now provides models through your plan; see /v1/plan" });
+  if (path === "/v1/chat/completions" && m === "POST") {
     const { user } = await requireUser(env, req);
-    if (m === "GET") return getKeys(env, user);
-    softLimit(`keys:${user.id}`, 60, 600); // each write spends a scarce KV write
-    return putKeys(env, user, req);
+    return chat(req, env, ctx, user);
+  }
+  if (path === "/v1/models" && m === "GET") {
+    const { user } = await requireUser(env, req);
+    return models(env, user);
+  }
+  if (path === "/v1/plan" && m === "GET") {
+    const { user } = await requireUser(env, req);
+    return plan(env, user);
+  }
+  if (path === "/v1/billing/checkout" && m === "POST") {
+    const { user } = await requireUser(env, req);
+    softLimit(`checkout:${user.id}`, 10, 600);
+    return checkout(env, user, req);
+  }
+  if (path === "/v1/billing/cancel" && m === "POST") {
+    const { user } = await requireUser(env, req);
+    softLimit(`cancel:${user.id}`, 10, 600);
+    return cancel(env, user);
+  }
+  if (path === "/v1/billing/return" && m === "GET") return billingReturn(env, req);
+  if (path === "/v1/billing/paypal/webhook" && m === "POST") return webhook(env, req);
+  if (path === "/v1/admin/plan" && m === "POST") {
+    softLimit(`admin:${clientIP(req)}`, 30, 600);
+    return adminPlan(env, req);
   }
   if (path === "/v1/skills" && (m === "GET" || m === "POST")) {
     const { user } = await requireUser(env, req);
@@ -153,6 +179,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     const { user } = await requireUser(env, req);
     const b = await readJSON(req);
     if (b.confirm !== "delete") throw new HttpError(400, "confirm_required", { hint: 'send {"confirm":"delete"}' });
+    await cancelOnDelete(env, user);
     await deleteAccount(env, user);
     return json({ ok: true, deleted: true });
   }
@@ -173,6 +200,7 @@ function providers(env: Env): Response {
     base_url: env.BASE_URL,
     login: { email: true, google: !!credentials(env, "google"), github: !!credentials(env, "github") },
     connectors,
+    models: { managed: true, billing: billingConfigured(env) },
   });
 }
 
