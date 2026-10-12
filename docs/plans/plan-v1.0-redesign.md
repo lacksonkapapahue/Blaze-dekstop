@@ -223,3 +223,9 @@ Tests:
 - `memory-db` branch (v0.5.1 SQLite FTS) may be stale against main. Rebase it or re-implement it inside part B.
 - Blaze-cli `desktop-parity` branch: a WIP port of agents, cloud, connect and notify.
 - Android: handled in the BlazeAssistant project.
+
+## BlazeRouter: keep all of OmniRoute's auto/* combos (Luke, Oct 12)
+PR #44 only ported auto, auto/fast, auto/cheap, auto/quota and auto/free. Port every OmniRoute auto/* preset with the same names and behaviour. Luke relies on them; auto/best-free is his daily driver.
+auto/best-chaos auto/best-chat auto/best-coding auto/best-coding-fast auto/best-fast auto/best-free auto/best-reasoning auto/best-vision auto/chaos auto/chat auto/cheap auto/claude-opus auto/claude-sonnet auto/coding auto/fast auto/lkgp auto/multimodal auto/offline auto/pro-chat auto/pro-coding auto/pro-fast auto/pro-reasoning auto/pro-vision auto/quality auto/reasoning auto/smart auto/subscription auto/thrifty auto/vision 
+Source files in OmniRoute: src/app/api/combos/auto/route.ts,src/app/api/combos/duplicate/route.ts,src/domain/assessment/types.ts
+Expose them in /v1/models and the model picker as BlazeRouter · auto/<name>.
