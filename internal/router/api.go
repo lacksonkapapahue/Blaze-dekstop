@@ -11,8 +11,8 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"os"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -24,14 +24,19 @@ import (
 //go:embed web
 var webFS embed.FS
 
+// frameAncestors lets Blaze's webview (wails:// on macOS/Linux, http(s)://wails.localhost
+// on Windows) show the dashboard in its BlazeRouter view, and nobody else.
+const frameAncestors = "frame-ancestors 'self' wails: wails://wails http://wails.localhost https://wails.localhost"
+
 func dashboardFiles() http.Handler {
 	sub, _ := fs.Sub(webFS, "web")
 	fsrv := http.FileServer(http.FS(sub))
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors *")
-		w.Header().Del("X-Frame-Options") // Blaze shows the dashboard in its own window
+		// Only Blaze's own window (the Wails webview) and the dashboard itself may frame it.
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "+frameAncestors)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
 		fsrv.ServeHTTP(w, req)
 	})
 }

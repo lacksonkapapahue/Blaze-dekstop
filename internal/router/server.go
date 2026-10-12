@@ -305,11 +305,13 @@ type modelEntry struct {
 // then provider/model for each provider that has a key.
 func (r *Router) ModelList() []modelEntry {
 	now := time.Now().Unix()
-	out := []modelEntry{
-		{ID: "auto", Object: "model", Created: now, OwnedBy: "blazerouter", Name: "Auto: the healthiest free model you have", Kind: "combo", Free: true},
-		{ID: "auto/fast", Object: "model", Created: now, OwnedBy: "blazerouter", Name: "Auto, fastest first", Kind: "combo", Free: true},
-		{ID: "auto/cheap", Object: "model", Created: now, OwnedBy: "blazerouter", Name: "Auto, free tiers first", Kind: "combo", Free: true},
-		{ID: "auto/quota", Object: "model", Created: now, OwnedBy: "blazerouter", Name: "Auto, most quota left first", Kind: "combo", Free: true},
+	var out []modelEntry
+	for _, p := range AutoPresets {
+		name := "Auto"
+		if p.ID != "auto" {
+			name = "Auto " + p.Name
+		}
+		out = append(out, modelEntry{ID: p.ID, Object: "model", Created: now, OwnedBy: "blazerouter", Name: name + ": " + p.Desc, Kind: "combo", Free: true})
 	}
 	for _, c := range r.Settings().Combos {
 		out = append(out, modelEntry{ID: c.ID, Object: "model", Created: now, OwnedBy: "blazerouter", Name: c.Name, Kind: "combo"})

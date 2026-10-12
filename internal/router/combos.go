@@ -66,8 +66,9 @@ func (t Target) key() string { return t.Provider + "|" + t.Model }
 // Plan is who a request will try, in order, and what it asked for.
 type Plan struct {
 	Asked   string   // the model the client sent
-	Combo   string   // "auto", a combo id, or "" for a single model
+	Combo   string   // "auto", an auto/* preset, a combo id, or "" for a single model
 	Targets []Target //
+	Chaos   bool     // ask every target at once and keep the first answer
 }
 
 var (
@@ -78,19 +79,29 @@ var (
 // ErrNoModel is returned when the model a client asked for isn't one BlazeRouter can serve.
 var ErrNoModel = errors.New("no such model")
 
-// isAuto is true for the names that mean "the auto combo".
+// isAuto is true for the names that mean one of the built-in auto/* presets.
 func isAuto(m string) (bool, string) {
-	switch strings.ToLower(strings.TrimSpace(m)) {
-	case "", "auto", "blazerouter", "blazerouter/auto", "auto/free", "default":
-		return true, StratPriority
-	case "auto/fast", "blazerouter/fast":
-		return true, StratLeastLatency
-	case "auto/cheap", "blazerouter/cheap":
-		return true, StratCheapest
-	case "auto/quota", "blazerouter/quota":
-		return true, StratQuotaAware
+	p, ok := autoPreset(legacyAuto(m))
+	if !ok {
+		return false, ""
 	}
-	return false, ""
+	if p.Strategy != "" {
+		return true, p.Strategy
+	}
+	return true, StratPriority
+}
+
+// legacyAuto maps Blaze's pre-port aliases (blazerouter/fast…) onto auto/*.
+func legacyAuto(m string) string {
+	switch strings.ToLower(strings.TrimSpace(m)) {
+	case "blazerouter/fast":
+		return "auto/fast"
+	case "blazerouter/cheap":
+		return "auto/cheap"
+	case "blazerouter/quota":
+		return "auto/quota"
+	}
+	return m
 }
 
 // plan works out the targets for a requested model.
@@ -99,12 +110,17 @@ func (r *Router) plan(asked string, needTools bool) (Plan, error) {
 	pl := Plan{Asked: asked}
 	m := strings.TrimSpace(asked)
 	m = strings.TrimPrefix(m, "blazerouter/")
-	if m == "" {
-		m = "auto"
-	}
-	if ok, strat := isAuto(asked); ok || m == "auto" {
-		pl.Combo = "auto"
-		pl.Targets = r.order("auto", strat, r.autoTargets(cfg), needTools)
+	if p, ok := autoPreset(legacyAuto(asked)); ok {
+		pl.Combo = p.ID
+		switch {
+		case p.ID == "auto":
+			pl.Targets = r.order("auto", StratPriority, r.autoTargets(cfg), needTools)
+		case p.Strategy != "":
+			pl.Targets = r.order(p.ID, p.Strategy, r.autoTargets(cfg), needTools)
+		default:
+			pl.Targets = r.orderPreset(p, r.autoTargets(cfg), needTools)
+			pl.Chaos = p.Variant == "chaos" && len(pl.Targets) > 1
+		}
 		return pl, nil
 	}
 	s := r.Settings()

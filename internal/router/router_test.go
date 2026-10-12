@@ -134,7 +134,10 @@ func TestRetryOnOutage(t *testing.T) {
 }
 
 func TestAllFailReturnsError(t *testing.T) {
-	a, _ := fakeProvider(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(401); io.WriteString(w, `{"error":"bad key"}`) })
+	a, _ := fakeProvider(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		io.WriteString(w, `{"error":"bad key"}`)
+	})
 	r, _ := newTestRouter(t, a)
 	rec := post(t, r, "/v1/chat/completions", r.APIKey(), chatBody("auto", false))
 	if rec.Code != 502 || !strings.Contains(rec.Body.String(), "bad key") {
@@ -542,10 +545,13 @@ func TestPlanModels(t *testing.T) {
 	if err != nil || pl.Targets[0].Provider != a {
 		t.Fatal("bare model id should find its provider", pl, err)
 	}
-	for _, m := range []string{"", "auto", "blazerouter/auto", "auto/fast"} {
+	for _, m := range []string{"", "auto", "blazerouter/auto"} {
 		if pl, err := r.plan(m, false); err != nil || pl.Combo != "auto" {
 			t.Fatal(m, err)
 		}
+	}
+	if pl, err := r.plan("auto/fast", false); err != nil || pl.Combo != "auto/fast" || len(pl.Targets) != 1 {
+		t.Fatal("auto/fast", pl, err)
 	}
 	found := false
 	for _, m := range r.ModelList() {

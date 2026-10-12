@@ -75,6 +75,9 @@ func (e *RouteError) Error() string { return e.Msg }
 // dispatch sends body (an OpenAI chat request) along the plan and returns the first
 // upstream that accepted it.
 func (r *Router) dispatch(ctx context.Context, body map[string]any, pl Plan, stream bool) (*upstream, error) {
+	if pl.Chaos {
+		return r.dispatchChaos(ctx, body, pl, stream)
+	}
 	cfg := r.cfg()
 	raw, _ := json.Marshal(body)
 	tokens := llm.Estimate(len(raw))
@@ -131,6 +134,7 @@ func (r *Router) dispatch(ctx context.Context, body map[string]any, pl Plan, str
 				return nil, ctx.Err()
 			}
 			if err == nil {
+				noteGood(pl.Combo, t)
 				up.t, up.plan, up.start, up.chars, up.attempts = t, pl, t0, len(b), attempts
 				return up, nil
 			}
