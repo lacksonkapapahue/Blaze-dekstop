@@ -2,6 +2,15 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.14.0 (Blaze Link: pair your phone)
+- **Phone view** (`/views › Phone`, `/phone`): show a QR code, scan it in Blaze for Android › Settings › Blaze Desktop, and the phone is paired. See paired phones, which one is online, and unpair.
+- **Phone → PC**: ask Blaze on the phone to do something on this PC (files, code, installs). It runs here with its own conversation per phone, and approvals pop up on the phone.
+- **PC → phone**: new `phone_ask` tool for texts, WhatsApp, calls, contacts and alarms. Every send needs your yes on the phone.
+- Direct HTTPS on port 7377 with a pinned certificate and a one-time code (5 minutes, single use). Same Wi-Fi or Tailscale; no server in the middle. Same protocol as Blaze Android's DesktopLink.
+- **Blaze knows**: `about_blaze` and ABOUT YOU now give the real pairing steps and the live paired-phone status.
+- Fix: QR codes (pairing and the Design phone preview) are drawn full size instead of tiny in a corner.
+- Tests: the whole handshake, approvals on the phone, about_blaze status, QR scale. Design notes: `docs/plans/plan-blaze-link.md`.
+
 ## v0.13.0 (long chats stay fast)
 - **Rolling summary**: once a chat passes 12k prompt tokens (or 60% of the model's context, if smaller), everything before the last ~12 messages folds into a state note (Goal, Decisions, Facts, Open threads, Files touched; at most ~800 tokens). The note is updated as the chat grows, never redone from scratch. A 300-turn test chat stays under ~5k input tokens a turn.
 - **search_chat and read_turn**: every message is indexed (SQLite FTS5), so Blaze finds exact earlier words, even ones folded into the summary, instead of asking you to repeat.
