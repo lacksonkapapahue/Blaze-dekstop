@@ -31,7 +31,7 @@ function b64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-async function blobKey(env: Env, uid: string): Promise<string> {
+export async function blobKey(env: Env, uid: string): Promise<string> {
   const k = `keykey:${uid}`;
   const have = await env.KV.get(k);
   if (have) return have;

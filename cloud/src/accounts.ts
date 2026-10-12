@@ -9,6 +9,7 @@
 
 import { Env, HttpError, randomToken, sha256 } from "./util";
 import { deleteKeys } from "./keys";
+import { deleteSkills } from "./skills";
 import type { Profile, ProviderId } from "./providers";
 
 export const SESSION_TTL = 90 * 24 * 3600;
@@ -135,6 +136,7 @@ export async function deleteAccount(env: Env, u: User): Promise<void> {
   if (owner === u.id) await env.KV.delete(`email:${u.email}`);
   await env.KV.delete(`user:${u.id}`);
   await deleteKeys(env, u.id);
+  await deleteSkills(env, u.id);
 }
 
 // ---------------- sign-in with Google / GitHub ----------------

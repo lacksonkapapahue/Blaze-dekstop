@@ -382,3 +382,28 @@ describe("shared-page comments (v0.8.0)", () => {
     expect((await call("POST", `/v1/comments/${site}`, { text: "   " })).status).toBe(400);
   });
 });
+
+describe("skill sync", () => {
+  it("stores the skills blob per account, shares the keys blob key, and is removed with the account", async () => {
+    const r0 = await call("POST", "/v1/auth/signup", { email: "skills-a@example.com", password: "hunter2hunter2" });
+    const A = { Authorization: `Bearer ${((await r0.json()) as { token: string }).token}` };
+    expect((await call("GET", "/v1/skills")).status).toBe(401);
+    const g = (await (await call("GET", "/v1/skills", undefined, A)).json()) as { rev: number; blob: string; key: string };
+    expect(g).toMatchObject({ rev: 0, blob: "" });
+    const k = (await (await call("GET", "/v1/keys", undefined, A)).json()) as { key: string };
+    expect(g.key).toBe(k.key);
+
+    const big = btoa("y".repeat(300000)); // larger than the keys limit, fine here
+    let r = await call("POST", "/v1/skills", { rev: 0, blob: big }, A);
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { rev: number }).rev).toBe(1);
+    expect((await call("POST", "/v1/skills", { rev: 0, blob: big }, A)).status).toBe(409);
+    for (const bad of [{ rev: 1, blob: "nope!" }, { rev: 1, blob: "" }, { rev: -1, blob: big }])
+      expect((await call("POST", "/v1/skills", bad, A)).status).toBe(400);
+    const got = (await (await call("GET", "/v1/skills", undefined, A)).json()) as { rev: number; blob: string };
+    expect(got).toMatchObject({ rev: 1, blob: big });
+
+    expect((await call("POST", "/v1/account/delete", { confirm: "delete" }, A)).status).toBe(200);
+    expect(kv.keys("skills:").length).toBe(0);
+  });
+});
