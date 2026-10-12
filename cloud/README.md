@@ -53,6 +53,8 @@ of provider tokens.
 | POST | `/v1/account/delete` | `{"confirm":"delete"}` → deletes the account, identities, sessions and synced keys |
 | GET | `/v1/keys` | Bearer → `{rev, blob, key, updated_at}`: the account's synced model keys (encrypted blob) and the blob key |
 | POST | `/v1/keys` | `{rev, blob}` → `{rev}`; `409 {"error":"conflict","rev"}` when another device wrote first |
+| GET | `/v1/skills` | Bearer → `{rev, blob, key, updated_at}`: the account's synced skills (encrypted blob, same blob key as `/v1/keys`) |
+| POST | `/v1/skills` | `{rev, blob}` → `{rev}` (blob up to 2 MB base64); `409` on a conflict, like `/v1/keys` |
 | GET | `/oauth/{provider}/start` | `?state&code_challenge&redirect&scope?` → provider consent |
 | GET | `/oauth/{provider}/callback` | the provider comes back here (register this URL) |
 | POST | `/oauth/redeem` | `{code, code_verifier}` → `{kind:"tokens", provider, tokens, scopes}` |
@@ -103,6 +105,15 @@ Free-tier budget: KV allows 1,000 writes and 1,000 deletes a day. A connect cost
 2 writes + 2 deletes, a sign-in about 2 writes, a failed sign-in 2 writes. That's
 hundreds of sign-ins/connects a day; past it, move counters to the Workers Rate
 Limiting binding or add D1.
+
+### Skill sync (`/v1/skills`, Worker 0.8.0)
+
+The user's own skills (the ones Blaze learned or they wrote, not the bundled library) follow the account.
+Same revision and conflict rules as model keys, its own KV record `skills:<uid>`, and the same per-account
+blob key. Clients encrypt `gzip(json)` with AES-256-GCM, aad `blaze-skills-v1`:
+`{"v":1,"skills":{"<name>":{"t":<unix ms>,"files":{"SKILL.md":"…"}}}}`; empty `files` = deleted; per skill the newer `t` wins.
+Blaze Android syncs from v0.10.0. 0.8.0 also allows the GitHub `workflow` scope, so Blaze Android can push
+the GitHub Actions file of a new app it builds.
 
 ## Deploy (exact steps)
 

@@ -46,7 +46,7 @@ export const PROVIDERS: Record<ProviderId, Provider> = {
     id: "github", name: "GitHub",
     authUrl: "https://github.com/login/oauth/authorize", tokenUrl: "https://github.com/login/oauth/access_token",
     scopeParam: "scope", scopeSep: " ",
-    allowed: ["repo", "public_repo", "read:user", "user:email", "notifications", "read:org", "gist"],
+    allowed: ["repo", "public_repo", "read:user", "user:email", "notifications", "read:org", "gist", "workflow"],
     defaults: ["repo", "read:user", "notifications"],
     login: ["read:user", "user:email"],
     authParams: { allow_signup: "true" },

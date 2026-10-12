@@ -12,9 +12,10 @@ import {
   checkLimit, hit,
 } from "./accounts";
 import { getKeys, putKeys } from "./keys";
+import { getSkills, putSkills } from "./skills";
 import { comments } from "./comments";
 
-export const VERSION = "0.7.0";
+export const VERSION = "0.8.0";
 const STATE_TTL = 600; // the user has 10 minutes to finish at the provider
 const CODE_TTL = 120; // the desktop redeems within seconds of the loopback redirect; 2 minutes is slack, and the KV minimum is 60
 
@@ -141,6 +142,12 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (m === "GET") return getKeys(env, user);
     softLimit(`keys:${user.id}`, 60, 600); // each write spends a scarce KV write
     return putKeys(env, user, req);
+  }
+  if (path === "/v1/skills" && (m === "GET" || m === "POST")) {
+    const { user } = await requireUser(env, req);
+    if (m === "GET") return getSkills(env, user);
+    softLimit(`skills:${user.id}`, 60, 600);
+    return putSkills(env, user, req);
   }
   if (path === "/v1/account/delete" && m === "POST") {
     const { user } = await requireUser(env, req);
