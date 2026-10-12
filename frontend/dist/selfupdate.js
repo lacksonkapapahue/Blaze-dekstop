@@ -56,7 +56,12 @@ const SelfUpdate = (() => {
       setStatus(t, `Downloading Blaze ${u.latest}`);
       let err = "";
       try { err = await API().InstallUpdate(); } catch (e) { err = String(e); }
-      if (err) end(t, `The update stopped: ${err}`, [["Try again", run, "accent"]]);
+      if (err) {
+        const [m, d] = updSplit(err);
+        // A refused (unsigned) update is final for this release: no "Try again".
+        end(t, d ? m : `The update stopped: ${m}`, d ? [] : [["Try again", run, "accent"]]);
+        if (d) t.mdEl.insertAdjacentHTML("beforeend", updDetails(d));
+      }
       // "" means Blaze is about to restart; the line stays on "Restarting Blaze".
     } catch (e) {
       end(t, `The update stopped: ${e}`, [["Try again", run, "accent"]]);
@@ -68,6 +73,7 @@ const SelfUpdate = (() => {
     const t = live; if (!t || t.finished || !p) return;
     const v = t.latest || "";
     if (p.stage === "download") setStatus(t, p.pct > 0 ? `Downloading Blaze ${v} · ${p.pct}%` : `Downloading Blaze ${v}`);
+    else if (p.stage === "verify") setStatus(t, `Checking the signature on ${v}`);
     else if (p.stage === "install") setStatus(t, `Installing ${v}`);
     else if (p.stage === "restart") setStatus(t, "Restarting Blaze");
   });

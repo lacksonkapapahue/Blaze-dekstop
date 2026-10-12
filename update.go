@@ -5,7 +5,9 @@ package main
 // CI publishes every release as vX.Y.Z with one asset per platform. The app compares
 // its own version (stamped at build time) with the latest release, and installs the
 // asset that matches how it was installed: setup.exe or the portable exe on Windows,
-// the .dmg on macOS, and the .deb, Arch package or tar.gz on Linux.
+// the .dmg on macOS, and the .deb, Arch package or tar.gz on Linux. Nothing is
+// installed until the download checks out against the release's signed SHA256SUMS
+// (update_verify.go).
 //
 // The repo is public, so no token is needed. A private fork can set a GitHub token in
 // BLAZE_UPDATE_TOKEN (or GITHUB_TOKEN), or point updateRepo at a public repo.
@@ -179,6 +181,11 @@ func (a *App) InstallUpdate() string {
 	file, err := a.download(as)
 	if err != nil {
 		a.progress("error", 0, err.Error())
+		return err.Error()
+	}
+	a.progress("verify", 100, "Checking the signature…")
+	if err := a.verifyUpdate(rel, as, file); err != nil { // update_verify.go: nothing installs unless signed
+		a.progress("error", 0, unsignedMsg)
 		return err.Error()
 	}
 	a.progress("install", 100, "Installing "+rel.Tag+"…")

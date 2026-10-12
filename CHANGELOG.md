@@ -2,6 +2,12 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.15.1 (signed updates)
+- **Releases are signed**: every release now carries `SHA256SUMS` (sha256 of every asset) and `SHA256SUMS.sig`, an ed25519 signature made in CI by `ci/sign` from the `BLAZE_UPDATE_SIGNING_KEY` Actions secret. `ci/verify` checks a release folder by hand.
+- **The updater refuses unsigned updates**: before installing, Blaze downloads both files, checks the signature against the public key built into the app (`internal/updsig`, `A/yWqdv1xeM1tQhvGj/2uzF2bFpp6OTBrONLxkkctUA=`) and the file's SHA-256. A missing or bad signature or a hash mismatch deletes the download and installs nothing. No grace period; `BLAZE_ALLOW_UNSIGNED_UPDATE=1` is for local testing only.
+- `ci/sign` refuses a key whose public half isn't trusted, so a wrong secret fails the release instead of shipping files no app accepts. Key rotation steps are in the README.
+- Tests: `internal/updsig`, `update_verify_test.go`.
+
 ## v0.15.0 (student pack)
 - **Google Classroom**: `classroom_courses` and `classroom_coursework` read your classes and what's due (local time, points, turned in or not) through the Google connector. Classroom permission is asked only the first time you use it.
 - **Six new skills** (34 bundled): **study-planner** (exam date + topics → day-by-day plan in Schedule, re-plans a missed day), **tutor** (explain, quiz, flashcards from PDFs or slides), **lecture-notes** (local Whisper → notes, summary, key terms, likely exam questions), **essay-coach** (outline, feedback, APA 7 / Harvard; won't write graded essays), **group-project** (tasks list + a WhatsApp summary), **classroom-sync** (each assignment → a reminder 24 h before).
