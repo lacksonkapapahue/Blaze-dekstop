@@ -30,7 +30,7 @@ Done: pair.go (port of PR #3, protocol = Android DesktopLink.kt, documented in p
 Done: classroom_courses/classroom_coursework (on-demand scopes), schedule `once`, 6 skills (34 total, index + README), flashcards pkg + tools + Learn view, low-data mode (prompt, see_screen hidden, MB per task), tests, mock + shots student-*, CHANGELOG, plan-student-pack.md, VERSION/wails.json 0.15.0.
 Manual for Luke: add Classroom scopes + enable Classroom API in Cloud project blaze-511220 (one-click Google broker).
 
-## Signed updates (PR #23, branch `signed-updates`, v0.15.1) — READY, merging on green CI
+## Signed updates (PR #23, branch `signed-updates`, v0.15.1) — MERGED (ad34ff3), released v0.15.1 (8 assets incl. SHA256SUMS + SHA256SUMS.sig; signature verified against updsig.PublicKey)
 Rebased onto main after v0.15.0; ed25519-signed SHA256SUMS + SHA256SUMS.sig in the release job (ci/sign, ci/verify), internal/updsig (PublicKey A/yWqdv1xeM1tQhvGj/2uzF2bFpp6OTBrONLxkkctUA=), updater refuses unsigned updates. BLAZE_UPDATE_SIGNING_KEY secret added by Luke. Publish-once-per-VERSION guard kept.
 
 ## Next, in order
