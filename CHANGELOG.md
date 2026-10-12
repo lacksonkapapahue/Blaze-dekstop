@@ -2,6 +2,11 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.17.0 (marketer pack)
+- **Six skills for running an online store** (40 bundled): **content-calendar** (a week of posts with visuals from the Design studio in your brand kit, each saved as a Schedule reminder), **product-listing** (supplier URL from AliExpress, Zendrop and others → title, description, tags, SEO, price and image prompts, plus a Shopify import CSV), **ad-lab** (5 ad variants scored on hook, clarity and CTA, best first), **research-brief** (a one-page competitor and pricing brief, sourced with deep-research), **whatsapp-replies** (drafted here, sent through your paired phone), **weekly-digest** (a weekly job with orders, best sellers, top posts and what to post next).
+- **Sending through your phone always asks you first**: any `phone_ask` that sends a message in your name shows "Send through your phone?" with the exact text, even in Autopilot. Your phone asks again.
+- Design notes: `docs/plans/plan-marketer-pack.md`.
+
 ## v0.16.0 (one mind)
 - **One continuous conversation**: Chat mode is one thread with Blaze; `/clear` opens a fresh context window instead of a new chat. Projects keep their own threads.
 - **Nothing lost**: every old chat is imported into a searchable journal on first launch and stays readable, read-only, in the new **Archive** view (`/views › Archive`). `search_chat` and `read_turn` reach all of it.

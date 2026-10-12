@@ -33,11 +33,12 @@ Manual for Luke: add Classroom scopes + enable Classroom API in Cloud project bl
 ## Signed updates (PR #23, branch `signed-updates`, v0.15.1) — MERGED (ad34ff3), released v0.15.1 (8 assets incl. SHA256SUMS + SHA256SUMS.sig; signature verified against updsig.PublicKey)
 Rebased onto main after v0.15.0; ed25519-signed SHA256SUMS + SHA256SUMS.sig in the release job (ci/sign, ci/verify), internal/updsig (PublicKey A/yWqdv1xeM1tQhvGj/2uzF2bFpp6OTBrONLxkkctUA=), updater refuses unsigned updates. BLAZE_UPDATE_SIGNING_KEY secret added by Luke. Publish-once-per-VERSION guard kept.
 
-## Signed updates (PR #23, v0.15.1) — MERGED (ad34ff3) by another agent
-
-## One mind (branch `one-mind`, v0.16.0) — PR open, merging on green CI
+## One mind (PR #52, branch `one-mind`, v0.16.0) — MERGED (3ba375c)
 Done: internal/mind (journal + memories with FTS5, dedupe/newest wins, pinned core + subject index, ladder, shared prompt text); mind_app.go (one-time migration of old chats + blaze.db memories, save-as-you-go after each turn, idle review on BlazeRouter auto/best-free with llm.Quick fallback, memory_search/save/update, WHAT YOU KNOW block); search_chat/read_turn over the journal; ladder in longContext; main thread "main", /clear = fresh context; Archive view (read-only); Memory graph on the new table; Settings toggle; tests; mock + shots mind-*; CHANGELOG; plan-one-mind.md (schema + prompt text for Android); VERSION/wails.json 0.16.0.
 Checks: gofmt, vet ./internal/..., go test ./internal/..., go test -tags webkit2_41 . (root), GOOS=windows build, node --check, ci/*.test.js, shots.py both themes.
 
+## Step 5 — Marketer pack (branch `marketer-pack`, v0.17.0) — rebased onto one-mind, PR next
+Done: skills content-calendar, product-listing, ad-lab, research-brief, whatsapp-replies, weekly-digest (40 total, index + README); phone_ask send approval via Env.Approve (never auto-approved) + test; shots marketer-*; CHANGELOG; plan-marketer-pack.md; VERSION/wails.json 0.17.0.
+
 ## Next, in order
-- Step 5 — Marketer pack (part D), branch `marketer-pack` (dd31a54): rebase onto main after one-mind, v0.17.0, own PR.
+- Plan 1.0 steps are all in. Ideas: Android mirrors one mind (plan-one-mind.md), Android-side shared skills sync check, Classroom scopes in Cloud project blaze-511220 (manual).
