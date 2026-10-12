@@ -147,7 +147,7 @@ if (/\/internal\/router\/web\//.test(location.href)) {
   window.__att = att;
   const models = [{ name: "tiny", file: "ggml-tiny.bin", mb: 75, note: "fastest, rougher" }, { name: "base", file: "ggml-base.bin", mb: 142, note: "good on any PC (default)" }, { name: "small", file: "ggml-small.bin", mb: 466, note: "most accurate, slower on older PCs" }];
   window.__stt = { ready: false, engine: "", engine_how: "download", engine_mb: 10, model: "base", model_mb: 142, have_model: false, models, lang: "auto", native: "" };
-  window.__rv = { running: true, level: "green", note: "Running · 3 providers ready", url: "http://127.0.0.1:20128/", port: 20128, ready: 3, models: 41, version: "v0.10.0", key: "br-local-5f2c9a77e01d4b6a", dashboard: "http://127.0.0.1:20128/dashboard", enabled: true, autostart: true, in_use: false };
+  window.__rv = { running: true, level: "green", note: "Running · 3 providers ready", url: "http://127.0.0.1:20128", port: 20128, ready: 3, models: 41, version: "v0.10.0", key: "br-local-5f2c9a77e01d4b6a", dashboard: "http://127.0.0.1:20128/dashboard", enabled: true, autostart: true, in_use: false };
   const P = (g, m, d, cur) => ({ group: g, provider: "blazerouter", model: m, name: "BlazeRouter · " + m, desc: d, current: !!cur, tools: true });
   window.__rpicks = [P("blazerouter", "auto/best-free", "Best free model for the job, ranked by quality, speed and quota left"), P("blazerouter", "auto", "Your chain, then every provider with a key"),
     P("blazerouter", "auto/best-coding", "Strongest free coder that can call tools"), P("blazerouter", "auto/best-fast", "Lowest latency first"), P("blazerouter", "auto/best-reasoning", "Thinking models first"),

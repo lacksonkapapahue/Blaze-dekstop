@@ -22,11 +22,11 @@
 .brswitch.on { background: var(--accent-soft); border-color: var(--accent); }
 .brswitch.on::after { left: 16px; background: var(--accent); }
 
-.brcard { border: 1px solid var(--hair2); background: var(--raised); padding: 18px 18px 16px; }
+.brcard { border: 1px solid var(--hair2); background: var(--raised); padding: 18px 18px 16px; margin-top: 16px; }
 .brcard .top { display: flex; align-items: center; gap: 10px; }
 .brcard .t { font: 600 16px var(--display); color: var(--ink); }
 .brcard .s { color: var(--sub); margin: 6px 0 14px; }
-.brcard .kv { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; margin-bottom: 16px; font-size: 12.5px; }
+.brcard .kv { display: grid; grid-template-columns: 150px 1fr; gap: 6px 12px; margin-bottom: 16px; font-size: 12.5px; }
 .brcard .kv .label { font: 500 10.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--sub); padding-top: 2px; }
 .brcard .kv .mono { font: 12px var(--mono); color: var(--ink); overflow-wrap: anywhere; }
 .brcard .acts { display: flex; gap: 8px; flex-wrap: wrap; }

@@ -46,7 +46,7 @@ const Router = (() => {
     if (v && !v.enabled) { wrap.append(offPanel()); return; }
     const url = await API().RouterDashboardURL(page);
     if (!url) { wrap.append(offPanel("BlazeRouter couldn't start. " + note(RV))); return; }
-    const f = h("iframe", "brframe"); f.src = url; f.title = "BlazeRouter dashboard";
+    const f = h("iframe", "brframe"); f.src = url + (url.includes("#") ? "&" : "#") + "theme=" + (document.documentElement.dataset.theme || "light"); f.title = "BlazeRouter dashboard";
     f.setAttribute("referrerpolicy", "no-referrer");
     wrap.append(f);
     info();
@@ -129,6 +129,18 @@ const Router = (() => {
   window.VIEWS.router = routerView;
   window.SETTINGS_FNS = window.SETTINGS_FNS || {};
   window.SETTINGS_FNS.models = settingsCard;
+
+  // The embedded dashboard follows Blaze's theme, and asks Blaze to open links / save its theme.
+  new MutationObserver(() => {
+    const f = $(".brview iframe.brframe");
+    if (f && f.contentWindow) f.contentWindow.postMessage({ blazeTheme: document.documentElement.dataset.theme }, "*");
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  window.addEventListener("message", e => {
+    const f = $(".brview iframe.brframe"), d = e.data;
+    if (!f || e.source !== f.contentWindow || !d || !d.blazeRouter) return;
+    if (d.blazeRouter === "open" && /^https?:\/\//.test(d.url || "")) API().OpenURL(d.url);
+    if (d.blazeRouter === "theme" && (d.theme === "light" || d.theme === "dark") && typeof Theme !== "undefined") Theme.set(d.theme);
+  });
 
   const init = () => {
     if (!window.go || !window.runtime) { setTimeout(init, 100); return; }
