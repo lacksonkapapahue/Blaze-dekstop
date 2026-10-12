@@ -30,6 +30,9 @@ type Env struct {
 	// Ctx ends with the turn: Stop cancels it and a running command is killed (with its
 	// children) at once. nil = never cancelled.
 	Ctx context.Context
+	// Phone sends a request to the phone paired over Blaze Link and returns its answer
+	// (nil when this host has no Blaze Link).
+	Phone func(task string) string
 }
 
 func (e *Env) ctx() context.Context {

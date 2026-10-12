@@ -196,6 +196,7 @@ func (a *App) agentEnv(ag *agents.Agent) *tools.Env {
 	e.Conv = func() string { return agentConv(h) }
 	e.Confirm = func(title, detail string) bool { return a.agentGate(h, title, detail) }
 	e.Status = func(s string) { a.agents.Status(h, s) }
+	e.Phone = a.env.Phone
 	a.envs[h] = e
 	return e
 }

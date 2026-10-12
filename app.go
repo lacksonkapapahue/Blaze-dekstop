@@ -98,6 +98,7 @@ type App struct {
 	questions map[string]chan string
 
 	router *router.Router // BlazeRouter, the local AI gateway (router_app.go)
+	pair   *pairHub       // Blaze Link: phone pairing server (pair.go)
 }
 
 func NewApp() *App {
@@ -137,6 +138,7 @@ func (a *App) startup(ctx context.Context) {
 	a.pv.start()
 	a.pv.load(a.prefs.Folder)
 	a.startStudio()
+	a.pair = newPairHub(a) // Blaze Link: starts its server only when a phone is paired
 	a.newEnv()
 	a.startConnectors()
 	a.startCloud()
@@ -160,6 +162,9 @@ func (a *App) shutdown(ctx context.Context) {
 		a.conn.Close()
 	}
 	a.stopRouter()
+	if a.pair != nil {
+		a.pair.close()
+	}
 	stopTray()
 }
 
@@ -186,6 +191,9 @@ func (a *App) newEnv() {
 	a.env.Conv = a.convKey
 	a.env.Confirm = a.gate
 	a.env.Status = func(s string) { wr.EventsEmit(a.ctx, "status", s) }
+	if a.pair != nil {
+		a.env.Phone = a.pair.askPhone
+	}
 }
 
 // confirm shows the in-app confirm card and blocks the agent until the user answers.
@@ -881,6 +889,11 @@ RULES
 - Answers: short, direct, Markdown. Lead with the result.
 `)
 	b.WriteString(a.aboutYou())
+	if a.pair != nil {
+		if names := a.pair.deviceNames(); names != "" {
+			b.WriteString("\nPAIRED PHONE: " + names + " (Blaze for Android, over Blaze Link). For anything that lives on the phone (texts, WhatsApp, calls, contacts, notifications, alarms, its location), use phone_ask with the request in plain words. Sending a message always needs the user's approval on the phone.\n")
+		}
+	}
 	b.WriteString(a.personality())
 	b.WriteString(answerShape(a.foldCards()))
 	b.WriteString(a.modeLine())
