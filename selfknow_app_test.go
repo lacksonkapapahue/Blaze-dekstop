@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -11,7 +12,12 @@ import (
 )
 
 func selfTestApp(t *testing.T) *App {
-	t.Setenv("BLAZE_HOME", t.TempDir())
+	// Not t.TempDir: store.Default keeps blaze.db open, and Windows can't delete an open file.
+	home, err := os.MkdirTemp("", "blaze-selfknow-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BLAZE_HOME", home)
 	dir := t.TempDir()
 	return &App{cfg: &config.Config{}, pv: &preview{}, info: sysinfo.Info{OS: "linux", OSName: "Arch Linux", Arch: "amd64", Cores: 8, RAMGB: 16},
 		env: &tools.Env{Root: dir, Shell: tools.NewShell("sh", "/bin/sh", dir)}}
