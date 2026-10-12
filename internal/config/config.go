@@ -57,16 +57,62 @@ var FreeOrder = []string{"gemini", "groq", "cerebras", "nvidia", "openrouter", "
 var (
 	cmu        sync.RWMutex
 	customBase string
+	bases      = map[string]string{} // per-provider address overrides (BlazeRouter's own, a Cloudflare account)
+	extra      []Provider            // providers added at run time (BlazeRouter's catalog)
 )
 
+// RouterID is BlazeRouter, the local OpenAI-compatible gateway built into Blaze Desktop.
+// Its address is only set while its server runs (SetBase), so a stopped router is never usable.
+const RouterID = "blazerouter"
+
+// Register adds providers at run time (BlazeRouter's free-tier catalog). Known ids are skipped.
+func Register(ps ...Provider) {
+	cmu.Lock()
+	defer cmu.Unlock()
+	for _, p := range ps {
+		dup := false
+		for _, q := range Providers {
+			dup = dup || q.ID == p.ID
+		}
+		for _, q := range extra {
+			dup = dup || q.ID == p.ID
+		}
+		if !dup {
+			extra = append(extra, p)
+		}
+	}
+}
+
+// All is every provider: the built-in list, then the registered ones.
+func All() []Provider {
+	cmu.RLock()
+	defer cmu.RUnlock()
+	return append(append([]Provider(nil), Providers...), extra...)
+}
+
+// SetBase overrides a provider's service address ("" removes the override).
+func SetBase(id, base string) {
+	cmu.Lock()
+	defer cmu.Unlock()
+	if strings.TrimSpace(base) == "" {
+		delete(bases, id)
+	} else {
+		bases[id] = strings.TrimSpace(base)
+	}
+}
+
 func ProviderByID(id string) (Provider, bool) {
-	for _, p := range Providers {
+	for _, p := range All() {
 		if p.ID == id {
+			cmu.RLock()
 			if id == Custom {
-				cmu.RLock()
 				p.BaseURL = customBase
-				cmu.RUnlock()
+			} else if b, ok := bases[id]; ok {
+				p.BaseURL = b
+			} else if strings.Contains(p.BaseURL, "{") {
+				p.BaseURL = "" // a template (Cloudflare's account id) that isn't filled in yet
 			}
+			cmu.RUnlock()
 			return p, true
 		}
 	}
@@ -243,8 +289,16 @@ func keysChanged(provider string) {
 	}
 }
 
+// KeyHook, when set, supplies keys that don't live in the key store (BlazeRouter's local key).
+var KeyHook func(provider string) string
+
 // Key returns the provider's main key: env var first, then the shared key store.
 func (c *Config) Key(provider string) string {
+	if KeyHook != nil {
+		if k := KeyHook(provider); k != "" {
+			return k
+		}
+	}
 	if p, ok := ProviderByID(provider); ok && p.Env != "" {
 		if v := strings.TrimSpace(os.Getenv(p.Env)); v != "" {
 			return v

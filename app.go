@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lacksonkapapahue/blaze-desktop/internal/router"
 	wr "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/lacksonkapapahue/blaze-desktop/internal/agents"
@@ -94,6 +95,8 @@ type App struct {
 	agents    *agents.Manager
 	envs      map[string]*tools.Env // each sub-agent's own shell and approval gate
 	questions map[string]chan string
+
+	router *router.Router // BlazeRouter, the local AI gateway (router_app.go)
 }
 
 func NewApp() *App {
@@ -140,6 +143,7 @@ func (a *App) startup(ctx context.Context) {
 	a.startAgents()
 	a.startShell()
 	a.startNotify()
+	a.startRouter()      // BlazeRouter: local OpenAI-compatible gateway + dashboard (router_app.go)
 	a.startLearning()    // bundled skills + proactive memory (learn_app.go)
 	go tools.SyncIndex() // every tool is registered by now (init); index them for find_tools
 }
@@ -154,6 +158,7 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.conn != nil {
 		a.conn.Close()
 	}
+	a.stopRouter()
 	stopTray()
 }
 

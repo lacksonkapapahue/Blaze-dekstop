@@ -203,12 +203,14 @@ const capPills = m => {
 async function modelPopover(anchor) {
   if (popEl && popEl.dataset.kind === "model") { closePop(); return; }
   const st = await refreshState();
+  const rpicks = window.Router ? await Router.picks() : [];
   openPop(anchor, p => {
     p.dataset.kind = "model";
-    p.innerHTML = `<div class="phd"><span class="label">Model</span><span class="grow"></span><button class="btn ghost xs mg">Manage models</button></div><div class="pbody"></div>`;
-    $(".mg", p).onclick = () => { closePop(); show("settings", "models"); };
+    p.innerHTML = `<div class="phd"><span class="label">Model</span><span class="grow"></span><button class="btn ghost xs mg">Manage in BlazeRouter</button></div><div class="pbody"></div>`;
+    $(".mg", p).onclick = () => { closePop(); show("router", "providers"); };
     const body = $(".pbody", p);
     const sel = st.selection || { auto: true };
+    if (window.Router) Router.pickerTop(body, closePop, rpicks); // BlazeRouter presets first (router.js)
     const auto = h("button", "opt" + (sel.auto ? " sel" : ""), `<span class="on-mark">${sel.auto ? icon("check", "i sm") : ""}</span><span class="col2"><span class="ot">Auto (free routing)</span><span class="od">Fastest healthy model in your chain; skips ones that are resting</span></span>`);
     auto.onclick = async () => { const l = await API().SelectModel("auto", ""); setModel(l); closePop(); };
     body.append(auto);
@@ -228,7 +230,7 @@ async function modelPopover(anchor) {
       body.append(row, list);
     });
     const add = h("button", "opt", `<span class="on-mark">${icon("plus", "i sm")}</span><span class="col2"><span class="ot">Add a provider…</span><span class="od">Free keys: Gemini, Groq, Cerebras, OpenRouter, NVIDIA, Mistral</span></span>`);
-    add.onclick = () => { closePop(); show("settings", "providers"); };
+    add.onclick = () => { closePop(); show("router", "providers"); };
     body.append(add);
   }, { width: 380 });
 }
@@ -326,6 +328,7 @@ function show(v, arg) {
   // Views from other files (accounts.js, onboard.js…) register in window.VIEWS.
   ((window.VIEWS && window.VIEWS[v]) || ({ work: workView, design: designView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, project: projectView, newproject: newProjectView, memory: (e, a) => memoryView(e, a) })[v])(el, arg);
   $$("#chats .chat").forEach(b => b.classList.remove("on"));
+  if (window.Router) Router.paint();
 }
 
 function workView(el) {
@@ -408,7 +411,7 @@ function hero() {
   box.append(sug); col.append(box);
   if (S.setup_done && !(S.providers || []).some(p => p.ready && p.id !== "pollinations")) {
     const c = h("div", "callout acc", `${icon("key")}<div><b>No model yet.</b> Blaze needs one AI model that can use tools. A free Gemini or Groq key takes a minute. <a data-go="providers" style="color:var(--accent);cursor:pointer">Add one</a></div>`);
-    c.style.marginTop = "18px"; $("a", c).onclick = () => show("settings", "providers");
+    c.style.marginTop = "18px"; $("a", c).onclick = () => show("router", "providers");
     box.append(c);
   }
 }
@@ -794,7 +797,7 @@ function errorCard(target, e) {
     <div class="actions"></div><pre></pre>`;
   const acts = $(".actions", card);
   const btn = (cls, html, fn) => { const b = h("button", "btn sm " + cls, html); b.onclick = fn; acts.append(b); return b; };
-  if (setup) btn("accent", `${icon("key", "i sm")}Add a model`, () => show("settings", "providers"));
+  if (setup) btn("accent", `${icon("key", "i sm")}Add a model`, () => show("router", "providers"));
   else if (e.kind !== "steps") btn("accent", `${icon("retry", "i sm")}Retry`, () => retry());
   if (e.kind !== "steps") { const sw = btn("line", `${icon("layers", "i sm")}Switch model`, ev => { ev.stopPropagation(); modelPopover(sw); }); sw.dataset.pop = "1"; }
   if (e.kind === "steps" || e.partial) acts.prepend(continueBtn(e.kind === "steps" ? "accent" : "line"));
@@ -971,18 +974,21 @@ function setupFrame() {
 // ---------- command menu ----------
 // /model is two levels: Auto or a provider, then that provider's models.
 async function modelMenuItems() {
-  const items = (await API().Models() || []).map(m => m.provider === "auto"
+  const items = (await API().Models() || []).map(m => m.provider === "blazerouter" && window.Router
+    ? { name: "BlazeRouter", desc: (m.current ? "in use · " : "") + m.model, sub: () => Router.menuItems() }
+    : m.provider === "auto"
     ? { name: "Auto (free routing)", desc: (m.current ? "in use · " : "") + "fastest healthy model in your chain", run: async () => setModel(await API().SelectModel("auto", "")) }
     : { name: m.name, desc: (m.current ? "in use · " : "") + m.model, sub: async () => {
         const ml = await API().ModelOptions(m.provider, false);
         return (ml.models || []).filter(x => x.tools !== "no").map(x => ({ name: x.id, desc: [x.tools === "yes" ? "tools" : x.tools === "no" ? "no tools" : "", x.vision ? "vision" : "", x.id === m.model ? "current" : ""].filter(Boolean).join(" · "), run: async () => setModel(await API().SelectModel(m.provider, x.id)) }));
       } });
-  return items.concat([{ name: "Manage models…", desc: "Settings › Models", run: () => show("settings", "models") }]);
+  return items.concat([{ name: "Manage models…", desc: "BlazeRouter › Providers", run: () => show("router", "providers") }]);
 }
 
 const COMMANDS = [
   { name: "new", desc: "Start a new chat", run: () => newChat() },
   { name: "model", desc: "Switch provider and model, or Auto", sub: modelMenuItems },
+  { name: "router", desc: "BlazeRouter: providers, keys, combos, usage", run: () => show("router") },
   { name: "project", desc: "Switch project or make a new one", sub: async () => [{ name: "General", desc: "No project", run: () => switchProject("") }].concat((await API().Projects() || []).map(p => ({ name: p.name, desc: p.folder, run: () => switchProject(p.id) }))).concat([{ name: "New project…", desc: "Pick a folder", run: () => newProject() }]) },
   { name: "folder", desc: "Change the working folder", run: () => $("#folder").click() },
   { name: "design", desc: "Open the Design tab", run: () => show("design") },
@@ -1643,13 +1649,14 @@ async function buildProviderPanel(x, p, redraw) {
 
 // ---------- settings ----------
 const SECTIONS = [
-  ["models", "Models", "layers"], ["providers", "Providers & keys", "key"], ["usage", "Usage", "chart"],
+  ["models", "BlazeRouter", "layers"], ["usage", "Usage", "chart"],
   ["behaviour", "Behaviour", "sliders"], ["appearance", "Appearance", "palette"], ["memory", "Memory", "brain"],
   ["skills", "Skills", "book"], ["computer", "This computer", "cpu"], ["updates", "Updates", "dl"],
 ];
 let settingsSection = "models";
 
 function settingsView(el, focus) {
+  if (focus === "providers") { show("router", "providers"); return; } // moved into BlazeRouter
   if (focus) settingsSection = focus;
   if (!SECTIONS.some(x => x[0] === settingsSection)) settingsSection = "models";
   const wrap = h("div", "settings");
@@ -1705,7 +1712,7 @@ async function setModels(col, redraw) {
   msel.onclick = () => { box.style.display = box.style.display ? "" : "none"; };
   ps.onchange = () => { fill(); box.style.display = ""; };
   const use = h("button", "btn accent", "Use this model");
-  use.onclick = async () => { if (!ps.value) { show("settings", "providers"); return; } const m = msel.textContent.trim(); setModel(await API().SelectModel(ps.value, /\s/.test(m) ? "" : m)); redraw(); };
+  use.onclick = async () => { if (!ps.value) { show("router", "providers"); return; } const m = msel.textContent.trim(); setModel(await API().SelectModel(ps.value, /\s/.test(m) ? "" : m)); redraw(); };
   pk.append(ps, msel, use);
   const fixedArea = h("div"); fixedArea.append(pk, box);
   fixedArea.style.display = sel.auto ? "none" : "";

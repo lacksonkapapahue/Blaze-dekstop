@@ -85,6 +85,9 @@ func today() string { return time.Now().Format("2006-01-02") }
 
 // RecordUsage adds one model call. Uses the provider's counts when sent, else estimates.
 func RecordUsage(provider, model string, promptChars int, reply *Result) {
+	if provider == config.RouterID {
+		return // BlazeRouter records the real provider and model itself
+	}
 	in, out := int64(Estimate(promptChars)), int64(0)
 	if reply != nil {
 		out = int64(len(reply.Text)/4 + 1)

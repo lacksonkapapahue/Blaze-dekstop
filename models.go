@@ -161,6 +161,9 @@ func (a *App) SelectModel(provider, model string) string {
 		a.emitModel()
 		return a.modelName()
 	}
+	if provider == config.RouterID {
+		return a.selectRouter(model) // never added to the chain (router_app.go)
+	}
 	if _, ok := config.ProviderByID(provider); !ok {
 		return "Unknown provider."
 	}
@@ -227,9 +230,10 @@ type ModelItem struct {
 func (a *App) Models() []ModelItem {
 	a.waitReady()
 	sel := a.selection()
-	out := []ModelItem{{Provider: config.Auto, Name: "Auto (free routing)", Model: "fastest healthy model in your chain", Tools: true, Current: sel.Auto, Ready: true}}
+	out := []ModelItem{{Provider: config.RouterID, Name: "BlazeRouter", Model: "auto/best-free and every auto/* preset", Tools: true, Current: !sel.Auto && sel.Provider == config.RouterID, Ready: true},
+		{Provider: config.Auto, Name: "Auto (free routing)", Model: "fastest healthy model in your chain", Tools: true, Current: sel.Auto, Ready: true}}
 	for _, p := range a.providerViews() {
-		if p.ID == config.KeylessID || !p.Ready {
+		if p.ID == config.KeylessID || p.ID == config.RouterID || !p.Ready {
 			continue
 		}
 		out = append(out, ModelItem{Provider: p.ID, Name: p.Short, Model: p.Model, Tools: llm.CanUseTools(p.ID, p.Model), Current: !sel.Auto && sel.Provider == p.ID, Ready: true})

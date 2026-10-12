@@ -15,7 +15,8 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 
 ## What it does
 - **Chat that works on your computer**: streaming answers with plain-English steps, Plan and Build modes, Auto or Autopilot approvals, and a daily spend cap.
-- **Any model**: pick a provider and model or use Auto, a free model router with live health, several keys per provider, and usage per model.
+- **BlazeRouter**: a local OpenAI-compatible gateway on `127.0.0.1:20128` that starts with Blaze and routes every chat across your free providers, falling back when one is rate-limited or out of quota. Every OmniRoute `auto/*` preset (auto/best-free, auto/best-coding, auto/chaos…), your own combos, keys, usage and quota live on its dashboard (the Router button in the top bar). Point Cursor, Claude Code or any OpenAI client at it too.
+- **Any model**: pick a BlazeRouter preset, a provider and model, or the classic Auto chain, with live health, several keys per provider, and usage per model.
 - **Design studio**: live preview at phone, tablet and desktop widths, edits that write back to your source, Directions as live branches, brand kit, the critic, visual history, phone preview, and one-click ship to Cloudflare or GitHub Pages.
 - **3D mockups**: any 3D request starts as a Three.js mockup in Design. Click a part to recolour, scale, turn or nudge it, with every change written back to the file. When you named a program (Blender, FreeCAD, OpenSCAD and others), Blaze builds it there next, from the same parts.
 - **Specialists on request**: Blaze does your tasks itself. Ask it to split a big task and parallel agents each work on their own git worktree, reviewed before anything lands.
@@ -26,6 +27,9 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Updates itself** from GitHub releases.
 
 What changed in each version: [`CHANGELOG.md`](CHANGELOG.md).
+
+## Credits
+BlazeRouter is a Go port of [OmniRoute](https://github.com/diegosouzapw/OmniRoute) by diegosouzapw (MIT). See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 ## Build
 Go 1.26 + `go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0`, then `wails build`
