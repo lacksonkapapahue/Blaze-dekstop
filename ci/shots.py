@@ -88,6 +88,40 @@ with sync_playwright() as p:
         pg.evaluate("SetRouterOff = window.go.main.App.SetRouterOn(false).then(() => show('router'))"); pg.wait_for_timeout(600)
         pg.screenshot(path=str(out / f"router-off-{theme}.png"))
         pg.evaluate("window.go.main.App.SetRouterOn(true).then(() => show('work'))"); pg.wait_for_timeout(400)
+        # v0.11.0 shell: Chat | Projects, Search, avatar menu, /views, Exit, + menu, live card.
+        pg.evaluate("show('work'); newChat()"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"shell-chat-{theme}.png"))
+        pg.evaluate("document.querySelector('#avatar').click()"); pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"shell-avatar-{theme}.png"))
+        if pg.evaluate("document.querySelectorAll('.pop.shmenu .opt').length") < 7:
+            errs.append("avatar menu is missing items")
+        pg.evaluate("closePop(); BlazeViews.picker()"); pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"shell-views-{theme}.png"))
+        if pg.evaluate("document.querySelectorAll('#menu .mi').length") < 8:
+            errs.append("/views picker is missing views")
+        pg.evaluate("closeMenu(); document.querySelector('#plus').click()"); pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"shell-plus-{theme}.png"))
+        pg.evaluate("closeMenu(); setApproval('autopilot')"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"shell-modechip-{theme}.png"))
+        pg.evaluate("setApproval('auto')"); pg.wait_for_timeout(200)
+        pg.evaluate("Shell.search()"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"shell-search-{theme}.png"))
+        pg.evaluate("closeMenu(); fire('view:open', 'design')"); pg.wait_for_timeout(700)
+        pg.screenshot(path=str(out / f"shell-design-exit-{theme}.png"))
+        if pg.evaluate("view") != "design" or pg.evaluate("getComputedStyle(document.querySelector('#exitChip')).display") == "none":
+            errs.append("open_view design should open Design with an Exit chip")
+        pg.evaluate("document.querySelector('#exitChip button').click()"); pg.wait_for_timeout(400)
+        if pg.evaluate("view") != "work":
+            errs.append("Exit should return to the chat")
+        pg.evaluate("Shell.setMode('projects')"); pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"shell-projects-{theme}.png"))
+        pg.evaluate("Shell.setMode('chat')"); pg.wait_for_timeout(300)
+        pg.evaluate("""sendText('Make the hero section blue', []);
+          for (let i = 0; i < 4; i++) { fire('tool', {id: 'lw'+i, name: 'file_read', args: '{"path":"index.html"}'}); fire('tool_done', {id: 'lw'+i, result: 'ok'}); }"""); pg.wait_for_timeout(1300)
+        pg.screenshot(path=str(out / f"shell-livecard-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('.work.live .wmeta')"):
+            errs.append("live work card counter missing")
+        pg.evaluate("fire('done', {seconds: 72}); show('work')"); pg.wait_for_timeout(300)
         pg.evaluate("""closePop(); sendText('Make the hero section blue', []);
           fire('route', {route: 'Google Gemini · gemini-3.8-flash'});
           for (let i = 0; i < 8; i++) { fire('tool', {id: 'x'+i, name: i < 2 ? 'file_read' : 'file_edit', args: '{"path":"index.html"}'});

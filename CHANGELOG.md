@@ -2,6 +2,15 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.11.0 (a calmer shell)
+- **Top bar**: the B logo goes back to the chat; **Chat | Projects** in the middle; **Search** (Ctrl+K) finds chats, projects, views and commands; the BlazeRouter dot; and an **avatar menu** with Account, Settings, BlazeRouter dashboard, Model, Theme, All views, Check for updates and Sign out.
+- **Rail**: in Chat it is just your recent chats (it folds away below 1100px); in Projects it lists projects with a *Working* chip on the busy one.
+- **Nothing deleted, everything in `/views`**: Memory, Jobs, Schedule, Accounts, Doctor, Settings, Design, BlazeRouter, Skills and Usage left the sidebar for one picker (filter, arrow keys, Enter, badges). `/memory`, `/jobs`, `/design`, `/router` and the rest still work, and Ctrl+K lists them too.
+- **Blaze switches views itself**: the new `open_view` tool opens Design without asking for visual work, and asks first for other views. While a view is open the top bar shows `DESIGN · Exit` (Esc works too).
+- **Chat**: your messages sit on an ink bubble; Blaze answers as plain text in a 760px column. Each turn has one live card, `Working · 4 steps · 1m 12s`, that you can open while it runs and that collapses to `Worked · 13 steps · 3m 11s`.
+- **Composer**: `+` on the left (Image, File, Folder, Voice, @ File, Plan mode, Autopilot, Model, Views, Commands), Send on the right. A small chip shows the mode only when it isn't Build · Auto, and the shortcuts moved into a `?` tooltip.
+- Tests: Go test for `open_view` (asks, refusals, unknown views); shots for the shell, avatar menu, /views, + menu, mode chip, Search, Design with Exit, Projects and the live card. Design notes: `docs/plans/plan-redesign-a.md`.
+
 ## v0.10.0 (BlazeRouter)
 - **BlazeRouter**: a local OpenAI-compatible gateway (`127.0.0.1:20128/v1`, next free port if taken) starts with Blaze and routes each request across your free providers, falling back on rate limits, outages and empty quota. It is a native Go port of OmniRoute (MIT): every `auto/*` preset (auto/best-free, auto/best-coding, auto/best-fast, auto/best-reasoning, auto/best-vision, auto/chaos, auto/lkgp and any `auto/<category>:<tier>`), combos with priority, round-robin, quota-aware and cheapest strategies, last-known-good preference and chaos fan-out to five providers. Anthropic and Gemini request formats are translated, so Claude Code and Gemini clients work too.
 - **Router button** in the top bar (icon + green/amber/red status dot) and in the tray. It opens the BlazeRouter dashboard inside Blaze (Home, Providers, Combos, Usage & logs, Quota, Settings), with an on/off switch and **Open in browser**. `/router` opens it too.
