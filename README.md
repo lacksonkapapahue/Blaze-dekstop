@@ -24,6 +24,7 @@ tools, scheduler). Settings, keys, memory and skills live in `~/.blaze` and are 
 - **Sees and hears**: reads the front window, attaches images, files and folders, and turns speech into text with Whisper on your own PC.
 - **Memory and skills**: learns facts and workflows as you go, with 28 bundled skills you can edit or turn off. Blaze combines them when a request falls between skills (a hand-drawn poster, a pixel-art game with music), and saves a combination that keeps coming up as a skill of its own.
 - **Connected**: one-click Google, GitHub, Spotify, Notion and Slack, MCP servers shared with Blaze CLI (`~/.blaze/mcp.json`), and keys that sync through your Blaze account.
+- **Blaze Link**: pair Blaze for Android by QR code (Phone view, `/phone`). Ask the phone to work on your PC, or let Blaze here text, WhatsApp or call through the phone, always with your approval there. Direct and encrypted on your Wi-Fi or Tailscale.
 - **Updates itself** from GitHub releases.
 
 What changed in each version: [`CHANGELOG.md`](CHANGELOG.md).

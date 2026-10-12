@@ -318,6 +318,7 @@
       case "web_search": return v("query") ? clip(`Searching the web for "${clip(v("query"), 36)}"`) : "Searching the web";
       case "fetch_page": return "Reading " + (host(v("url")) || "a web page");
       case "http_request": return "Calling " + (host(v("url")) || "a web service");
+      case "phone_ask": return v("task") ? clip(`Asking your phone: ${clip(v("task"), 40)}`) : "Asking your phone";
       case "download_file": return "Downloading from " + (host(v("url")) || "the web");
       case "open_url": { const t = v("target") || v("url"); return "Opening " + (/^https?:/.test(t) ? host(t) : place(t) || "a page"); }
       case "git": return describeShell("git " + (v("args") || v("command") || "status"));

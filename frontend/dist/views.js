@@ -12,6 +12,7 @@ const BlazeViews = (() => {
     { id: "settings", name: "Settings", icon: "sliders", desc: "Behaviour, appearance, memory, skills", open: () => show("settings"), badge: badge("#updCount") },
     { id: "design", name: "Design", icon: "palette", desc: "Live preview, artboards, 3D", open: () => show("design") },
     { id: "router", name: "BlazeRouter", icon: "layers", desc: "Models, keys, combos and usage", open: () => show("router") },
+    { id: "phone", name: "Phone", icon: "phone", desc: "Blaze Link: pair Blaze for Android with this PC", open: () => show("phone") },
     { id: "skills", name: "Skills", icon: "book", desc: "Bundled and learned skills", open: () => show("settings", "skills") },
     { id: "usage", name: "Usage", icon: "chart", desc: "Tokens and cost per model", open: () => show("settings", "usage") },
   ];

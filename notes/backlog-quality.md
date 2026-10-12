@@ -4,7 +4,8 @@ Short notes for the next agent: what shipped, what is known-broken, what to watc
 
 ## Releases
 - v0.12.0 — self-knowledge (PR #49, e586e3c). Release published with 6 assets (Oct 12 2026).
-- v0.13.0 — long-chat engine (PR #48). See STATUS.md.
+- v0.13.0 — long-chat engine (PR #48, merged eabc153).
+- v0.14.0 — Blaze Link PC side (branch blaze-link).
 
 ## Known quirks
 - `go vet .` at the repo root fails on Linux over hotkey.Mod1; vet ./internal/... instead.
@@ -12,3 +13,5 @@ Short notes for the next agent: what shipped, what is known-broken, what to watc
 - CI errors: read GET /repos/lacksonkapapahue/Blaze-dekstop/check-runs/{id}/annotations.
 - frontend/dist is the source (vanilla JS); never gitignore it.
 - PR #23 (signed-updates) is parked; leave it alone.
+- ci/shots.py takes ~2 min for both themes; `SHOTS_THEMES=light` runs one (local sandboxes time out at 120 s).
+- rsc.io/qr Code.Image() ignores Scale in At(); use qrImage (studio_app.go).

@@ -20,9 +20,9 @@ import (
 )
 
 // linkInBuild says whether this build has Blaze Link's PC side (the pairing server and
-// Phone view). It does not yet: Blaze-dekstop PR #3 built it but was never merged. Flip it
-// when that lands so ABOUT YOU and about_blaze describe pairing steps instead.
-const linkInBuild = false
+// Phone view). It does since v0.14.0 (pair.go, ported from PR #3), so ABOUT YOU and
+// about_blaze give the real pairing steps and the live paired-phone status.
+const linkInBuild = true
 
 // buildLine is the Go version and, when the binary carries it, the git commit.
 func buildLine() string {
@@ -68,6 +68,9 @@ func (a *App) selfFacts(full bool) selfknow.Facts {
 
 	f.Link.InBuild = linkInBuild
 	f.Link.Devices = selfknow.Devices(config.Dir())
+	if a.pair != nil {
+		f.Link.Online = a.pair.connectedPhone()
+	}
 
 	in := a.info
 	f.System = selfknow.System{OSName: in.OSName, OS: in.OS, Arch: in.Arch, CPU: in.CPU, Cores: in.Cores, RAMGB: in.RAMGB, GPU: in.GPU, Shell: in.Shell, Host: in.Hostname}

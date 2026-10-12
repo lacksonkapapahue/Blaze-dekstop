@@ -19,11 +19,13 @@ Done: shell.js/shell.css (Chat|Projects, Exit chip, Search Ctrl+K, avatar menu, 
 ## Self-knowledge (PR #49, branch `self-knowledge`, v0.12.0) — MERGED (e586e3c), released v0.12.0 (6 assets)
 internal/selfknow (ABOUT YOU block + about_blaze tool), identical in Blaze-cli (PR #15, v0.10.0). Blaze Link not in build yet (linkInBuild=false in selfknow_app.go) until Step 3b.
 
-## Step 3 — Long-chat engine part B (PR #48, branch `long-chat`, v0.13.0) — rebased on main, merging on green CI
+## Step 3 — Long-chat engine part B (PR #48, branch `long-chat`, v0.13.0) — MERGED (eabc153)
 Done: internal/longchat (db, compact, artifacts) + tests; longchat_app.go wired into app.go; tools search_chat/read_turn/read_artifact/update_brief (core, next to about_blaze); token meter + fresh-chat offer; project Brief editor; shots longchat-*; CHANGELOG v0.13.0; plan-longchat.md; VERSION + wails.json 0.13.0.
 Checks: gofmt, vet ./internal/..., go test ./internal/..., GOOS=windows build, node --check, ci/*.test.js.
 
+## Step 3b — Blaze Link PC side (branch `blaze-link`, v0.14.0) — READY, merging on green CI
+Done: pair.go (port of PR #3, protocol = Android DesktopLink.kt, documented in plan-blaze-link.md), phone_ask tool + Env.Phone, PAIRED PHONE prompt line, linkInBuild=true + live online phone in about_blaze, Phone view (link.js/css, /views, /phone, open_view phone), qrImage fix, pair_test.go, mock + shots link-*, CHANGELOG, VERSION/wails.json 0.14.0.
+
 ## Next, in order
-- Step 3b — Blaze Link PC side (branch `blaze-link`, v0.14.0): port pair.go from closed PR #3 (branch feature/phone-pairing), match Android DesktopLink.kt, flip linkInBuild, devices.json status in about_blaze.
 - Step 4 — Student pack (part C, branch `student-pack`, v0.15.0): classroom_courses / classroom_coursework tools, skills study-planner, tutor, lecture-notes, essay-coach, group-project, classroom-sync; low-data mode; UPDATE_SKILL_INDEX=1 go test ./internal/skillpack/; README skill count.
 - Step 5 — Marketer pack (part D), own PR.
