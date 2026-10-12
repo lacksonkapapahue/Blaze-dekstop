@@ -401,6 +401,9 @@ func one(f Facts, s string) string {
 		h("BlazeRouter")
 		if !f.Router.Present {
 			li("BlazeRouter (the local AI gateway) is part of Blaze Desktop, not %s. With Desktop running it serves http://127.0.0.1:20128/v1 and /dashboard on this computer.", f.App)
+			if f.Router.Note != "" {
+				li("%s", f.Router.Note)
+			}
 			break
 		}
 		li("What it is: Blaze's local OpenAI-compatible gateway (a Go port of OmniRoute). Any app can use %s/v1 with the local key; it picks a working model across your providers.", nz(f.Router.URL, "http://127.0.0.1:20128"))
