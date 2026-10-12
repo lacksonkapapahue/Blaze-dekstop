@@ -143,6 +143,26 @@ with sync_playwright() as p:
         if not pg.evaluate("(document.querySelector('textarea.brief') || {}).value || ''").startswith("Purpose"):
             errs.append("project brief missing")
         pg.evaluate("show('work')"); pg.wait_for_timeout(200)
+        # v0.16.0 one mind: one conversation in the sidebar, the read-only Archive, the idle-review toggle.
+        pg.evaluate("""async () => { const st = await go.main.App.State(); window.__mindProj = st.project; st.project = null;
+          Shell.setMode('chat'); show('work'); await refreshSide(); }"""); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"mind-sidebar-{theme}.png"))
+        if "Archive" not in pg.evaluate("document.querySelector('#chats').innerText"):
+            errs.append("one mind: the sidebar should show the Archive")
+        pg.evaluate("show('archive')"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"mind-archive-{theme}.png"))
+        if "Postgres" not in pg.evaluate("document.querySelector('#view').innerText"):
+            errs.append("Archive view should list old chats")
+        pg.evaluate("show('archive', 'c2')"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"mind-archived-chat-{theme}.png"))
+        if "homeglow-db" not in pg.evaluate("document.querySelector('#view').innerText"):
+            errs.append("archived chat should be readable")
+        pg.evaluate("show('settings', 'behaviour')"); pg.wait_for_timeout(600)
+        pg.evaluate("(([...document.querySelectorAll('.group')].find(g => /Review past conversations/.test(g.textContent))) || document.body).scrollIntoView({block: 'center'})"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"mind-review-toggle-{theme}.png"))
+        if "Review past conversations when idle" not in pg.evaluate("document.querySelector('#view').innerText"):
+            errs.append("idle-review toggle missing")
+        pg.evaluate("""async () => { const st = await go.main.App.State(); st.project = window.__mindProj; show('work'); await refreshSide(); }"""); pg.wait_for_timeout(300)
         # v0.15.0 student pack: Learn view (flashcards) and low-data mode.
         pg.evaluate("show('learn')"); pg.wait_for_timeout(500)
         pg.screenshot(path=str(out / f"student-learn-{theme}.png"))

@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lacksonkapapahue/blaze-desktop/internal/config"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/llm"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/mind"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/store"
@@ -219,8 +220,24 @@ func (a *App) extract(d *mind.DB, text string) []mind.Memory {
 	return ms
 }
 
-// llmQuick is the cheap model call (swappable in tests).
+// mindModel is the BlazeRouter preset the memory passes use: free tiers only, cheapest
+// and healthiest first, so save-as-you-go and idle review never spend paid quota.
+const mindModel = "auto/best-free"
+
+// llmQuick is the cheap model call (swappable in tests). While BlazeRouter runs it goes
+// through auto/best-free; otherwise (or if that fails) it falls back to llm.Quick, which
+// also tries free models first.
 var llmQuick = func(ctx context.Context, a *App, msgs []llm.Message) (string, error) {
+	if a.router != nil && a.router.Running() {
+		if p, ok := config.ProviderByID(config.RouterID); ok {
+			c, cancel := context.WithTimeout(ctx, 60*time.Second)
+			r, err := llm.Chat(c, p, a.router.APIKey(), mindModel, msgs, nil, nil)
+			cancel()
+			if err == nil && r != nil && strings.TrimSpace(r.Text) != "" {
+				return r.Text, nil
+			}
+		}
+	}
 	return llm.Quick(ctx, a.cfg, msgs, 60*time.Second)
 }
 
