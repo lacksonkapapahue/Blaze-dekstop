@@ -1,4 +1,4 @@
-# Long-chat engine (v0.12.0)
+# Long-chat engine (v0.13.0)
 
 Step 3 of [plan-v1.0-redesign.md](plan-v1.0-redesign.md), part B. Branch `long-chat`.
 

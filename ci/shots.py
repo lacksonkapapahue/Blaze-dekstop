@@ -126,7 +126,7 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"shell-livecard-{theme}.png"))
         if not pg.evaluate("!!document.querySelector('.work.live .wmeta')"):
             errs.append("live work card counter missing")
-        # v0.12.0 long-chat engine: token meter in the live card, fresh-chat offer, project brief.
+        # v0.13.0 long-chat engine: token meter in the live card, fresh-chat offer, project brief.
         pg.evaluate("fire('tokens', {in: 4200, out: 600, limit: 32768, high: false})"); pg.wait_for_timeout(300)
         pg.screenshot(path=str(out / f"longchat-meter-{theme}.png"))
         if "in 4.2k" not in pg.evaluate("(document.querySelector('.work.live .wmeta') || {}).textContent || ''"):
