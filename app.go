@@ -60,13 +60,14 @@ type Prefs struct {
 
 	MemoryAISort *bool `json:"memory_ai_sort,omitempty"` // let a model sort new memories into categories (default on)
 
-	Composer  ComposerPrefs `json:"composer"`             // work mode, approval mode, voice (modes.go)
-	Notify    NotifyPrefs   `json:"notify"`               // notifications and proactive suggestions (notify_app.go)
-	Vision    VisionPrefs   `json:"vision"`               // screen reading (vision_app.go)
-	MaxAgents int           `json:"max_agents,omitempty"` // background agents at once (0 = default, bgagents.go)
-	Learn     LearnPrefs    `json:"learn"`                // learn automatically + chat marks (learn_app.go)
-	Studio    StudioPrefs   `json:"studio"`               // Design studio: critic, taste, shared comments (studio_app.go)
-	LowData   bool          `json:"low_data,omitempty"`   // Low-data mode: text first, no screenshots, MB per task (student_app.go)
+	Composer   ComposerPrefs `json:"composer"`              // work mode, approval mode, voice (modes.go)
+	Notify     NotifyPrefs   `json:"notify"`                // notifications and proactive suggestions (notify_app.go)
+	Vision     VisionPrefs   `json:"vision"`                // screen reading (vision_app.go)
+	MaxAgents  int           `json:"max_agents,omitempty"`  // background agents at once (0 = default, bgagents.go)
+	Learn      LearnPrefs    `json:"learn"`                 // learn automatically + chat marks (learn_app.go)
+	Studio     StudioPrefs   `json:"studio"`                // Design studio: critic, taste, shared comments (studio_app.go)
+	MindReview *bool         `json:"mind_review,omitempty"` // review past turns into memory when idle (mind_app.go; default on)
+	LowData    bool          `json:"low_data,omitempty"`    // Low-data mode: text first, no screenshots, MB per task (student_app.go)
 }
 
 type App struct {
@@ -149,6 +150,7 @@ func (a *App) startup(ctx context.Context) {
 	a.startNotify()
 	a.startRouter()      // BlazeRouter: local OpenAI-compatible gateway + dashboard (router_app.go)
 	a.startLearning()    // bundled skills + proactive memory (learn_app.go)
+	a.startMind()        // one mind: journal, memories table, idle review (mind_app.go)
 	go tools.SyncIndex() // every tool is registered by now (init); index them for find_tools
 }
 
@@ -346,6 +348,7 @@ type Conv struct {
 
 	TitleSource string `json:"title_source,omitempty"` // auto (AI, titles.go) or manual (renamed); "" = first prompt
 	TitleTurns  int    `json:"title_turns,omitempty"`  // user turns when the auto title was last evaluated
+	ContextFrom int    `json:"context_from,omitempty"` // /clear: the model sees messages from here on (one mind)
 }
 
 type ConvItem struct {
@@ -361,11 +364,12 @@ func convDir() string {
 	return d
 }
 
-// Conversations lists the chats of one project ("" = General).
+// Conversations lists the chats of one project. General ("") is the one main
+// conversation (one mind); its old separate chats are in ArchivedConversations.
 func (a *App) Conversations(project string) []ConvItem {
 	var out []ConvItem
 	for _, c := range a.allConvs() {
-		if c.Project == project {
+		if c.Project == project && (project != "" || c.ID == mainConv) {
 			out = append(out, ConvItem{ID: c.ID, Title: c.Title, Updated: c.Updated.Format("Jan 2"), Source: c.TitleSource})
 		}
 	}
@@ -401,7 +405,7 @@ func (a *App) OpenConversation(id string) Conv {
 	if s != nil && c.ID != "" { // its turn is still running: show it as it is now
 		c.Messages, c.Running = append([]llm.Message(nil), s.hist...), s.running()
 	} else {
-		s = &session{id: c.ID, hist: c.Messages, folder: c.Folder, project: c.Project, started: c.ID != ""}
+		s = &session{id: c.ID, hist: c.Messages, folder: c.Folder, project: c.Project, started: c.ID != "", ctxFrom: c.ContextFrom}
 	}
 	a.cur, a.convID = s, c.ID
 	a.mu.Unlock()
@@ -419,11 +423,68 @@ func (a *App) OpenConversation(id string) Conv {
 	return c
 }
 
+// NewConversation starts a new chat in a project. In Chat mode there is one continuous
+// conversation (one mind), so it reopens it instead; /clear starts a fresh context.
 func (a *App) NewConversation() {
+	if a.prefs.Project == "" {
+		a.OpenConversation(mainConv)
+		if a.conn != nil {
+			a.conn.ResetLoaded()
+		}
+		return
+	}
 	a.mu.Lock()
 	a.convID, a.cur = "", &session{}
 	a.mu.Unlock()
 	a.conn.ResetLoaded()
+}
+
+// OpenMain opens the one continuous main conversation.
+func (a *App) OpenMain() Conv { return a.OpenConversation(mainConv) }
+
+// ClearContext (/clear) starts a fresh context window in the current conversation:
+// the model stops seeing earlier turns, which stay in the transcript, the journal and
+// memory. Returns the message index the new window starts at.
+func (a *App) ClearContext() int {
+	a.mu.Lock()
+	s := a.cur
+	if s == nil {
+		a.mu.Unlock()
+		return 0
+	}
+	s.ctxFrom = len(s.hist)
+	n := s.ctxFrom
+	a.mu.Unlock()
+	if s.id != "" || n > 0 {
+		a.saveConv(s)
+	}
+	if a.conn != nil {
+		a.conn.ResetLoaded()
+	}
+	return n
+}
+
+// ArchivedConversations are the separate chats from before one mind (read-only).
+func (a *App) ArchivedConversations() []ConvItem {
+	out := []ConvItem{}
+	for _, c := range a.allConvs() {
+		if c.Project == "" && c.ID != mainConv {
+			out = append(out, ConvItem{ID: c.ID, Title: c.Title, Updated: c.Updated.Format("2 Jan 2006"), Source: c.TitleSource})
+		}
+	}
+	return out
+}
+
+// ReadArchived returns an archived chat for reading; it doesn't become the open chat.
+func (a *App) ReadArchived(id string) Conv {
+	var c Conv
+	if strings.ContainsAny(id, `/\`) {
+		return c
+	}
+	if b, err := os.ReadFile(filepath.Join(convDir(), id+".json")); err == nil {
+		_ = json.Unmarshal(b, &c)
+	}
+	return c
 }
 
 func (a *App) DeleteConversation(id string) {
@@ -462,7 +523,7 @@ func (a *App) saveConv(s *session) {
 		project = s.project
 	}
 	c := Conv{ID: s.id, Project: project, Title: title, Folder: folder, Updated: time.Now(), Messages: s.hist,
-		TitleSource: src, TitleTurns: turns}
+		TitleSource: src, TitleTurns: turns, ContextFrom: s.ctxFrom}
 	convWriteMu.Lock()
 	defer convWriteMu.Unlock()
 	b, _ := json.Marshal(c)
@@ -570,8 +631,9 @@ func (a *App) run(ctx context.Context, s *session) {
 		a.mu.Lock()
 		id, hist := s.id, append([]llm.Message(nil), s.hist...)
 		a.mu.Unlock()
-		a.maybeRetitle(id, hist) // background, never blocks the turn
-		a.maybeReflect(id, hist) // end-of-turn learning check (learn_app.go)
+		a.maybeRetitle(id, hist)  // background, never blocks the turn
+		a.maybeReflect(id, hist)  // end-of-turn learning check (learn_app.go)
+		a.mindAfterTurn(id, hist) // journal + save-as-you-go (mind_app.go)
 		a.afterTurn(s, started)
 	}()
 	steps := a.cfg.MaxSteps
@@ -927,7 +989,11 @@ DESIGN TAB
 	if _, err := os.Stat(filepath.Join(a.env.Root, ".git")); err == nil {
 		b.WriteString("The project folder is a git repository.\n")
 	}
-	b.WriteString(tools.MemoryFor(query))
+	if mb := a.mindBlock(); mb != "" {
+		b.WriteString(mb) // pinned core + memory index; the rest is looked up (mind_app.go)
+	} else {
+		b.WriteString(tools.MemoryFor(query))
+	}
 	b.WriteString(a.conn.PromptBlock())
 	b.WriteString(tools.SkillsFor(query))
 	b.WriteString(a.learnRules())

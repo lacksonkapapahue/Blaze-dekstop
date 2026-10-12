@@ -8,9 +8,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lacksonkapapahue/blaze-desktop/internal/llm"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/longchat"
+	"github.com/lacksonkapapahue/blaze-desktop/internal/mind"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/tools"
 )
 
@@ -63,7 +65,18 @@ func (a *App) longContext(ctx context.Context, s *session, hist []llm.Message) (
 	if b := d.Brief(s.project); b != "" && s.project != "" {
 		extra = "\nPROJECT BRIEF (pinned; update_brief edits it)\n" + b + "\n"
 	}
+	// /clear: a fresh context window in the same conversation (the transcript keeps everything).
+	a.mu.Lock()
+	from := s.ctxFrom
+	a.mu.Unlock()
+	if from > 0 && from <= len(hist) {
+		hist = hist[from:]
+		extra += "\nFRESH CONTEXT: the user cleared the context. Earlier turns of this conversation aren't in this prompt; if something from before matters, look it up (memory_search, search_chat) instead of guessing.\n"
+	}
 	st := d.State(s.id)
+	if from > 0 && st.Upto < from { // a summary from before /clear doesn't belong to this window
+		st = longchat.ChatState{}
+	}
 	sum := func(prev string, chunk []llm.Message) (string, error) {
 		a.temit(s, "status", "Summarising older turns")
 		msgs := []llm.Message{{Role: "system", Content: longchat.SummarisePrompt},
@@ -77,17 +90,35 @@ func (a *App) longContext(ctx context.Context, s *session, hist []llm.Message) (
 		}
 		return r.Text, nil
 	}
-	out, sumText, changed, err := longchat.Context(hist, &st, longchat.Budget(a.contextWindow()), sum)
-	if err != nil {
-		return trim(hist), extra
-	}
-	if changed {
+	window := a.contextWindow()
+	budget := longchat.Budget(window)
+	out, sumText, changed, err := longchat.Context(hist, &st, budget, sum)
+	if err == nil && changed {
 		_ = d.SetState(s.id, st)
 	}
-	if st.Summary == "" {
+	// The context ladder (one mind): recent turns → rolling summary → lookup.
+	lvl := mind.Ladder(longchat.Tokens(hist), len(sumText)/4, longchat.Tokens(out), budget, window, err != nil)
+	switch {
+	case lvl == mind.Lookup:
+		a.temit(s, "status", "Context reset: looking things up from memory")
+		return lookupTail(hist), extra + "\n" + mind.LookupRule + "\n"
+	case st.Summary == "":
 		out = trim(out)
 	}
 	return out, extra + sumText
+}
+
+// lookupTail is the last few messages, starting at a user message so a tool call is
+// never cut from its result (level Lookup of the context ladder).
+func lookupTail(h []llm.Message) []llm.Message {
+	i := len(h) - mind.LookupTail
+	if i <= 0 {
+		return h
+	}
+	for i > 0 && h[i].Role != "user" {
+		i--
+	}
+	return h[i:]
 }
 
 func firstNonEmpty(a, b string) string {
@@ -171,27 +202,42 @@ func init() {
 		}
 		return a.prefs.Project
 	}
-	tools.Register("search_chat", "Search this chat's earlier messages (including ones folded into the summary) and get exact snippets with their turn ids. Use it before asking the user to repeat anything.",
-		[][3]string{{"query", "string", "Words to look for"}, {"limit", "integer", "Max results (default 5)"}}, []string{"query"},
+	tools.Register("search_chat", "Search earlier conversation for exact words: this conversation (including turns folded into the summary or dropped by a context reset) and, with everywhere=true or when nothing matches here, the whole journal (every past chat, imported or archived). Use it before asking the user to repeat anything.",
+		[][3]string{{"query", "string", "Words to look for"}, {"limit", "integer", "Max results (default 5)"}, {"everywhere", "boolean", "Search every past conversation too (the journal)"}}, []string{"query"},
 		func(e *tools.Env, args map[string]any) string {
-			d, err := longchat.Default()
-			if err != nil {
-				return "Error: chat search isn't available: " + err.Error()
-			}
-			hits := d.Search(chatOf(e), tools.ArgS(args, "query"), tools.ArgI(args, "limit", 5))
-			if len(hits) == 0 {
-				return "No earlier message matches. Try other words."
-			}
+			q, lim := tools.ArgS(args, "query"), tools.ArgI(args, "limit", 5)
 			var b strings.Builder
-			for _, h := range hits {
-				fmt.Fprintf(&b, "turn %d (%s): %s\n", h.Turn, h.Role, h.Snippet)
+			if d, err := longchat.Default(); err == nil {
+				for _, h := range d.Search(chatOf(e), q, lim) {
+					fmt.Fprintf(&b, "turn %d (%s): %s\n", h.Turn, h.Role, h.Snippet)
+				}
 			}
-			b.WriteString("read_turn {id} returns a whole message.")
+			if md := mindDB(); md != nil && (b.Len() == 0 || tools.ArgS(args, "everywhere") == "true") {
+				chat := chatOf(e)
+				for _, t := range md.SearchJournal(q, "", lim) {
+					if t.Conv == chat && b.Len() > 0 {
+						continue
+					}
+					fmt.Fprintf(&b, "journal %d (%s, %s, %s): %s\n", t.ID, t.Conv, t.Role, time.Unix(t.At, 0).Format("2 Jan 2006"), t.Content)
+				}
+			}
+			if b.Len() == 0 {
+				return "No earlier message matches. Try other words, or memory_search."
+			}
+			b.WriteString("read_turn {id} (or {journal_id}) returns a whole message.")
 			return b.String()
 		})
-	tools.Register("read_turn", "Read one earlier message of this chat in full, by the turn id search_chat gave.",
-		[][3]string{{"id", "integer", "Turn id"}}, []string{"id"},
+	tools.Register("read_turn", "Read one earlier message in full: by the turn id search_chat gave for this conversation, or by journal_id for a journal hit.",
+		[][3]string{{"id", "integer", "Turn id in this conversation"}, {"journal_id", "integer", "Or: a journal id from search_chat"}}, nil,
 		func(e *tools.Env, args map[string]any) string {
+			if jid := tools.ArgI(args, "journal_id", 0); jid > 0 {
+				if md := mindDB(); md != nil {
+					if t, ok := md.JournalTurn(int64(jid)); ok {
+						return fmt.Sprintf("journal %d (%s turn %d, %s):\n%s", t.ID, t.Conv, t.Turn, t.Role, t.Content)
+					}
+				}
+				return "Error: no journal entry with that id."
+			}
 			d, err := longchat.Default()
 			if err != nil {
 				return "Error: " + err.Error()

@@ -61,7 +61,10 @@
     $("input", t1).onchange = async e => { await API().SetLearn(e.target.checked); S.prefs.learn = { ...(S.prefs.learn || {}), off: !e.target.checked }; };
     const t2 = h("label", "toggle", `<input type="checkbox" ${marksOn() ? "checked" : ""}><span><span class="tt">Show what Blaze learns</span><span class="td">A small mark under the answer (and a toast) whenever a memory or skill is saved, changed or forgotten.</span></span>`);
     $("input", t2).onchange = async e => { await API().SetLearnMarks(e.target.checked); S.prefs.learn = { ...(S.prefs.learn || {}), no_marks: !e.target.checked }; };
-    bx.append(t1, t2); g.append(bx);
+    const rvOn = !(S && S.prefs && S.prefs.mind_review === false);
+    const t3 = h("label", "toggle", `<input type="checkbox" ${rvOn ? "checked" : ""}><span><span class="tt">Review past conversations when idle</span><span class="td">One mind: when Blaze has been idle for 10 minutes (on mains power, CPU quiet), it reads older conversation in small chunks on your cheapest model and files what matters into memory. Off: only what each turn saves.</span></span>`);
+    $("input", t3).onchange = async e => { if (API().SetMindReview) await API().SetMindReview(e.target.checked); S.prefs.mind_review = e.target.checked; };
+    bx.append(t1, t2, t3); g.append(bx);
     return g;
   }
   const _setBehaviourLearn = setBehaviour;
