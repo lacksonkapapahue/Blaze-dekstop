@@ -27,6 +27,12 @@ type Job struct {
 	Added   string `json:"added"`
 }
 
+// Now is the clock (tests move it).
+var Now = time.Now
+
+// Once says whether a job runs one time only ("once YYYY-MM-DD HH:MM").
+func (j Job) Once() bool { return strings.HasPrefix(strings.ToLower(strings.TrimSpace(j.When)), "once ") }
+
 func file() string { return filepath.Join(config.Dir(), "schedule.json") }
 
 func Load() []Job {
@@ -118,10 +124,21 @@ func parse(when string) (cron string, win []string, err error) {
 			n = 5
 		}
 		return fmt.Sprintf("*/%d * * * *", n), []string{"/SC", "MINUTE", "/MO", strconv.Itoa(n)}, nil
+	case len(f) == 3 && f[0] == "once":
+		// One time only (assignment and study reminders): run-job removes it after it runs.
+		t, e := time.ParseInLocation("2006-01-02 15:04", f[1]+" "+f[2], time.Local)
+		if e != nil {
+			return "", nil, fmt.Errorf("bad date %q (use once YYYY-MM-DD HH:MM)", f[1]+" "+f[2])
+		}
+		if !t.After(Now()) {
+			return "", nil, fmt.Errorf("%s is already past", t.Format("2006-01-02 15:04"))
+		}
+		return fmt.Sprintf("%d %d %d %d *", t.Minute(), t.Hour(), t.Day(), int(t.Month())),
+			[]string{"/SC", "ONCE", "/SD", t.Format("01/02/2006"), "/ST", t.Format("15:04")}, nil
 	case len(f) == 5:
 		return w, nil, nil
 	}
-	return "", nil, fmt.Errorf("can't read the schedule %q. Use 'daily 07:00', 'hourly', 'every 30m', 'weekly mon 09:00', 'boot' or a cron line", when)
+	return "", nil, fmt.Errorf("can't read the schedule %q. Use 'daily 07:00', 'hourly', 'every 30m', 'weekly mon 09:00', 'once 2026-11-16 08:00', 'boot' or a cron line", when)
 }
 
 func Add(j Job) string {

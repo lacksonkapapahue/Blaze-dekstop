@@ -143,6 +143,22 @@ with sync_playwright() as p:
         if not pg.evaluate("(document.querySelector('textarea.brief') || {}).value || ''").startswith("Purpose"):
             errs.append("project brief missing")
         pg.evaluate("show('work')"); pg.wait_for_timeout(200)
+        # v0.15.0 student pack: Learn view (flashcards) and low-data mode.
+        pg.evaluate("show('learn')"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"student-learn-{theme}.png"))
+        if "NET103" not in pg.evaluate("document.querySelector('#view').innerText"):
+            errs.append("Learn view should list decks")
+        pg.evaluate("show('learn', 'NET103')"); pg.wait_for_timeout(400)
+        pg.evaluate("[...document.querySelectorAll('#view button')].find(b => /Show answer/.test(b.textContent)).click()"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"student-card-{theme}.png"))
+        if "/27" not in pg.evaluate("document.querySelector('#view').innerText"):
+            errs.append("flashcard answer missing")
+        pg.evaluate("show('settings', 'behaviour')"); pg.wait_for_timeout(600)
+        pg.evaluate("(([...document.querySelectorAll('.group')].find(g => /Low-data mode/.test(g.textContent))) || document.body).scrollIntoView({block: 'center'})"); pg.wait_for_timeout(200)
+        pg.screenshot(path=str(out / f"student-lowdata-{theme}.png"))
+        if "Low-data mode" not in pg.evaluate("document.querySelector('#view').innerText"):
+            errs.append("low-data setting missing")
+        pg.evaluate("show('work')"); pg.wait_for_timeout(200)
         # v0.14.0 Blaze Link: the Phone view (paired phone online, then the pairing QR code).
         pg.evaluate("show('phone')"); pg.wait_for_timeout(500)
         pg.screenshot(path=str(out / f"link-phone-{theme}.png"))

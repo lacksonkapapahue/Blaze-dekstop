@@ -113,7 +113,7 @@ func (a *App) emitTokens(s *session, r *llm.Result, sent []llm.Message) {
 	if limit <= 0 {
 		limit = 32768
 	}
-	a.temit(s, "tokens", map[string]any{"in": in, "out": out, "limit": limit, "high": in*10 >= limit*8})
+	a.temit(s, "tokens", map[string]any{"in": in, "out": out, "limit": limit, "high": in*10 >= limit*8, "bytes": callBytes(sent, r)})
 }
 
 // FreshChat starts a new chat that opens with a summary of the current one (offered

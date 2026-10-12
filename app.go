@@ -66,6 +66,7 @@ type Prefs struct {
 	MaxAgents int           `json:"max_agents,omitempty"` // background agents at once (0 = default, bgagents.go)
 	Learn     LearnPrefs    `json:"learn"`                // learn automatically + chat marks (learn_app.go)
 	Studio    StudioPrefs   `json:"studio"`               // Design studio: critic, taste, shared comments (studio_app.go)
+	LowData   bool          `json:"low_data,omitempty"`   // Low-data mode: text first, no screenshots, MB per task (student_app.go)
 }
 
 type App struct {
@@ -897,6 +898,7 @@ RULES
 	b.WriteString(a.personality())
 	b.WriteString(answerShape(a.foldCards()))
 	b.WriteString(a.modeLine())
+	b.WriteString(a.lowDataLine())
 	if a.cfg.Persona != "" {
 		b.WriteString("\nSTYLE\n" + a.cfg.Persona + "\n")
 	}

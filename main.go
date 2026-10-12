@@ -88,6 +88,9 @@ func runJob(name string) int {
 	if !ok {
 		return 2
 	}
+	if j.Once() {
+		defer sched.Remove(name) // one-time reminders don't come back next year
+	}
 	log, err := sched.LogWriter(name)
 	if err != nil {
 		return 1

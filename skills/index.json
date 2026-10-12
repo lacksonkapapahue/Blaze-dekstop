@@ -36,6 +36,23 @@
       ]
     },
     {
+      "name": "classroom-sync",
+      "description": "Sync Google Classroom into Blaze - list the student's courses and upcoming assignments, then add each one to Schedule with a reminder 24 hours before it is due, without duplicates. Use for \"sync my Classroom\", \"what assignments are due\", \"remind me of my coursework\" or a weekly assignment check.",
+      "tags": [
+        "student",
+        "google-classroom",
+        "assignments",
+        "schedule",
+        "reminders",
+        "sync"
+      ],
+      "version": 1,
+      "sha256": "f6766826fe87e6a1347a6a46d1477e7ffb2c646b491fc49253c8d8936b791a2d",
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    {
       "name": "code-review",
       "description": "Review code changes - a diff, a branch, a pull request or a file - for bugs, security, performance, readability and tests, and report findings ranked by severity with concrete fixes. Use when the user asks to \"review\", \"check my code\", \"look over this PR\" or before merging Blaze's own work.",
       "tags": [
@@ -152,6 +169,24 @@
       ]
     },
     {
+      "name": "essay-coach",
+      "description": "Coach a student through an essay or report - understand the question, build an outline and thesis, give specific feedback on their own draft, and format citations in APA 7 or Harvard. Refuses to write a full graded essay and offers coaching instead. Use for essays, reports, assignments, \"check my essay\", \"cite this source\".",
+      "tags": [
+        "student",
+        "essay",
+        "writing",
+        "feedback",
+        "citations",
+        "apa",
+        "harvard"
+      ],
+      "version": 1,
+      "sha256": "fe09c1a44bcfc2c6803b955eb8ed3a434b21e417443d1c11e6e859787b1ee51c",
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    {
       "name": "floor-plan",
       "description": "Draw 2D floor plans and layouts to scale - a room, flat, house, office, shop, garden, event or seating layout - as a measured SVG with walls, doors, windows, furniture and dimensions, previewed and edited in Design, with PDF and PNG export. Use for \"floor plan\", \"room layout\", \"where should furniture go\", \"seating plan\" or site layout requests.",
       "tags": [
@@ -181,6 +216,23 @@
       ],
       "version": 1,
       "sha256": "c29734355540e3c1036081280cfbb2b7ac988b93c0696124681d5d2d44c810a1",
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    {
+      "name": "group-project",
+      "description": "Run a student group project - set up a project with a tasks list, split work fairly by person and deadline, track progress, and write a short \"WhatsApp summary\" message the student can paste into the group chat (or send through the paired phone with approval). Use for group assignments, team presentations, \"who's doing what\", \"summarise for the group\".",
+      "tags": [
+        "student",
+        "group",
+        "project",
+        "tasks",
+        "whatsapp",
+        "teamwork"
+      ],
+      "version": 1,
+      "sha256": "031bd044aba52d30667b382659b3223f32b7c842fe2f12e094952b998acc3844",
       "files": [
         "SKILL.md"
       ]
@@ -218,6 +270,23 @@
       "files": [
         "SKILL.md",
         "assets/template.html"
+      ]
+    },
+    {
+      "name": "lecture-notes",
+      "description": "Turn a lecture recording or rough class notes into clean study notes - transcribe audio on this PC with Whisper, then write structured notes, a short summary, key terms with definitions and likely exam questions. Use for \"transcribe my lecture\", \"make notes from this recording\", \"clean up my class notes\".",
+      "tags": [
+        "student",
+        "lecture",
+        "notes",
+        "transcription",
+        "whisper",
+        "summary"
+      ],
+      "version": 1,
+      "sha256": "b8f9b191cd604656e742a9db4bc92322d0003dad7ae7b4e80816295f811ab2bc",
+      "files": [
+        "SKILL.md"
       ]
     },
     {
@@ -387,6 +456,23 @@
       ]
     },
     {
+      "name": "study-planner",
+      "description": "Build a day-by-day study plan from an exam date and a list of topics, put each session in Schedule with a reminder, and re-plan when the student misses a day. Use for \"help me study for my exams\", \"make a revision timetable\", \"I have finals on the 16th\" or \"I missed yesterday's study\".",
+      "tags": [
+        "student",
+        "study",
+        "exams",
+        "planning",
+        "schedule",
+        "revision"
+      ],
+      "version": 1,
+      "sha256": "3dc19fe038dc5bb495d816d3d0c47d92995e363ef53149a562029d67eabc9681",
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    {
       "name": "three-d-design",
       "description": "Design anything 3D (a product, furniture, a printable part, a building, a character) as a Three.js mockup in the Design tab that the user can orbit, pick and edit part by part, then build it in the program they named (Blender, FreeCAD, OpenSCAD, Fusion 360, Unity) from the same parts. Use for any 3D model, 3D design, CAD or 3D printing request.",
       "tags": [
@@ -403,6 +489,23 @@
       "files": [
         "SKILL.md",
         "assets/mockup.html"
+      ]
+    },
+    {
+      "name": "tutor",
+      "description": "Teach a topic the way a good tutor does - explain simply, check understanding with questions, then turn notes, a PDF or slides into flashcards that the Learn view reviews with spaced repetition. Use for \"explain this\", \"quiz me\", \"help me understand\", \"make flashcards from lecture 4\" or exam revision.",
+      "tags": [
+        "student",
+        "tutor",
+        "flashcards",
+        "quiz",
+        "learning",
+        "spaced-repetition"
+      ],
+      "version": 1,
+      "sha256": "4442f67c8ea863bb357521ecfb6f2c0f3a7692835955d4fdf9553bbb9fb6eb3c",
+      "files": [
+        "SKILL.md"
       ]
     },
     {
