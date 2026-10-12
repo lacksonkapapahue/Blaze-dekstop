@@ -1170,6 +1170,9 @@ func (m *Manager) Handles(name string) bool {
 
 // PromptBlock is the CONNECTORS section of the system prompt.
 func (m *Manager) PromptBlock() string {
+	if m == nil {
+		return ""
+	}
 	var ready, expired, off, missing []string
 	for _, c := range m.conns {
 		st := m.store.Conn(c.ID)

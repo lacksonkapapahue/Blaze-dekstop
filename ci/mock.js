@@ -323,4 +323,11 @@ if (/\/internal\/router\/web\//.test(location.href)) {
   window.runtime = { EventsOn(ev, fn) { (window.__ev[ev] = window.__ev[ev] || []).push(fn); } };
   window.fire = (ev, data) => (window.__ev[ev] || []).forEach(f => f(data));
   window.__conv = conv;
+  // Self-knowledge (v0.12): "how do I connect my phone?" answered from about_blaze, not with questions.
+  window.__convAbout = { id: "c9", title: "Connect my phone", messages: [
+    { role: "user", content: "how do I connect my phone?" },
+    { role: "assistant", content: "", tool_calls: [{ id: "a1", function: { name: "about_blaze", arguments: "{\"section\":\"link\"}" } }] },
+    { role: "tool", tool_call_id: "a1", content: "BLAZE LINK (PHONE ↔ PC)\n- Status in this build: the PC side is NOT in this Blaze Desktop build…\n- Paired phones: none." },
+    { role: "assistant", content: "Blaze on your phone links to Blaze Desktop in two ways. Your account works today; direct pairing (Blaze Link) needs the PC side, which isn't in this build yet.\n\n**Works now**\n1. Open **/account** here and sign in, then sign in to the same Blaze account in Blaze on your phone. Your model keys follow you, encrypted.\n2. To see a design on the phone: **Design › Phone** shows a QR code. Scan it with the phone's camera on the same Wi-Fi.\n\n**Blaze Link pairing** (once the PC side ships)\n1. Blaze Desktop › **Phone** › *Show pairing QR code*.\n2. On the phone: Blaze › **Settings › Blaze Desktop**, then scan it.\n3. Keep both on the same Wi-Fi, or both on Tailscale. The link is direct HTTPS on port 7377, pinned to this PC.\n\nNo phone is paired with this PC right now." },
+  ] };
 })();

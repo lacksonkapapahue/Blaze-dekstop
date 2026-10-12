@@ -874,6 +874,7 @@ RULES
 - Be honest about failures. Never claim something worked without checking.
 - Answers: short, direct, Markdown. Lead with the result.
 `)
+	b.WriteString(a.aboutYou())
 	b.WriteString(a.personality())
 	b.WriteString(answerShape(a.foldCards()))
 	b.WriteString(a.modeLine())

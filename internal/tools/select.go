@@ -20,7 +20,7 @@ var core = map[string]bool{
 	"run_shell": true, "file_read": true, "file_write": true, "file_edit": true, "file_list": true, "file_search": true,
 	"web_search": true, "fetch_page": true, "git": true, "job_log": true,
 	"remember": true, "recall": true, "forget": true, "load_skill": true, "find_tools": true,
-	"notify": true, "open_view": true,
+	"notify": true, "open_view": true, "about_blaze": true,
 }
 
 // hidden tools still run when called but are never offered (old aliases).
