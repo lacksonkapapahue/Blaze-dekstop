@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
 	"image/png"
 	"io"
 	"net"
@@ -904,12 +905,29 @@ func qrDataURL(s string) string {
 	if err != nil {
 		return ""
 	}
-	c.Scale = 6
 	var b bytes.Buffer
-	if err := png.Encode(&b, c.Image()); err != nil {
+	if err := png.Encode(&b, qrImage(c, 6)); err != nil {
 		return ""
 	}
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(b.Bytes())
+}
+
+// qrImage draws c with scale pixels per module and a 4-module quiet zone. rsc.io/qr's own
+// Image() sizes the bounds for Scale but reads At(x, y) as module coordinates, so it
+// drew the code tiny in the top-left corner.
+func qrImage(c *qr.Code, scale int) image.Image {
+	d := (c.Size + 8) * scale
+	img := image.NewGray(image.Rect(0, 0, d, d))
+	for y := 0; y < d; y++ {
+		for x := 0; x < d; x++ {
+			v := uint8(0xFF)
+			if c.Black(x/scale-4, y/scale-4) {
+				v = 0
+			}
+			img.Pix[y*img.Stride+x] = v
+		}
+	}
+	return img
 }
 
 func randHex(n int) string {

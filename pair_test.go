@@ -17,6 +17,7 @@ import (
 
 	"github.com/lacksonkapapahue/blaze-desktop/internal/selfknow"
 	"github.com/lacksonkapapahue/blaze-desktop/internal/tools"
+	"rsc.io/qr"
 )
 
 // The whole Blaze Link handshake as Blaze Android's DesktopLink.kt does it: parse the
@@ -186,5 +187,23 @@ func TestPhoneAskWithoutLink(t *testing.T) {
 	env := &tools.Env{Root: dir, Shell: tools.NewShell("sh", "/bin/sh", dir)}
 	if out := tools.Run(env, "phone_ask", `{"task":"Text Mum"}`); !strings.Contains(out, "No phone is paired") {
 		t.Fatal(out)
+	}
+}
+
+// The QR code fills its image (with a quiet zone), not just the top-left corner.
+func TestQRImageScales(t *testing.T) {
+	c, err := qr.Encode("blaze://pair?v=1&c=x", qr.M)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img := qrImage(c, 8)
+	d := (c.Size + 8) * 8
+	if img.Bounds().Dx() != d {
+		t.Fatal("size")
+	}
+	// The finder pattern's top-left module is black at (4,4) modules = (32,32) px; the quiet zone is white.
+	dark := func(x, y int) bool { r, _, _, _ := img.At(x, y).RGBA(); return r < 0x8000 }
+	if !dark(32+3, 32+3) || dark(3, 3) || !dark(d-32-4, 32+3) {
+		t.Fatal("QR not drawn at scale")
 	}
 }

@@ -12,7 +12,8 @@ mock = f"window.__routerDash='{rdash}';window.__routerState={rstate};" + mock
 allerrs = []
 with sync_playwright() as p:
     b = p.chromium.launch(**({"executable_path": __import__("os").environ["CHROME"]} if __import__("os").environ.get("CHROME") else {}))
-    for theme in ["light", "dark"]:
+    # SHOTS_THEMES=light runs one theme (a quicker local run); CI takes both.
+    for theme in (__import__("os").environ.get("SHOTS_THEMES") or "light,dark").split(","):
         pg = b.new_page(viewport={"width": 1280, "height": 820}, device_scale_factor=1)
         pg.add_init_script(f"window.__theme='{theme}';window.__sample='{sample}';" + mock)
         errs = []
@@ -141,6 +142,16 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"longchat-brief-{theme}.png"))
         if not pg.evaluate("(document.querySelector('textarea.brief') || {}).value || ''").startswith("Purpose"):
             errs.append("project brief missing")
+        pg.evaluate("show('work')"); pg.wait_for_timeout(200)
+        # v0.14.0 Blaze Link: the Phone view (paired phone online, then the pairing QR code).
+        pg.evaluate("show('phone')"); pg.wait_for_timeout(500)
+        pg.screenshot(path=str(out / f"link-phone-{theme}.png"))
+        if "Galaxy A12" not in pg.evaluate("document.querySelector('#view').innerText"):
+            errs.append("Phone view should list the paired phone")
+        pg.evaluate("[...document.querySelectorAll('#view button')].find(b => /Show pairing QR/.test(b.textContent)).click()"); pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"link-qr-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('.lnk-qr')"):
+            errs.append("pairing QR code missing")
         pg.evaluate("show('work')"); pg.wait_for_timeout(200)
         pg.evaluate("""closePop(); sendText('Make the hero section blue', []);
           fire('route', {route: 'Google Gemini · gemini-3.8-flash'});

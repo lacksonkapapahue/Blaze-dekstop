@@ -778,9 +778,8 @@ func pairQR(link string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	c.Scale = 8
 	var b bytes.Buffer
-	if err := png.Encode(&b, c.Image()); err != nil {
+	if err := png.Encode(&b, qrImage(c, 8)); err != nil {
 		return "", err
 	}
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(b.Bytes()), nil
