@@ -2,6 +2,23 @@
   "format": 1,
   "skills": [
     {
+      "name": "ad-lab",
+      "description": "Write 5 ad variants for a product or offer (Meta/Instagram, TikTok, Google), score each on hook, clarity and call to action, and return them best first with the reasoning and a test plan. Use for \"write ads for this product\", \"ad copy\", \"which ad is better\", \"Facebook ad for HomeGlow\".",
+      "tags": [
+        "marketing",
+        "ads",
+        "copywriting",
+        "meta-ads",
+        "tiktok",
+        "testing"
+      ],
+      "version": 1,
+      "sha256": "89ce872ca483f01263e5d1160a7c17a48ab907fc7f5f34a98b623f1cd62667a2",
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    {
       "name": "api-integration",
       "description": "Connect to a web API or webhook - read the docs, authenticate (API key, OAuth, bearer token), call endpoints with curl or code, handle pagination, rate limits, retries and errors, and store keys safely. Use when the user wants to automate a service (Shopify, Stripe, GitHub, Google, Notion, Telegram, any REST/GraphQL API) or build an integration.",
       "tags": [
@@ -64,6 +81,23 @@
       ],
       "version": 1,
       "sha256": "3e37831937cc73e6b08d6db1ed0ed0a98b58d1e4b4c6032679731807be4f858b",
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    {
+      "name": "content-calendar",
+      "description": "Plan and make a week of social media posts for a store or brand - post ideas, captions, hashtags and visuals designed in the Design studio with the brand kit - and save each post as a Schedule item. Use for \"plan my posts this week\", \"content calendar for HomeGlow\", \"what should I post on TikTok/Instagram\".",
+      "tags": [
+        "marketing",
+        "social-media",
+        "content",
+        "calendar",
+        "design",
+        "schedule"
+      ],
+      "version": 1,
+      "sha256": "98906026418a50d5a01b1c9e95b5434fa34570588f5338768c41d63026609657",
       "files": [
         "SKILL.md"
       ]
@@ -391,6 +425,23 @@
       ]
     },
     {
+      "name": "product-listing",
+      "description": "Turn a supplier product URL (AliExpress, Zendrop, CJ Dropshipping, Alibaba, Temu) into a ready Shopify listing - title, benefit-led description, bullet specs, tags, SEO title and meta, price suggestion and image prompts. Use for \"write a listing for this product\", \"add this AliExpress item to my store\", \"product description\".",
+      "tags": [
+        "ecommerce",
+        "shopify",
+        "dropshipping",
+        "copywriting",
+        "seo",
+        "product"
+      ],
+      "version": 1,
+      "sha256": "c6f9b1ba57e3b24f27b240e1192be4dd17ab03294decef6cc4d8c365c974de7d",
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    {
       "name": "refactoring",
       "description": "Restructure existing code without changing its behaviour - split large files or functions, remove duplication, rename, untangle dependencies, modernise APIs - in small, tested, reversible steps. Use when code is hard to change, before adding a feature to messy code, or when the user asks to \"clean up\" or \"refactor\".",
       "tags": [
@@ -401,6 +452,23 @@
       ],
       "version": 1,
       "sha256": "e0f8b9b1a433e3961834d6c54e98f0479667aa965a400c47a57a21fd6a195c20",
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    {
+      "name": "research-brief",
+      "description": "Produce a one-page competitor and pricing brief for a product or store - who sells it, at what price, how they position it, their shipping and reviews, gaps to exploit and a recommended price - using the deep-research skill for sourcing. Use for \"research competitors\", \"what should I charge\", \"is this product saturated\", \"market research for HomeGlow\".",
+      "tags": [
+        "marketing",
+        "research",
+        "competitors",
+        "pricing",
+        "ecommerce",
+        "brief"
+      ],
+      "version": 1,
+      "sha256": "f2e862332ea4936a7bb8c3715ee520165795ebcb4e40344438c3943776b1da15",
       "files": [
         "SKILL.md"
       ]
@@ -560,6 +628,40 @@
         "SKILL.md",
         "assets/starter.html",
         "assets/tokens.css"
+      ]
+    },
+    {
+      "name": "weekly-digest",
+      "description": "Set up and run a weekly store digest - last week's orders and revenue, best sellers, top social posts and what to post next - as a scheduled Blaze job that sends a short report every week. Use for \"weekly report for my store\", \"how did HomeGlow do this week\", \"send me a summary every Sunday\".",
+      "tags": [
+        "ecommerce",
+        "analytics",
+        "report",
+        "schedule",
+        "social-media",
+        "shopify"
+      ],
+      "version": 1,
+      "sha256": "dc27118f37d0164a2235bf75dbad93cc06661dd0a01ba11d0fa7db3de38edab0",
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    {
+      "name": "whatsapp-replies",
+      "description": "Draft WhatsApp replies to customers and leads on the desktop - order status, delivery questions, prices, complaints, follow-ups - in the store's voice, then send them through the paired Android phone over Blaze Link only after the seller approves each message. Use for \"reply to this customer\", \"answer my WhatsApp messages\", \"follow up with buyers\".",
+      "tags": [
+        "whatsapp",
+        "customer-service",
+        "messages",
+        "ecommerce",
+        "blaze-link",
+        "approval"
+      ],
+      "version": 1,
+      "sha256": "192ee307857c01f1c479fecb42ce3802c6ffd7b012f7ae0e9dc809db4bbefeb3",
+      "files": [
+        "SKILL.md"
       ]
     },
     {

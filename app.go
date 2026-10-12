@@ -197,6 +197,7 @@ func (a *App) newEnv() {
 	if a.pair != nil {
 		a.env.Phone = a.pair.askPhone
 	}
+	a.env.Approve = a.confirm // a real yes on screen, even in Autopilot (messages sent through the phone)
 }
 
 // confirm shows the in-app confirm card and blocks the agent until the user answers.

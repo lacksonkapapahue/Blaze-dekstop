@@ -163,6 +163,19 @@ with sync_playwright() as p:
         if "Review past conversations when idle" not in pg.evaluate("document.querySelector('#view').innerText"):
             errs.append("idle-review toggle missing")
         pg.evaluate("""async () => { const st = await go.main.App.State(); st.project = window.__mindProj; show('work'); await refreshSide(); }"""); pg.wait_for_timeout(300)
+        # v0.17.0 marketer pack: the seller skills in Settings › Skills, and the approval a WhatsApp send needs.
+        mk = [x for x in __import__("json").loads((root / "skills" / "index.json").read_text())["skills"] if x["name"] in ("content-calendar", "product-listing", "ad-lab", "research-brief", "whatsapp-replies", "weekly-digest")]
+        pg.evaluate("mk => { for (const x of mk) if (!window.__skills.some(s => s.name === x.name)) window.__skills.push({ ...x, state: 'bundled', enabled: true, update: false }); }", mk)
+        pg.evaluate("show('settings','skills')"); pg.wait_for_timeout(600)
+        pg.evaluate("document.querySelector('.sksearch').value='marketing'; document.querySelector('.sksearch').oninput()"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"marketer-skills-{theme}.png"))
+        if pg.evaluate("document.querySelectorAll('.skrows .skr').length") < 2:
+            errs.append("marketer skills missing from Settings › Skills")
+        pg.evaluate("document.querySelector('.sksearch').value=''; document.querySelector('.sksearch').oninput()"); pg.wait_for_timeout(200)
+        pg.evaluate("""show('work'); loadConv(window.__conv);
+          fire('confirm', {id: 'wa1', title: 'Send through your phone?', detail: 'Send WhatsApp to Ruth (HomeGlow order #1042): Hi Ruth, your Aurora lamp shipped today with DHL, tracking DX88213. It should reach Ndola by Friday. Thank you for shopping with HomeGlow!'});"""); pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"marketer-whatsapp-approve-{theme}.png"))
+        pg.evaluate("document.querySelectorAll('.card').forEach(c => { if (/Send through your phone/.test(c.textContent)) c.remove(); })")
         # v0.15.0 student pack: Learn view (flashcards) and low-data mode.
         pg.evaluate("show('learn')"); pg.wait_for_timeout(500)
         pg.screenshot(path=str(out / f"student-learn-{theme}.png"))

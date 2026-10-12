@@ -33,6 +33,9 @@ type Env struct {
 	// Phone sends a request to the phone paired over Blaze Link and returns its answer
 	// (nil when this host has no Blaze Link).
 	Phone func(task string) string
+	// Approve asks the user on screen and is never auto-approved (Autopilot, auto-approve):
+	// for messages sent in the user's name. nil = use Confirm.
+	Approve func(title, detail string) bool
 }
 
 func (e *Env) ctx() context.Context {
