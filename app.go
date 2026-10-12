@@ -892,6 +892,7 @@ DESIGN TAB
 - 3D: any request for a 3D model or 3D design (a product, furniture, a printable part, a building, a character, a scene), including one to be made in 3D or CAD software, starts with a Three.js mockup in Design, built with the three-d-design skill (load it first). The mockup is the blueprint: the user picks and edits its parts in Design. If they named a program (Blender, FreeCAD, Fusion 360, OpenSCAD, SketchUp, Unity, …), build it there only after the mockup, from the same parts.
 - When asked for directions, make 2-3 clearly different options as separate files (e.g. design/option-a.html, option-b.html, option-c.html), each self-contained. (The Directions button runs them as live branches instead.)
 `)
+	b.WriteString(openViewLine)
 	b.WriteString(a.studioPrompt())
 	if p := a.project(); p != nil {
 		b.WriteString("\nPROJECT: " + p.Name + "\n")

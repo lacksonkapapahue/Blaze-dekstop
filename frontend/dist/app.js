@@ -329,6 +329,7 @@ function show(v, arg) {
   ((window.VIEWS && window.VIEWS[v]) || ({ work: workView, design: designView, settings: settingsView, doctor: doctorView, jobs: jobsView, schedule: scheduleView, project: projectView, newproject: newProjectView, memory: (e, a) => memoryView(e, a) })[v])(el, arg);
   $$("#chats .chat").forEach(b => b.classList.remove("on"));
   if (window.Router) Router.paint();
+  if (window.Shell) Shell.sync();
 }
 
 function workView(el) {
@@ -495,7 +496,6 @@ function blazeMsg() {
   el.append(workEl, stepsEl, mdEl);
   const turn = { el, workEl, stepsEl, mdEl, text: "", steps: {}, order: [], started: Date.now(), open: false };
   workEl.onclick = () => {
-    if (!workEl.classList.contains("done")) return;
     turn.open = !turn.open;
     workEl.classList.toggle("open", turn.open);
     stepsEl.style.display = turn.open && turn.order.length ? "" : "none";
@@ -573,7 +573,8 @@ const clip = (t, n = 60) => { t = String(t || "").replace(/\s+/g, " ").trim(); r
 function setStatus(turn, text) {
   if (!turn || !text) return;
   const w = turn.workEl, wt = $(".wt", w);
-  w.style.display = ""; w.classList.add("live"); w.classList.remove("done", "open");
+  w.style.display = ""; w.classList.add("live"); w.classList.remove("done");
+  liveMeta(turn);
   const t = clip(text);
   if (turn.statusText === t) return;
   turn.statusText = t;
@@ -585,12 +586,28 @@ function setStatus(turn, text) {
   scrollDown();
 }
 
+// The live card's counter: "Working · 4 steps · 1m 12s", ticking once a second.
+function liveMeta(turn) {
+  const w = turn.workEl;
+  let m = $(".wmeta", w);
+  if (!m) { m = h("span", "wmeta label"); $(".wt", w).before(m); }
+  const draw = () => {
+    if (turn.finished) { clearInterval(turn.tick); turn.tick = 0; m.remove(); return; }
+    const n = turn.order.length, secs = (Date.now() - turn.started) / 1000;
+    m.textContent = ["Working", n ? `${n} step${n === 1 ? "" : "s"}` : "", secs >= 1 ? (secs >= 60 ? `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s` : `${Math.round(secs)}s`) : ""].filter(Boolean).join(" · ");
+  };
+  draw();
+  if (!turn.tick) turn.tick = setInterval(draw, 1000);
+}
+
 // When the turn ends the working line collapses to "Worked · 6 steps · 14s" (or nothing if
 // no tools ran). Safe to call twice: the first call wins.
 function finishWork(turn, seconds, label) {
   if (!turn || turn.finished) return;
   turn.finished = true;
   const w = turn.workEl;
+  if (turn.tick) { clearInterval(turn.tick); turn.tick = 0; }
+  const wm = $(".wmeta", w); if (wm) wm.remove();
   turn.statusText = "";
   if (!turn.order.length) { w.style.display = "none"; w.classList.remove("live"); $(".wt", w).innerHTML = ""; return; }
   const secs = seconds != null ? seconds : (Date.now() - turn.started) / 1000;
@@ -613,6 +630,7 @@ function scrollDown(force) {
 
 function setBusy(b) {
   busy = b;
+  if (window.Shell) Shell.sync();
   sendLabel();
   hintText();
 }
