@@ -32,3 +32,9 @@
 .brcard .acts { display: flex; gap: 8px; flex-wrap: wrap; }
 .brpick .opt .ot { font-family: var(--mono); font-size: 12px; }
 .brpick .grp { padding: 8px 12px 4px; font: 500 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--weak); }
+.brbar .brtabs button { height: 24px; padding: 0 10px; font-size: 12px; }
+.brclassic { margin: 14px 0 6px; font-size: 12.5px; }
+.brclassic .link { color: var(--accent); cursor: pointer; }
+.brclassic .sub { color: var(--sub); }
+h2.brh { font: 600 15px var(--display); color: var(--ink); margin: 26px 0 8px; padding-top: 16px; border-top: 1px solid var(--hair); }
+.pop .grp.brgrp { padding: 8px 12px 4px; font: 500 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--sub); }

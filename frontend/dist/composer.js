@@ -138,7 +138,7 @@ function drawAttach() {
   if (warn) {
     warn.style.display = imgs && S && !S.vision_model ? "" : "none";
     warn.innerHTML = `${cmIcon("image")}<span>None of your models can see images, so Blaze sends them as file paths. Add a free Gemini key to let it see them.</span><a class="go">Add a model</a>`;
-    const g = $(".go", warn); if (g) g.onclick = () => show("settings", "providers");
+    const g = $(".go", warn); if (g) g.onclick = () => show("router", "providers");
   }
 }
 
