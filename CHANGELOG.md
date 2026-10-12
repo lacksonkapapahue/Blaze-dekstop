@@ -2,6 +2,14 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.15.0 (student pack)
+- **Google Classroom**: `classroom_courses` and `classroom_coursework` read your classes and what's due (local time, points, turned in or not) through the Google connector. Classroom permission is asked only the first time you use it.
+- **Six new skills** (34 bundled): **study-planner** (exam date + topics → day-by-day plan in Schedule, re-plans a missed day), **tutor** (explain, quiz, flashcards from PDFs or slides), **lecture-notes** (local Whisper → notes, summary, key terms, likely exam questions), **essay-coach** (outline, feedback, APA 7 / Harvard; won't write graded essays), **group-project** (tasks list + a WhatsApp summary), **classroom-sync** (each assignment → a reminder 24 h before).
+- **Learn view** (`/learn`): flashcard decks with spaced repetition (Again / Hard / Good / Easy).
+- **Low-data mode** (Settings › Behaviour › Data): text first, no screenshots, images or big downloads unless asked, short answers, and the MB each task used in its work card.
+- **One-time schedules**: `once 2026-11-16 08:00` for reminders; they remove themselves after running.
+- Design notes: `docs/plans/plan-student-pack.md`.
+
 ## v0.14.0 (Blaze Link: pair your phone)
 - **Phone view** (`/views › Phone`, `/phone`): show a QR code, scan it in Blaze for Android › Settings › Blaze Desktop, and the phone is paired. See paired phones, which one is online, and unpair.
 - **Phone → PC**: ask Blaze on the phone to do something on this PC (files, code, installs). It runs here with its own conversation per phone, and approvals pop up on the phone.

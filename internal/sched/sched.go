@@ -31,7 +31,9 @@ type Job struct {
 var Now = time.Now
 
 // Once says whether a job runs one time only ("once YYYY-MM-DD HH:MM").
-func (j Job) Once() bool { return strings.HasPrefix(strings.ToLower(strings.TrimSpace(j.When)), "once ") }
+func (j Job) Once() bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(j.When)), "once ")
+}
 
 func file() string { return filepath.Join(config.Dir(), "schedule.json") }
 

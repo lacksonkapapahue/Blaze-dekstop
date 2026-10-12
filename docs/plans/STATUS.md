@@ -23,9 +23,12 @@ internal/selfknow (ABOUT YOU block + about_blaze tool), identical in Blaze-cli (
 Done: internal/longchat (db, compact, artifacts) + tests; longchat_app.go wired into app.go; tools search_chat/read_turn/read_artifact/update_brief (core, next to about_blaze); token meter + fresh-chat offer; project Brief editor; shots longchat-*; CHANGELOG v0.13.0; plan-longchat.md; VERSION + wails.json 0.13.0.
 Checks: gofmt, vet ./internal/..., go test ./internal/..., GOOS=windows build, node --check, ci/*.test.js.
 
-## Step 3b — Blaze Link PC side (branch `blaze-link`, v0.14.0) — READY, merging on green CI
+## Step 3b — Blaze Link PC side (PR #50, branch `blaze-link`, v0.14.0) — MERGED (5b9f86d)
 Done: pair.go (port of PR #3, protocol = Android DesktopLink.kt, documented in plan-blaze-link.md), phone_ask tool + Env.Phone, PAIRED PHONE prompt line, linkInBuild=true + live online phone in about_blaze, Phone view (link.js/css, /views, /phone, open_view phone), qrImage fix, pair_test.go, mock + shots link-*, CHANGELOG, VERSION/wails.json 0.14.0.
 
+## Step 4 — Student pack (branch `student-pack`, v0.15.0) — READY, merging on green CI
+Done: classroom_courses/classroom_coursework (on-demand scopes), schedule `once`, 6 skills (34 total, index + README), flashcards pkg + tools + Learn view, low-data mode (prompt, see_screen hidden, MB per task), tests, mock + shots student-*, CHANGELOG, plan-student-pack.md, VERSION/wails.json 0.15.0.
+Manual for Luke: add Classroom scopes + enable Classroom API in Cloud project blaze-511220 (one-click Google broker).
+
 ## Next, in order
-- Step 4 — Student pack (part C, branch `student-pack`, v0.15.0): classroom_courses / classroom_coursework tools, skills study-planner, tutor, lecture-notes, essay-coach, group-project, classroom-sync; low-data mode; UPDATE_SKILL_INDEX=1 go test ./internal/skillpack/; README skill count.
 - Step 5 — Marketer pack (part D), own PR.
