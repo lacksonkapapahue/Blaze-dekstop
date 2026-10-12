@@ -13,7 +13,7 @@ Done:
 - THIRD_PARTY_NOTICES.md, README credits, CHANGELOG v0.10.0, docs/plans/plan-blazerouter.md, VERSION + wails.json 0.10.0
 - Checks: gofmt, go vet ./internal/..., go test ./internal/..., GOOS=windows go build ., node --check, ci/*.test.js (jsdom) all pass; curl :20128/v1/models lists auto/* presets, 401 without key
 
-## Step 2 — Redesign part A (branch `redesign-a`, v0.11.0) — READY, merging on green CI
+## Step 2 — Redesign part A (branch `redesign-a`, v0.11.0, PR #47) — READY, merging on green CI
 Done: shell.js/shell.css (Chat|Projects, Exit chip, Search Ctrl+K, avatar menu, rail modes), views.js (/views picker, view:open), view_app.go open_view tool + test + prompt line, ink user bubbles, live work card counter (liveMeta), + menu composer (Voice, @ File, Plan/Autopilot, Model, Views), mode chip, ? shortcuts tooltip, shots (shell-*), CHANGELOG, plan-redesign-a.md, VERSION/wails.json 0.11.0.
 
 ## Remaining steps after this PR
@@ -22,5 +22,8 @@ Done: shell.js/shell.css (Chat|Projects, Exit chip, Search Ctrl+K, avatar menu, 
 4. Student pack (part C)
 5. Marketer pack (part D)
 
-## Next: Step 3 — Long-chat engine part B (branch long-chat off main after redesign-a merges, v0.12.0)
-See plan-v1.0-redesign.md part B. Hook: app.go turn loop uses trim(s.hist) (~line 585, max 60 msgs); store schema in internal/store/store.go (FTS5 already used for memories).
+## Step 3 — Long-chat engine part B (branch `long-chat`, v0.12.0) — IN PROGRESS (built on redesign-a; merge main after #47)
+Done: internal/longchat (db, compact, artifacts) + tests; longchat_app.go wired into app.go; tools search_chat/read_turn/read_artifact/update_brief; token meter + fresh-chat offer; project Brief editor; shots longchat-*; CHANGELOG; plan-longchat.md; VERSION 0.12.0.
+Left: merge main after #47, open PR, green CI, merge, release.
+
+## Next: Step 4 — Student pack (part C), then Step 5 — Marketer pack (part D)

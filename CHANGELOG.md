@@ -2,6 +2,16 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.13.0 (long chats stay fast)
+- **Rolling summary**: once a chat passes 12k prompt tokens (or 60% of the model's context, if smaller), everything before the last ~12 messages folds into a state note (Goal, Decisions, Facts, Open threads, Files touched; at most ~800 tokens). The note is updated as the chat grows, never redone from scratch. A 300-turn test chat stays under ~5k input tokens a turn.
+- **search_chat and read_turn**: every message is indexed (SQLite FTS5), so Blaze finds exact earlier words, even ones folded into the summary, instead of asking you to repeat.
+- **Project brief**: a pinned brief per project (purpose, rules, key files, in progress; up to 2,400 characters) goes with every turn. Blaze keeps it current with `update_brief`, and you can edit it on the project page.
+- **Big outputs aside**: a tool result over 4,000 characters is saved to `~/.blaze/artifacts/`. Blaze sees the first 40 and last 20 lines and reads the rest on demand with `read_artifact`.
+- **Token meter**: the live card shows `in 4.2k · out 0.6k`. Near 80% of the model's context, Blaze offers **Start a fresh chat with a summary**.
+- The index, summaries and briefs live in `~/.blaze/desktop/longchat.db`, separate from `blaze.db`, so Blaze CLI keeps reading your memory.
+- Each chat's tools now use that chat's own id (find_tools, search, brief), even when it runs in the background.
+- Tests: `internal/longchat` (300-turn budget, summary keeps a seeded fact, search finds turn 5, artifact truncation and read-back, brief cap), app tests for the brief, indexing and set-aside rules. Design notes: `docs/plans/plan-longchat.md`.
+
 ## v0.12.0 (Blaze knows itself)
 - **ABOUT YOU**: every chat now starts with a short, live block telling Blaze what it is: Blaze Desktop and its version, made by Luke (Lackson Kapapa, Blazeinchue), the three apps (Desktop, CLI, Android) and how they connect, BlazeRouter on/off, Blaze Link status, the Blaze account and this PC (OS, desktop/Wayland, CPU, RAM). About 300 tokens.
 - **A new rule**: questions about Blaze itself, its apps or connecting them ("how do I connect my phone?") are answered from ABOUT YOU and `about_blaze`, never by asking which apps you are building.
