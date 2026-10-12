@@ -11,6 +11,7 @@ import (
 
 func TestLongContextShortChatAndIndex(t *testing.T) {
 	a := testApp(t)
+	t.Cleanup(longchat.CloseDefault) // runs before TempDir's removal; Windows can't delete an open db
 	s := &session{id: "c-long", project: "p1", started: true}
 	s.hist = []llm.Message{{Role: "user", Content: "The launch date is 14 November."}, {Role: "assistant", Content: "Noted."}}
 	d, err := longchat.Default()

@@ -58,6 +58,16 @@ func Default() (*DB, error) {
 	return d, nil
 }
 
+// CloseDefault closes the shared database (tests: Windows can't delete an open file).
+func CloseDefault() {
+	defMu.Lock()
+	defer defMu.Unlock()
+	if defDB != nil {
+		_ = defDB.sql.Close()
+		defDB = nil
+	}
+}
+
 // Open opens or creates a longchat database.
 func Open(path string) (*DB, error) {
 	s, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)")
