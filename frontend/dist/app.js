@@ -74,6 +74,10 @@ async function refreshState() { S = await API().State(); setModel(S.model, S.sel
 let UPD = null;          // last CheckUpdate result
 let updBusy = false;
 const updText = t => $$(".updstatus").forEach(e => e.textContent = t);
+// Update errors from update.go may carry technical details after "\n\nDetails: ".
+const updSplit = err => { const s = String(err || ""), i = s.indexOf("\n\nDetails: "); return i < 0 ? [s, ""] : [s.slice(0, i), s.slice(i + 11)]; };
+const updDetails = d => d ? `<details class="upddetails"><summary class="small sub">Details</summary><div class="small sub mono" style="margin-top:4px;word-break:break-all">${esc(d)}</div></details>` : "";
+const updError = err => { const [m, d] = updSplit(err); $$(".updstatus").forEach(e => e.innerHTML = esc(m) + updDetails(d)); };
 on("update", p => updText(p.text || ""));
 
 async function checkUpdate(auto) {
@@ -105,7 +109,7 @@ async function installUpdate(box) {
   updText("Starting the download…");
   let err = "";
   try { err = await API().InstallUpdate(); } catch (e) { err = String(e); }
-  if (err) { updText(err); box.querySelectorAll("button").forEach(b => b.disabled = false); updBusy = false; }
+  if (err) { updError(err); box.querySelectorAll("button").forEach(b => b.disabled = false); updBusy = false; }
 }
 
 // ---------- top bar ----------
