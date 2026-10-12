@@ -4,7 +4,6 @@
 // keys editors stay reachable behind "Classic editor".
 const Router = (() => {
   const ICON = '<svg class="i" viewBox="0 0 16 16"><circle cx="3" cy="8" r="1.5"/><circle cx="13" cy="3.5" r="1.5"/><circle cx="13" cy="8" r="1.5"/><circle cx="13" cy="12.5" r="1.5"/><path d="M4.5 8h7M4.5 8 11.5 3.5M4.5 8l7 4.5"/></svg>';
-  const PAGES = [["", "Home"], ["providers", "Providers"], ["combos", "Combos"], ["usage", "Usage"], ["quota", "Quota"], ["settings", "Settings"]];
   let RV = null;         // last RouterView from Go
   let classic = false;   // Settings: show the old editors under the card
   const lvl = v => (v && v.level) || "red";
@@ -31,24 +30,18 @@ const Router = (() => {
     paint();
   }
 
-  // The view: header (status, page tabs, on/off, open in browser) and the dashboard.
+  // The view: header (status, on/off, open in browser) and the dashboard.
   async function routerView(el, page) {
     page = page || "";
     const v = await info();
     const wrap = h("div", "brview");
     const bar = h("div", "brbar", `<span class="brdot ${lvl(v)}"></span><span class="label">BlazeRouter</span><span class="note"></span>`);
     $(".note", bar).textContent = note(v);
-    const tabs = h("div", "tabs brtabs");
-    PAGES.forEach(([id, name]) => {
-      const t = h("button", id === page ? "on" : "", esc(name));
-      t.onclick = () => show("router", id);
-      tabs.append(t);
-    });
     const sw = h("button", "brswitch" + (v && v.enabled ? " on" : "")); sw.title = v && v.enabled ? "Turn BlazeRouter off" : "Turn BlazeRouter on";
     sw.onclick = async () => { const err = await API().SetRouterOn(!(RV && RV.enabled)); if (err) toastErr(err); show("router", page); };
     const ob = h("button", "btn ghost xs", `${icon("open", "i sm")}Open in browser`);
     ob.onclick = async () => { const err = await API().OpenRouterDashboard(); if (err) toastErr(err); };
-    bar.append(tabs, sw, ob);
+    bar.append(sw, ob);
     wrap.append(bar); el.append(wrap);
     if (v && !v.enabled) { wrap.append(offPanel()); return; }
     const url = await API().RouterDashboardURL(page);
@@ -146,3 +139,4 @@ const Router = (() => {
 
   return { info, paint, picks, pickerTop, menuItems, get view() { return RV; } };
 })();
+window.Router = Router;

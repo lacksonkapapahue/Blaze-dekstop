@@ -2,6 +2,14 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.10.0 (BlazeRouter)
+- **BlazeRouter**: a local OpenAI-compatible gateway (`127.0.0.1:20128/v1`, next free port if taken) starts with Blaze and routes each request across your free providers, falling back on rate limits, outages and empty quota. It is a native Go port of OmniRoute (MIT): every `auto/*` preset (auto/best-free, auto/best-coding, auto/best-fast, auto/best-reasoning, auto/best-vision, auto/chaos, auto/lkgp and any `auto/<category>:<tier>`), combos with priority, round-robin, quota-aware and cheapest strategies, last-known-good preference and chaos fan-out to five providers. Anthropic and Gemini request formats are translated, so Claude Code and Gemini clients work too.
+- **Router button** in the top bar (icon + green/amber/red status dot) and in the tray. It opens the BlazeRouter dashboard inside Blaze (Home, Providers, Combos, Usage & logs, Quota, Settings), with an on/off switch and **Open in browser**. `/router` opens it too.
+- **Model picker**: BlazeRouter presets and your combos come first, then **All BlazeRouter presets**, then each provider directly. `/model` has a BlazeRouter submenu.
+- **Settings › BlazeRouter** replaces Models; *Providers & keys* moved into the dashboard. The old editors are still there behind **Classic editor**, and every old "add a key" link opens BlazeRouter › Providers.
+- **Nothing to re-enter**: keys stay in Blaze's shared store (`~/.blaze`, system keychain), so Blaze CLI keeps working; your old Auto chain becomes a "My chain" combo, and custom providers and extra keys carry over (tested).
+- Credits: `THIRD_PARTY_NOTICES.md`. Design notes: `docs/plans/plan-blazerouter.md`.
+
 ## v0.9.5 (parallel tools, eight new skills, skills that combine)
 - **Tools run in parallel**: when the model asks for several reads in one reply (file reads, listings and searches, web searches, page fetches, recall, skills, job logs), Blaze runs them at the same time, up to 6 at once, in the main chat and in background agents and specialists. Anything that changes things still runs one by one, in the model's order, and results go back in the order they were asked, so history and the steps list read the same. The prompt now tells the model to batch independent calls. Code: `internal/llm/batch.go`, `internal/tools/parallel.go`.
 - **Paper sketches**: the new **paper-sketch** skill draws doodles and hand-drawn illustrations that look like pencil, pen or marker on real paper (notebook, sketchbook, sticky note, graph paper, kraft). It builds a self-contained SVG with paper grain, pencil wobble and hatching, one group per part so Design can pick and edit each, and exports to PNG. The starter is `skills/paper-sketch/assets/sketch.svg`.

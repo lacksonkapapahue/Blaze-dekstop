@@ -1,4 +1,15 @@
 // Fake backend so CI can screenshot the UI in a normal browser.
+// Init scripts run in every frame: inside BlazeRouter's dashboard iframe, only stub its /api.
+if (/\/internal\/router\/web\//.test(location.href)) {
+  (() => {
+    const RS = window.__routerState || {};
+    window.fetch = async (u, o) => {
+      const path = String(u).replace(/^.*\/api\//, "").split("?")[0];
+      const body = path in RS ? RS[path] : { ok: true };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+  })();
+} else
 (() => {
   const os = window.__os || "linux";
   const info = { os, os_name: "Arch Linux (Omarchy)", arch: "amd64", cpu: "AMD Ryzen 7 7840U", cores: 16, ram_gb: 32, gpu: ["AMD Radeon 780M"], shell: "bash", shell_path: "/usr/bin/bash", pkg_managers: ["pacman"], tools: { git: "2.51", python: "3.13", node: "v24.1", go: "1.25", docker: "28.1" }, home: "/home/luke", disk_free_gb: 312 };
@@ -136,6 +147,13 @@
   window.__att = att;
   const models = [{ name: "tiny", file: "ggml-tiny.bin", mb: 75, note: "fastest, rougher" }, { name: "base", file: "ggml-base.bin", mb: 142, note: "good on any PC (default)" }, { name: "small", file: "ggml-small.bin", mb: 466, note: "most accurate, slower on older PCs" }];
   window.__stt = { ready: false, engine: "", engine_how: "download", engine_mb: 10, model: "base", model_mb: 142, have_model: false, models, lang: "auto", native: "" };
+  window.__rv = { running: true, level: "green", note: "Running · 3 providers ready", url: "http://127.0.0.1:20128/", port: 20128, ready: 3, models: 41, version: "v0.10.0", key: "br-local-5f2c9a77e01d4b6a", dashboard: "http://127.0.0.1:20128/dashboard", enabled: true, autostart: true, in_use: false };
+  const P = (g, m, d, cur) => ({ group: g, provider: "blazerouter", model: m, name: "BlazeRouter · " + m, desc: d, current: !!cur, tools: true });
+  window.__rpicks = [P("blazerouter", "auto/best-free", "Best free model for the job, ranked by quality, speed and quota left"), P("blazerouter", "auto", "Your chain, then every provider with a key"),
+    P("blazerouter", "auto/best-coding", "Strongest free coder that can call tools"), P("blazerouter", "auto/best-fast", "Lowest latency first"), P("blazerouter", "auto/best-reasoning", "Thinking models first"),
+    P("blazerouter", "auto/best-vision", "Models that understand images"), P("blazerouter", "auto/chaos", "Asks five providers at once; the first good answer wins"),
+    P("preset", "auto/lkgp", "Last known good provider first"), P("preset", "auto/coding:pro", "Coding, pro tier"), P("preset", "auto/writing:fast", "Writing, fast tier"),
+    { ...P("combo", "my-chain", "Your combo · priority"), name: "BlazeRouter · My chain" }];
   const A = {
     SendWith: async () => "ok", Modes: async () => state.modes,
     SetWorkMode: async m => (state.modes = { ...state.modes, work_mode: m === "plan" ? "plan" : "build" }),
@@ -155,12 +173,18 @@
     OpenConversation: async () => conv, Jobs: async () => "Job 1 [running 4m12s] pnpm dev\n   ready on http://localhost:5173", JobLog: async () => "", Schedules: async () => [{ name: "backup-notes", when: "daily 07:00", command: "rsync -a ~/notes /mnt/backup/" }],
     Projects: async () => [{ id: "p1", name: "HomeGlow", folder: "/home/luke/code/homeglow" }, { id: "p2", name: "Blaze.ai", folder: "/home/luke/code/blaze-ai" }],
     ProjectDetails: async () => ({ project: state.project, branch: "main", status: " M sections/hero.liquid\n?? design/option-b.html", recent: [{ path: "design/option-b.html", when: "Oct 9 21:20" }, { path: "sections/hero.liquid", when: "Oct 9 21:02" }, { path: "assets/theme.css", when: "Oct 9 20:40" }], chats: [{ id: "c1", title: "Fix the failing test", updated: "Oct 9" }, { id: "c4", title: "New hero section", updated: "Oct 9" }] }),
-    Models: async () => [{ provider: "auto", name: "Auto (free routing)", model: "fastest healthy model in your chain", tools: true, current: true, ready: true }, { provider: "gemini", name: "Google Gemini", model: "gemini-3.8-flash", tools: true, ready: true }, { provider: "groq", name: "Groq", model: "openai/gpt-oss-120b", tools: true, ready: true }],
+    Models: async () => [{ provider: "blazerouter", name: "BlazeRouter", model: "auto/best-free and every auto/* preset", tools: true, ready: true }, { provider: "auto", name: "Auto (free routing)", model: "fastest healthy model in your chain", tools: true, current: true, ready: true }, { provider: "gemini", name: "Google Gemini", model: "gemini-3.8-flash", tools: true, ready: true }, { provider: "groq", name: "Groq", model: "openai/gpt-oss-120b", tools: true, ready: true }],
     ModelOptions: async p => ({ provider: p, fetched: "Oct 10 11:20", models: p === "groq"
       ? [{ id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B", tools: "yes", context: 131072, free: true, known: true }, { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B", tools: "yes", context: 131072, free: true, known: true, live: true }, { id: "qwen/qwen3-32b", name: "Qwen3 32B", tools: "yes", context: 131072, free: true, known: true }]
       : [{ id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", tools: "yes", vision: true, context: 1048576, free: true, known: true, live: true, note: "Blaze's default" }, { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", tools: "yes", vision: true, context: 1048576, free: true, known: true, live: true }, { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash-Lite", tools: "yes", vision: true, context: 1048576, free: true, known: true }, { id: "gemma-3-27b-it", name: "Gemma 3 27B", tools: "no", context: 131072, free: true, live: true }] }),
     DetectModels: async p => ({ provider: p, plan: "Free tier", models: [{ id: "gemini-3.8-flash", tools: "yes", vision: true, context: 1048576, free: true }] }),
-    SelectModel: async (p, m) => p === "auto" ? "Auto · Google Gemini · gemini-3.8-flash" : `${p} · ${m}`,
+    SelectModel: async (p, m) => { if (p === "blazerouter") { window.__rv.in_use = true; return `BlazeRouter · ${m}`; } return p === "auto" ? "Auto · Google Gemini · gemini-3.8-flash" : `${p} · ${m}`; },
+    // BlazeRouter (v0.10.0): the dashboard iframe is the real dashboard page with its /api stubbed.
+    RouterInfo: async () => window.__rv,
+    RouterDashboardURL: async pg => window.__rv.enabled ? window.__routerDash + "#t=demo" + (pg ? "&p=" + pg : "") : "",
+    OpenRouterDashboard: async () => "",
+    SetRouterOn: async on => { Object.assign(window.__rv, on ? { enabled: true, running: true, level: "green", note: "Running · 3 providers ready" } : { enabled: false, running: false, level: "red", note: "Off" }); return ""; },
+    RouterPicker: async () => window.__rpicks,
     RouterStatus: async () => [{ provider: "gemini", model: "gemini-3.8-flash", name: "Google Gemini", ok: 14, avg_ms: 1840, can_tools: true, keys: 2 }, { provider: "groq", model: "openai/gpt-oss-120b", name: "Groq", ok: 3, fails: 1, cooling: 42, resting: "rate limit", avg_ms: 920, can_tools: true, keys: 1, last_error: "HTTP 429: rate limit reached" }],
     Keys: async () => [{ masked: "AIza…x9Q2", main: true, source: "saved" }, { masked: "AIza…7LmP", main: false, source: "saved" }],
     Usage: async () => ({ today: { in: 182000, out: 9400, cost: 0, calls: 41, priced: true }, month: { in: 2400000, out: 130000, cost: 0.42, calls: 512, priced: true },

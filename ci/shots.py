@@ -6,6 +6,9 @@ out = root / "shots"; out.mkdir(exist_ok=True)
 mock = (root / "ci" / "mock.js").read_text()
 url = (root / "frontend" / "dist" / "index.html").as_uri()
 sample = (root / "ci" / "sample").as_uri()
+rdash = (root / "internal" / "router" / "web" / "index.html").as_uri()
+rstate = (root / "ci" / "router-state.json").read_text()
+mock = f"window.__routerDash='{rdash}';window.__routerState={rstate};" + mock
 allerrs = []
 with sync_playwright() as p:
     b = p.chromium.launch(**({"executable_path": __import__("os").environ["CHROME"]} if __import__("os").environ.get("CHROME") else {}))
@@ -62,8 +65,29 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"design-writeback-{theme}.png"))
         pg.evaluate("document.querySelector('#dtl').click(); document.querySelectorAll('#toasts .toast').forEach(t => t.remove())")
         pg.evaluate("show('work'); document.querySelector('#route').click()"); pg.wait_for_timeout(400)
-        pg.evaluate("document.querySelectorAll('.pop .opt')[1].click()"); pg.wait_for_timeout(400)
+        pg.screenshot(path=str(out / f"router-picker-{theme}.png"))
+        if pg.evaluate("document.querySelectorAll('.pop .brpick').length") < 7:
+            errs.append("BlazeRouter presets missing from the model popover")
+        pg.evaluate("[...document.querySelectorAll('.pop .opt')].find(o => /Google Gemini/.test(o.textContent)).click()"); pg.wait_for_timeout(400)
+        pg.evaluate("document.querySelector('.pop .models:not([style*=none])').scrollIntoView({block: 'center'})"); pg.wait_for_timeout(100)
         pg.screenshot(path=str(out / f"model-picker-{theme}.png"))
+        # BlazeRouter: top-bar button, dashboard view (real dashboard page, stubbed /api), Settings card.
+        pg.evaluate("closePop(); show('router')"); pg.wait_for_timeout(1200)
+        pg.screenshot(path=str(out / f"router-home-{theme}.png"))
+        if not pg.evaluate("!!document.querySelector('#routerBtn .brdot.green') && !!document.querySelector('.brview iframe.brframe')"):
+            errs.append("BlazeRouter button or dashboard view missing")
+        pg.evaluate("show('router', 'providers')"); pg.wait_for_timeout(1200)
+        pg.screenshot(path=str(out / f"router-providers-{theme}.png"))
+        pg.evaluate("show('settings', 'models')"); pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"router-settings-{theme}.png"))
+        pg.evaluate("document.querySelector('.brclassic a').click()"); pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"router-classic-{theme}.png"))
+        pg.evaluate("show('settings', 'providers')"); pg.wait_for_timeout(600)
+        if pg.evaluate("view") != "router":
+            errs.append("old Settings › Providers link should open BlazeRouter")
+        pg.evaluate("SetRouterOff = window.go.main.App.SetRouterOn(false).then(() => show('router'))"); pg.wait_for_timeout(600)
+        pg.screenshot(path=str(out / f"router-off-{theme}.png"))
+        pg.evaluate("window.go.main.App.SetRouterOn(true).then(() => show('work'))"); pg.wait_for_timeout(400)
         pg.evaluate("""closePop(); sendText('Make the hero section blue', []);
           fire('route', {route: 'Google Gemini · gemini-3.8-flash'});
           for (let i = 0; i < 8; i++) { fire('tool', {id: 'x'+i, name: i < 2 ? 'file_read' : 'file_edit', args: '{"path":"index.html"}'});
