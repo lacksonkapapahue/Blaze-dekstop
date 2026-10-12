@@ -21,6 +21,11 @@ with sync_playwright() as p:
         pg.screenshot(path=str(out / f"home-{theme}.png"))
         pg.evaluate("loadConv(window.__conv); show('work')"); pg.wait_for_timeout(300)
         pg.screenshot(path=str(out / f"chat-{theme}.png"))
+        pg.evaluate("loadConv(window.__convAbout)"); pg.wait_for_timeout(300)
+        pg.screenshot(path=str(out / f"about-phone-{theme}.png"))
+        if "Settings › Blaze Desktop" not in pg.evaluate("document.querySelector('#log').innerText"):
+            errs.append("self-knowledge chat should show the pairing steps")
+        pg.evaluate("loadConv(window.__conv)"); pg.wait_for_timeout(200)
         pg.evaluate("document.querySelector('#input').value='/'; onType()"); pg.wait_for_timeout(300)
         pg.screenshot(path=str(out / f"menu-{theme}.png"))
         pg.evaluate("closeMenu(); document.querySelector('#input').value='@hero'; onType()"); pg.wait_for_timeout(300)

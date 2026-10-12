@@ -2,6 +2,13 @@
 
 Release notes for Blaze Desktop, newest first. Design notes per release are in `docs/plans/`.
 
+## v0.12.0 (Blaze knows itself)
+- **ABOUT YOU**: every chat now starts with a short, live block telling Blaze what it is: Blaze Desktop and its version, made by Luke (Lackson Kapapa, Blazeinchue), the three apps (Desktop, CLI, Android) and how they connect, BlazeRouter on/off, Blaze Link status, the Blaze account and this PC (OS, desktop/Wayland, CPU, RAM). About 300 tokens.
+- **A new rule**: questions about Blaze itself, its apps or connecting them ("how do I connect my phone?") are answered from ABOUT YOU and `about_blaze`, never by asking which apps you are building.
+- **`about_blaze` tool** (always on, optional `section`): the full report, read live: identity, apps, version and build, Blaze account (blaze-auth, signed in or not, last key sync), Blaze Link (how it works, pairing steps, paired phones from `~/.blaze/pair`), BlazeRouter (address, status, all `auto/*` presets), views and slash commands read from this build's own frontend registries, the real `~/.blaze` layout, connected accounts, MCP servers, skills, memory count and database, and the PC. Same name as Blaze Android's `SelfKnowledge.kt`; Blaze CLI gets the same.
+- Honest about gaps: Blaze Link's PC side is not in this build yet, so Blaze says so and points to what works today (the Blaze account and Design › Phone) instead of inventing steps.
+- Tests: `internal/selfknow` (brief size, sections, link status, devices, layout, desktop env, registries from the real frontend), the system prompt carries ABOUT YOU and the rule, the tool output; a mock shot of "how do I connect my phone?". Design notes: `docs/plans/plan-self-knowledge.md`.
+
 ## v0.11.0 (a calmer shell)
 - **Top bar**: the B logo goes back to the chat; **Chat | Projects** in the middle; **Search** (Ctrl+K) finds chats, projects, views and commands; the BlazeRouter dot; and an **avatar menu** with Account, Settings, BlazeRouter dashboard, Model, Theme, All views, Check for updates and Sign out.
 - **Rail**: in Chat it is just your recent chats (it folds away below 1100px); in Projects it lists projects with a *Working* chip on the busy one.
